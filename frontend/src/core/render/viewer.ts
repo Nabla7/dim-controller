@@ -35,7 +35,11 @@ export type FrameListener = (frame: FrameInfo) => void
 const pixelRatio = () => Math.min(2, devicePixelRatio || 1)
 
 export class Viewer {
-    readonly renderer: THREE.WebGLRenderer
+    /** null when the browser couldn't start WebGL: the scene still updates but nothing draws (`webglError` says why) */
+    readonly renderer: THREE.WebGLRenderer | null
+    readonly webglError: string | null
+    /** what the view draws into and takes pointer input on: the renderer's canvas, or a blank one without WebGL */
+    readonly canvas: HTMLCanvasElement
     readonly labels: CSS2DRenderer
     readonly scene = new THREE.Scene()
     readonly camera = new THREE.PerspectiveCamera(60, 1, 0.05, 10000)
@@ -80,10 +84,18 @@ export class Viewer {
         this.#host = host
         this.#bridgeNow = bridgeNow
         // no MSAA (as MemWorld): it nearly doubled the cost of blended splats at 2880×1800
-        this.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: "high-performance" })
-        this.renderer.setPixelRatio(pixelRatio())
-        this.renderer.setClearColor(0x000000, 0)
-        host.appendChild(this.renderer.domElement)
+        let renderer: THREE.WebGLRenderer | null = null
+        try {
+            renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: "high-performance" })
+            renderer.setPixelRatio(pixelRatio())
+            renderer.setClearColor(0x000000, 0)
+        } catch (error) {
+            console.warn("3D view: WebGL unavailable", error)
+        }
+        this.renderer = renderer
+        this.webglError = renderer ? null : "this browser couldn't start WebGL"
+        this.canvas = renderer?.domElement ?? document.createElement("canvas")
+        host.appendChild(this.canvas)
         this.labels = new CSS2DRenderer()
         this.labels.domElement.className = "label-layer"
         this.labels.domElement.dataset.sceneLabels = "" // labels pinned to 3D points: they leave the screen with them
@@ -91,7 +103,7 @@ export class Viewer {
 
         this.camera.up.set(0, 0, 1)
         this.camera.position.set(-6, -6, 5)
-        this.controls = new OrbitControls(this.camera, this.renderer.domElement)
+        this.controls = new OrbitControls(this.camera, this.canvas)
         this.controls.enableDamping = true
         this.controls.dampingFactor = 0.18
         this.controls.screenSpacePanning = false
@@ -174,7 +186,7 @@ export class Viewer {
      * Null when the ray misses everything and points away from the ground.
      */
     pick(clientX: number, clientY: number): { point: THREE.Vector3; on: "points" | "mesh" | "ground" } | null {
-        const rect = this.renderer.domElement.getBoundingClientRect()
+        const rect = this.canvas.getBoundingClientRect()
         const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
         const raycaster = new THREE.Raycaster()
         raycaster.setFromCamera(ndc, this.camera)
@@ -338,7 +350,7 @@ export class Viewer {
     #watchPixelRatio() {
         const query = matchMedia(`(resolution: ${devicePixelRatio}dppx)`)
         query.addEventListener("change", () => {
-            this.renderer.setPixelRatio(pixelRatio())
+            this.renderer?.setPixelRatio(pixelRatio())
             this.#resize()
             this.#watchPixelRatio()
         }, { once: true })
@@ -347,12 +359,16 @@ export class Viewer {
     #resize() {
         const width = Math.max(1, this.#host.clientWidth)
         const height = Math.max(1, this.#host.clientHeight)
-        this.renderer.setSize(width, height)
+        if (this.renderer) {
+            this.renderer.setSize(width, height)
+        } else {
+            Object.assign(this.canvas, { width, height })
+        }
         this.labels.setSize(width, height)
         this.camera.aspect = width / height
         this.camera.updateProjectionMatrix()
         this.resolution.set(width, height)
-        this.pixelsPerMeter.value = (height * this.renderer.getPixelRatio()) / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2))
+        this.pixelsPerMeter.value = (height * (this.renderer?.getPixelRatio() ?? 1)) / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2))
         this.requestRender()
     }
 
@@ -421,7 +437,7 @@ export class Viewer {
         }
         if (this.#dirty) {
             this.#dirty = false
-            this.renderer.render(this.scene, this.camera)
+            this.renderer?.render(this.scene, this.camera)
             this.labels.render(this.scene, this.camera)
             if (now - this.#lastDeclutter > 150) {
                 this.#lastDeclutter = now
@@ -454,7 +470,6 @@ export class Viewer {
             return sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))]
         }
         const span = (now - this.#lastStats) / 1000
-        const info = this.renderer.info
         let points = 0
         let splats = false
         this.scene.traverseVisible((object) => {
@@ -470,7 +485,7 @@ export class Viewer {
             latencyP50: percentile(this.#latencies, 0.5),
             latencyP95: percentile(this.#latencies, 0.95),
             arrivalToFrameMs: percentile(this.#arrivals, 0.5),
-            drawCalls: info.render.calls,
+            drawCalls: this.renderer?.info.render.calls ?? 0,
             points,
         })
         // splats that can't keep up for 3 s in a row are drawn as cubes instead (the stats pill says so; clicking it retries)

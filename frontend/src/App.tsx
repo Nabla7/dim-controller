@@ -26,6 +26,7 @@ import { Overlays } from "./ui/Overlays.tsx"
 import { rectStyle, useWorkspace, type WorkspaceApi, WorkspaceContext, WorkspaceSurface } from "./ui/Workspace.tsx"
 import { cameraId, FIXED_PANELS } from "./ui/workspace.ts"
 import { openOverlay } from "./ui/overlay.ts"
+import { ContainCrash } from "./ui/Unavailable.tsx"
 
 declare global {
     interface Window {
@@ -70,11 +71,11 @@ export function App() {
             <div className={`app ${mobile ? "mobile" : "desktop"}`} onPointerDownCapture={takeKeyboard}>
                 {app && mobile && <PhoneCorners app={app} api={api} />}
                 <div className="workspace">
-                    <ScenePanel host={host} app={app} onTf={() => api.act("tf", "show")} />
+                    <ContainCrash what="3D view"><ScenePanel host={host} app={app} onTf={() => api.act("tf", "show")} /></ContainCrash>
                     {app && (
                         <>
-                            <CameraPanels app={app} />
-                            <MapPanel app={app} />
+                            <ContainCrash what="Cameras"><CameraPanels app={app} /></ContainCrash>
+                            <ContainCrash what="Map"><MapPanel app={app} /></ContainCrash>
                             <InfoPanels app={app} />
                         </>
                     )}

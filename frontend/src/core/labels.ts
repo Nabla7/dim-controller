@@ -111,7 +111,7 @@ export class LocationLabels {
 
     /** The label drawn nearest to a screen point (CSS px in the canvas), within `radius` px. */
     near(x: number, y: number, radius = 24): LocationLabel | null {
-        const canvas = this.app.viewer.renderer.domElement.getBoundingClientRect()
+        const canvas = this.app.viewer.canvas.getBoundingClientRect()
         let best: { label: LocationLabel; distance: number } | null = null
         for (const label of this.list.get()) {
             const position = this.position(label)

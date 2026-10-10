@@ -23,6 +23,7 @@ import { TfFootnote } from "./TfFootnote.tsx"
 import { panelTitle } from "./commands.ts"
 import { useWorkspaceApi } from "./Workspace.tsx"
 import { useDockActions } from "./dockActions.ts"
+import { Unavailable } from "./Unavailable.tsx"
 
 const COLOR_MODES: [PointLook["colorMode"], string][] = [["height", "by height"], ["intensity", "by intensity"], ["range", "by distance"], ["solid", "solid"]]
 
@@ -70,6 +71,7 @@ export function ScenePanel({ host, app, onTf }: { host: RefObject<HTMLDivElement
             )}
         >
             <div ref={host} className="scene" />
+            {app?.viewer.webglError && !off && <Unavailable what="3D view" reason={app.viewer.webglError} />}
             {app && !off && <ViewControls app={app} />}
             {app && !off && <TfFootnote app={app} onOpen={onTf} />}
             {app && menuOpen && !off && <CloudMenu app={app} anchor={cloudButton.current} onClose={() => setMenuOpen(false)} />}

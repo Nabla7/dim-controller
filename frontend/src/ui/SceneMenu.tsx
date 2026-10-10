@@ -28,7 +28,7 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
     const box = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
-        const canvas = app.viewer.renderer.domElement
+        const canvas = app.viewer.canvas
         let down: { x: number; y: number } | null = null
         let leftDown: { x: number; y: number } | null = null
         const tip = createRightClickTip({

@@ -342,8 +342,8 @@ export class AgentLink {
     /** What the user sees: the 3D view (labels drawn in), the 3D camera, the robot camera image, the annotations. */
     async view() {
         const viewer = this.app.viewer
-        viewer.renderer.render(viewer.scene, viewer.camera)
-        const gl = viewer.renderer.domElement
+        viewer.renderer?.render(viewer.scene, viewer.camera)
+        const gl = viewer.canvas
         const scale = Math.min(1, 1280 / gl.width)
         const canvas = document.createElement("canvas")
         canvas.width = Math.round(gl.width * scale)

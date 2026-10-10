@@ -18,6 +18,7 @@ import { popoverPosition } from "./panelDrag.ts"
 import { Panel } from "./Panel.tsx"
 import { useWorkspaceApi } from "./Workspace.tsx"
 import { useDockActions } from "./dockActions.ts"
+import { ContainCrash, Unavailable } from "./Unavailable.tsx"
 import { presetFor, QUALITY_PRESETS, readLocal, type VideoQuality, writeLocal } from "../core/videoQuality.ts"
 import { panelTitle } from "./commands.ts"
 import { cameraId, isCamera, workspace } from "./workspace.ts"
@@ -114,7 +115,7 @@ export function CameraPanels({ app }: { app: ViewerApp }) {
 
     return (
         <>
-            {panels.map((panel) => <CameraPanel key={panel.id} app={app} panel={panel} topics={topics} onChange={(patch) => updatePanel(panel.id, patch)} />)}
+            {panels.map((panel) => <ContainCrash key={panel.id} what="Camera"><CameraPanel app={app} panel={panel} topics={topics} onChange={(patch) => updatePanel(panel.id, patch)} /></ContainCrash>)}
         </>
     )
 }
@@ -132,6 +133,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
     const video = useRef<HTMLVideoElement>(null)
     const depthHost = useRef<HTMLDivElement>(null)
     const depthRenderer = useRef<DepthCanvas | null>(null)
+    const [depthError, setDepthError] = useState<string | null>(null)
     const depthLook = panel.depth ?? DEFAULT_DEPTH_LOOK
     const lookRef = useRef(depthLook)
     lookRef.current = depthLook
@@ -156,12 +158,20 @@ function CameraPanel({ app, panel, topics, onChange }: {
             return
         }
         const source = app.video.acquire(topic)
+        let noWebGL = false
         const unsubscribe = depth
             ? source.depth.subscribe(() => {
                 const image = source.depth.get().image
-                if (image && depthHost.current) {
+                if (image && depthHost.current && !noWebGL) {
                     if (!depthRenderer.current) {
-                        depthRenderer.current = new DepthCanvas()
+                        try {
+                            depthRenderer.current = new DepthCanvas()
+                        } catch (error) {
+                            console.warn("depth view: WebGL2 unavailable", error)
+                            noWebGL = true
+                            setDepthError("this browser couldn't start WebGL2")
+                            return
+                        }
                         depthRenderer.current.canvas.className = "camera-media"
                         depthHost.current.prepend(depthRenderer.current.canvas)
                     }
@@ -309,6 +319,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
                 </div>
             }
         >
+            {depth && depthError && <Unavailable what="Depth view" reason={depthError} />}
             {depth ? <div ref={depthHost} className="camera-media depth-host" /> : <video ref={video} className="camera-media" muted playsInline autoPlay disablePictureInPicture disableRemotePlayback />}
             <canvas ref={overlayCanvas} className="camera-overlay" />
             {!topic && <div className="camera-placeholder"><Icon name="camera" size={28} /><span>{tabs.length ? "Pick a camera from this panel's topic tabs (shown on hover) or the palette (/)" : "No camera on the bus yet"}</span></div>}
