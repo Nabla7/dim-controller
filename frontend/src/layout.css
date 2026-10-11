@@ -79,7 +79,6 @@ body { overscroll-behavior: none; }
 .map-panel.collapsed > .dr-view-panel-body { display: none; }
 .map-panel.collapsed .map-title { cursor: pointer; }
 .desktop .map-panel.dr-view-panel--main .dr-view-panel-head { padding-left: 160px; }
-.map-panel .map-frame { max-width: 28%; }
 .map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
 .map-problem { position: absolute; left: 8px; bottom: 8px; right: 8px; }
 .map-recenter { position: absolute; right: 8px; bottom: 26px; z-index: 2; }
