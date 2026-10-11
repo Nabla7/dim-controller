@@ -1,6 +1,16 @@
 // What the 2D map panel remembers per viewer (localStorage: a phone and a desktop each keep their own), checked on load.
 import { clampPanelBox } from "dimos-react"
-import { DEFAULT_FOLLOW_FRAME, isValidView, type MapView } from "./map2d.ts"
+/** the north-up map view: center (fixed frame, m) and zoom (m per CSS px) */
+export interface MapView {
+    centerX: number
+    centerY: number
+    metersPerPixel: number
+}
+const DEFAULT_FOLLOW_FRAME = "base_link"
+const isValidView = (view: unknown): view is MapView => {
+    const { centerX, centerY, metersPerPixel } = (view ?? {}) as Partial<MapView>
+    return [centerX, centerY, metersPerPixel].every(Number.isFinite) && metersPerPixel! >= 0.002 && metersPerPixel! <= 2
+}
 import { readLocal } from "./local.ts"
 
 /** what this viewer remembers about the panel (localStorage: a phone and a desktop each keep their own) */

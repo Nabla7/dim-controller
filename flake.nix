@@ -26,7 +26,7 @@
                         pname = "dim-controller-frontend";
                         version = "0.1.0";
                         src = ./frontend;
-                        npmDepsHash = "sha256-bbQ1gL6RamGGeOA2jlTVaoT4vAkRiXCqAeQl1U4WfPs=";
+                        npmDepsHash = "sha256-KZcgHHLbRCVsW8VuLSGR+8kUEArvpfvHcKCy0DTQ9cI=";
                         installPhase = ''
                             cp -r dist $out
                         '';

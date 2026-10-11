@@ -48,7 +48,7 @@ export function TopBar({ app, tab, onTab }: { app: ControllerApp; tab: Tab | nul
                         label="Panels"
                         value={tab}
                         onChange={(next: Tab) => onTab(next)}
-                        items={TABS.map((item) => ({ ...item, badge: item.value === "tf" && tfIssues.length ? tfIssues.length : undefined }))}
+                        items={TABS.map((item) => ({ ...item, title: item.label, badge: item.value === "tf" && tfIssues.length ? tfIssues.length : undefined }))}
                     />
                     <IconButton
                         icon="fullscreen"

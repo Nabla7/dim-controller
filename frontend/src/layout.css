@@ -108,10 +108,10 @@ body { overscroll-behavior: none; }
 }
 .drive-hud-mobile > .dr-thumbstick, .hud-center > * { pointer-events: auto; }
 .hud-center { position: relative; display: flex; flex-direction: column; gap: 10px; align-items: stretch; justify-content: flex-end; padding: 0 0 16px; min-width: 0; }
-.hud-center .stop-button { height: 72px; font-size: 20px; letter-spacing: 0.08em; touch-action: manipulation; }
+.app .hud-center .dr-btn.stop-button, :root[data-dr-dark] .app .hud-center .dr-btn.stop-button { height: 72px; font-size: 20px; letter-spacing: 0.08em; touch-action: manipulation; }
 @media (orientation: landscape) and (max-height: 520px) {
     .drive-hud-mobile { height: min(62vh, 260px); grid-template-columns: 1fr min(30vw, 260px) 1fr; }
-    .hud-center .stop-button { height: 58px; }
+    .app .hud-center .dr-btn.stop-button, :root[data-dr-dark] .app .hud-center .dr-btn.stop-button { height: 58px; }
 }
 
 /* ── docked layouts ── */
@@ -132,3 +132,24 @@ body { overscroll-behavior: none; }
 .gripper-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .gripper-row .dr-slider { min-width: 140px; flex: 1; }
 html.locked-viewport, html.locked-viewport body { touch-action: none; }
+
+/* ── the map's header wraps when its selects don't fit (a narrow floating panel) ── */
+.map-panel .dr-view-panel-head { flex-wrap: wrap; }
+
+/* ── phone ── */
+.mobile .app-topbar .dr-title, .mobile .app-topbar .dr-tabs__item > span:not(.dr-tabs__badge) { display: none; }
+.mobile .app-topbar { gap: 6px; }
+.mobile .map-panel.dr-view-panel--float { left: 8px; top: calc(98px + env(safe-area-inset-top)); }
+.mobile .map-panel.dr-view-panel--float.open { width: 46vw; height: calc(46vw + 33px); }
+.mobile .map-panel .dr-view-panel-head .dr-select, .mobile .map-panel .dr-view-panel-head .dr-view-panel-info { display: none; }
+.mobile .camera-video .dr-camera-tab:not([aria-selected="true"]) { display: none; }
+.mobile .dr-select, .mobile .dr-input { font-size: 16px; } /* iOS zooms into anything smaller */
+.mobile .side-body, .mobile .record-options, .mobile .record-topics { touch-action: pan-y; }
+.app .hud-center .dr-btn.stop-button, :root[data-dr-dark] .app .hud-center .dr-btn.stop-button { width: 100%; background: var(--close-red, var(--danger)); border-color: var(--close-red, var(--danger)); color: var(--primary-fg); font-weight: 800; }
+.app .hud-center .dr-btn.stop-button:hover, .app .hud-center .dr-btn.stop-button:active { background: var(--close-red-hover, var(--danger)); }
+.hud-center > .dr-badge { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); max-width: 92vw; white-space: nowrap; }
+.app .hud-center > .dr-btn:not(.stop-button) { width: 100%; background: var(--card); }
+@media (orientation: landscape) and (max-height: 520px) {
+    .mobile .camera-video.dr-view-panel--float { right: auto; left: 50%; transform: translateX(-50%); --cam-w: min(30vw, 260px); }
+    .hud-center > .dr-badge { position: static; transform: none; order: 3; max-width: 100%; }
+}

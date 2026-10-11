@@ -1,6 +1,5 @@
 // Settings: the layout, the robot type, then driving (or the arm panel, for an arm), then the view.
 import { Field, Heading, NumberInput, Row, Segmented, Select, Text, Toggle } from "dimos-react"
-import { RenderingSettings, useTfFrames } from "dimos-react/three"
 import type { ControllerApp } from "../logic/controller.ts"
 import { useStore } from "../logic/settings.ts"
 import { profiles } from "../profile/index.ts"
@@ -9,7 +8,8 @@ import { armShading } from "./armShading.ts"
 import { ArmPanel } from "./ArmPanel.tsx"
 import { maxLatencyOf } from "../logic/linkWatch.ts"
 import { DrivePanel } from "./DrivePanel.tsx"
-import { followFrameOptions } from "../logic/map2d.ts"
+import { RenderingSettings, useTfFrames } from "dimos-react/three"
+import { followFrameOptions } from "../logic/mapTopics.ts"
 import { LAYOUTS, setLayoutMode, useLayout } from "../logic/layout.ts"
 
 export function SettingsPanel({ app }: { app: ControllerApp }) {
