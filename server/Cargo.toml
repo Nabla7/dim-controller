@@ -22,8 +22,8 @@ serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal", "fs"] }
 tokio-util = { version = "0.7", features = ["io"] }
 tower-http = { version = "0.6", features = ["fs"] }
-# zenoh-gateway (Desktop's) pins 1.6.2: 1.7.0 through 1.10.1 deadlock answering the admin space
-zenoh = { version = "=1.6.2", default-features = false, features = ["transport_tcp", "transport_udp"] }
+# the zenoh Desktop's zenoh-gateway uses (its admin space stays off: 1.7.0 through 1.10.1 deadlock answering it)
+zenoh = { version = "=1.10.1", default-features = false, features = ["transport_tcp", "transport_udp"] }
 zune-core = "0.5.3"
 zune-jpegxl = "0.5.2"
 
