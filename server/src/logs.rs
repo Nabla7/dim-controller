@@ -209,9 +209,7 @@ pub fn topic_for(path: &Path) -> String {
 pub fn encoded(log: &Value) -> Encoded {
     Encoded {
         schema_name: "foxglove.Log",
-        schema_encoding: "jsonschema",
         schema: LOG_SCHEMA,
-        message_encoding: "json",
         data: serde_json::to_vec(log).unwrap_or_default(),
     }
 }
@@ -482,8 +480,7 @@ fn read_new(path: &Path, tail: &mut Tail, recorder: &Recorder, lines: &AtomicU64
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::image::ImageFormat;
-    use crate::record::Compression;
+    use crate::record::{Compression, Format, ImageFormat};
 
     #[test]
     fn levels_map_to_foxglove() {
@@ -624,7 +621,7 @@ mod tests {
         );
         let path = dir.join("out.mcap");
         let recorder =
-            Arc::new(Recorder::start(&path, Compression::None, ImageFormat::Raw).unwrap());
+            Arc::new(Recorder::start(&path, Format::Ros2Mcap, Compression::None, ImageFormat::Raw).unwrap());
         let tailer = LogTailer::start(recorder.clone());
         tailer.watch(&[run.clone()], &[root.clone()]);
         append(

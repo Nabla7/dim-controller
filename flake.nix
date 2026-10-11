@@ -20,6 +20,11 @@
                 let
                     rust = pkgs.rust-bin.stable.latest.default;
                     rustPlatform = pkgs.makeRustPlatform { cargo = rust; rustc = rust; };
+                    # rust-recorder is a git dependency (pinned by tag in server/Cargo.toml), so its source is hashed here
+                    cargoLock = {
+                        lockFile = ./server/Cargo.lock;
+                        outputHashes."rust-recorder-0.1.0" = "sha256-cTOYQkpshjR4R3nmKC03vKncvnT1NxWyVgNKks0TXyA=";
+                    };
 
                     # the page: React + Vite (type-checked first), from package-lock.json
                     frontend = pkgs.buildNpmPackage {
@@ -38,7 +43,7 @@
                         pname = "dim-controller-server";
                         version = "0.1.0";
                         src = ./server;
-                        cargoLock.lockFile = ./server/Cargo.lock;
+                        inherit cargoLock;
                         # the tests open zenoh sessions on loopback; `cargo test` runs them in development
                         doCheck = false;
                     };
@@ -53,7 +58,7 @@
                             pname = "dim-controller-server-${arch}-linux";
                             version = "0.1.0";
                             src = ./server;
-                            cargoLock.lockFile = ./server/Cargo.lock;
+                            inherit cargoLock;
                             nativeBuildInputs = [ pkgs.cargo-zigbuild pkgs.zig ];
                             # cargo-auditable's -Wl,--undefined is a flag zig's linker rejects
                             auditable = false;

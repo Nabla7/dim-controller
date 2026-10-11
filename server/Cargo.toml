@@ -2,7 +2,7 @@
 name = "dimos-app-server"
 version = "0.1.0"
 edition = "2021"
-description = "Controller's backend for dimOS Desktop: serves the page, drives the robot and records topics to mcap"
+description = "Controller's backend for dimOS Desktop: serves the page, drives the robot and records topics (mcap or a dimos .db)"
 
 [[bin]]
 name = "dimos-app-server"
@@ -13,22 +13,19 @@ anyhow = "1"
 axum = { version = "0.8", features = ["ws"] }
 clap = { version = "4", features = ["derive", "env"] }
 futures-util = "0.3"
-image-webp = "0.2.4"
-jpeg-encoder = "0.6"
-mcap = { version = "0.25.0", default-features = false, features = ["lz4", "zstd"] }
-png = "0.18.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal", "fs"] }
 tokio-util = { version = "0.7", features = ["io"] }
+# recording (dimos .db, dimos mcap, ROS 2 CDR mcap); no zenoh of its own, so this app's pin stays
+rust-recorder = { git = "https://github.com/jeff-hykin/rust-recorder", tag = "v0.1.0", features = ["jpegxl"] }
 tower-http = { version = "0.6", features = ["fs"] }
 # zenoh-gateway (Desktop's) pins 1.6.2: 1.7.0 through 1.10.1 deadlock answering the admin space
 zenoh = { version = "=1.6.2", default-features = false, features = ["transport_tcp", "transport_udp"] }
-zune-core = "0.5.3"
-zune-jpegxl = "0.5.2"
 
 [dev-dependencies]
-jxl-oxide = { version = "0.12.6", default-features = false }
+mcap = { version = "0.25.0", default-features = false, features = ["lz4", "zstd"] }
+rusqlite = "0.40"
 tokio-tungstenite = "0.29"
 tower = { version = "0.5", features = ["util"] }
 

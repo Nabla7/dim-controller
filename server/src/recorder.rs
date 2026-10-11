@@ -22,17 +22,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AsyncMutex;
 
-use crate::image::ImageFormat;
 use crate::labels::{self, Labels};
 use crate::logs::LogTailer;
-use crate::record::{self, Compression, Recorder};
+use crate::record::{self, Compression, Format, ImageFormat, Recorder};
 use crate::settings::Settings as Store;
+
+// subscribe-and-record, compiled against this app's zenoh (1.6.2)
+rust_recorder::zenoh_recorder!(zenoh);
 
 /// The setting key the recorder's options live under.
 pub const OPTIONS_KEY: &str = "lv.record.options";
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug, Default)]
 pub struct Settings {
+    pub format: Format,
     pub compression: Compression,
     pub image_format: ImageFormat,
 }
@@ -44,6 +47,8 @@ pub struct Options {
     /// topics that appear mid-recording join it
     #[serde(rename = "recordNew")]
     pub record_new: bool,
+    /// ros2_mcap (Foxglove), dimos_mcap, or sqlite (a dimos .db)
+    pub format: Format,
     pub compression: Compression,
     pub image_format: ImageFormat,
     /// "" = the default folder (Desktop's shared recordings folder)
@@ -58,6 +63,7 @@ impl Default for Options {
     fn default() -> Self {
         Options {
             record_new: true,
+            format: Format::Ros2Mcap,
             compression: Compression::None,
             image_format: ImageFormat::Raw,
             directory: String::new(),
@@ -75,6 +81,7 @@ impl Options {
         }
         Options {
             record_new: value["recordNew"].as_bool().unwrap_or(defaults.record_new),
+            format: parse(value, "format").unwrap_or(defaults.format),
             compression: parse(value, "compression").unwrap_or(defaults.compression),
             image_format: parse(value, "image_format").unwrap_or(defaults.image_format),
             directory: value["directory"]
@@ -270,22 +277,13 @@ impl State {
     ) -> anyhow::Result<zenoh::pubsub::Subscriber<()>> {
         let (topic, msg_type) =
             split_key(key).ok_or_else(|| anyhow::anyhow!("not a dimos key: {key}"))?;
-        let recorder = recorder.clone();
+        let stream = recorder.stream(&topic, &msg_type)?;
         let session = self.session().await?;
         let (store, throttle, owned_key) =
             (self.settings.clone(), Throttle::default(), key.to_string());
-        session
-            .declare_subscriber(key.to_string())
-            .callback(move |sample| {
-                // the rate is read per message, so a change applies to a running recording
-                if throttle.admit(record::now_nanos(), max_rate(&store, &owned_key)) {
-                    recorder.offer(&topic, Some(&msg_type), &sample.payload().to_bytes())
-                } else {
-                    recorder.skip();
-                }
-            })
-            .await
-            .map_err(|error| anyhow::anyhow!("subscribe {key}: {error}"))
+        // the rate is read per message, so a change applies to a running recording
+        let admit = move || throttle.admit(record::now_nanos(), max_rate(&store, &owned_key));
+        zenoh_recording::record_key(&session, recorder.inner().clone(), stream, key, admit).await
     }
 
     pub async fn start(
@@ -299,10 +297,14 @@ impl State {
             anyhow::bail!("already recording");
         }
         let directory = self.directory();
-        let path = record::resolve(&directory, &name.unwrap_or_else(record::default_name))?;
         let options = self.options();
+        let path = record::resolve(&directory, &name.unwrap_or_else(|| record::default_name(options.format)))?;
+        // a killed run's file is finished first, so everything listed opens
+        let (folder, skip) = (directory.clone(), path.clone());
+        let _ = tokio::task::spawn_blocking(move || record::recover_folder(&folder, Some(&skip))).await;
         let recorder = Arc::new(Recorder::start(
             &path,
+            options.format,
             options.compression,
             options.image_format,
         )?);
@@ -462,6 +464,7 @@ impl State {
                 .unwrap_or_default(),
             files: record::list(&directory),
             settings: Settings {
+                format: options.format,
                 compression: options.compression,
                 image_format: options.image_format,
             },
@@ -582,6 +585,7 @@ struct LogStatus {
 
 #[derive(Deserialize)]
 pub struct SettingsBody {
+    format: Option<Format>,
     compression: Option<Compression>,
     image_format: Option<ImageFormat>,
     /// "" = back to the default folder
@@ -726,7 +730,7 @@ pub async fn settings(
         Err(problem) => return error(StatusCode::BAD_REQUEST, problem),
     };
     let changes_file =
-        body.compression.is_some() || body.image_format.is_some() || body.directory.is_some();
+        body.format.is_some() || body.compression.is_some() || body.image_format.is_some() || body.directory.is_some();
     if changes_file && state.active.lock().await.is_some() {
         return error(
             StatusCode::CONFLICT,
@@ -745,6 +749,9 @@ pub async fn settings(
         }
     }
     let mut patch = serde_json::Map::new();
+    if let Some(format) = body.format {
+        patch.insert("format".into(), json!(format));
+    }
     if let Some(compression) = body.compression {
         patch.insert("compression".into(), json!(compression));
     }
@@ -1105,6 +1112,7 @@ mod tests {
             "rates": { "dimos/a/x.Y": 5, "dimos/b/x.Y": 0, "dimos/c/x.Y": "fast", "dimos/d/x.Y": -1 },
         }));
         assert!(!options.record_new);
+        assert_eq!(options.format, Format::Ros2Mcap, "the default stays the Foxglove mcap");
         assert_eq!(options.compression, Compression::Zstd);
         assert_eq!(
             options.image_format,

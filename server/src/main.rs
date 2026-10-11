@@ -5,12 +5,10 @@
 
 mod annotations;
 mod api;
-mod cdr;
 mod desktop;
 mod dimos_app;
 mod drive;
 mod frontend;
-mod image;
 mod labels;
 mod logs;
 mod msgs;

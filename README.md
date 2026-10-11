@@ -194,7 +194,7 @@ had in its map panel.
 
 ## Recording
 
-The red **Record** button (top left) writes an mcap of every stream on the bus (while recording it reads **Stop recording** with the time, size and how
+The red **Record** button (top left) writes every stream on the bus to a file (a Foxglove-ready mcap by default) (while recording it reads **Stop recording** with the time, size and how
 many streams); streams that appear mid-recording join it (the backend finds them, so `POST api/recorder/start` with no
 keys records the same set). **…** opens the options: the folder (Desktop's shared recordings folder by default, under
 `controller/`, or `live-viewer/` if that exists from before the rename; else `recordings` in the app's data dir), the
@@ -202,8 +202,16 @@ five biggest streams by live bandwidth (measured by the backend, `GET api/record
 it out, and **See recordings**, which opens the Recordings app (or offers to install it). **Advanced** has the image
 format (raw, png / jpeg xl lossless, webp, jpeg), mcap chunk compression, whether new streams join, whether dimos's logs
 go in, and every stream with its rate, a switch and a max rate (messages per second; the rest are skipped). The options
-are saved in the backend (`lv.record.options`, `lv.record.topics`; `PUT api/recorder/settings`). Known types are
-written as ROS 2 CDR so Foxglove opens the file; anything else is kept as raw LCM bytes with its type name.
+are saved in the backend (`lv.record.options`, `lv.record.topics`; `PUT api/recorder/settings`).
+
+**Advanced → Format** picks the file. All three are written by
+[rust-recorder](https://github.com/jeff-hykin/rust-recorder), which is pinned as a git dependency:
+
+- **mcap · ROS 2** (default): types with a lossless ROS 2 counterpart are written as CDR with full schemas, so Foxglove opens the file. That covers every dimos-lcm type except the ROS 1 actionlib messages and `ControlValues`. Anything else is kept as raw LCM bytes with its type name.
+- **mcap · dimos**: dimos' storage layout, read by dimos' `McapStore`.
+- **dimos .db**: a dimos `SqliteStore`, for `SqliteStore(path=…)` / `dimos --replay`. Images are jpeg; depth is lossless.
+
+Nothing is dropped silently. The status shows messages dropped for a full queue, rejected (could not be written in this format), and kept as raw LCM. A recording the app was killed in the middle of is finished (`.db` write-ahead log folded in, mcap summary rebuilt) the next time a recording starts in that folder.
 
 The running dimos's own logs go into the same file. When recording starts the backend asks Desktop where they are
 (`GET /dimos/runs`: each run's `log_dir`; on newer Desktops `GET /dimos/paths` as a fallback) and the backend tails

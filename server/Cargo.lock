@@ -42,21 +42,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alloc-no-stdlib"
-version = "2.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc7bb162ec39d46ab1ca8c77bf72e890535becd1751bb45f64c597edb4c8c6b3"
-
-[[package]]
-name = "alloc-stdlib"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e76a019e91224d279006ff972f1e984179a6e9feb050adba6ce8274aef23195"
-dependencies = [
- "alloc-no-stdlib",
-]
-
-[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -278,16 +263,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
 dependencies = [
  "generic-array",
-]
-
-[[package]]
-name = "brotli-decompressor"
-version = "5.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a32acac15fe1967bc3986b2a6347dffc965602354ea6f450ad07e8bfd253583"
-dependencies = [
- "alloc-no-stdlib",
- "alloc-stdlib",
 ]
 
 [[package]]
@@ -659,11 +634,9 @@ dependencies = [
  "axum",
  "clap",
  "futures-util",
- "image-webp",
- "jpeg-encoder",
- "jxl-oxide",
  "mcap",
- "png",
+ "rusqlite",
+ "rust-recorder",
  "serde",
  "serde_json",
  "tokio",
@@ -672,8 +645,6 @@ dependencies = [
  "tower",
  "tower-http",
  "zenoh",
- "zune-core",
- "zune-jpegxl",
 ]
 
 [[package]]
@@ -755,6 +726,18 @@ dependencies = [
  "parking",
  "pin-project-lite",
 ]
+
+[[package]]
+name = "fallible-iterator"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
+
+[[package]]
+name = "fallible-streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
 
 [[package]]
 name = "fastrand"
@@ -1027,6 +1010,18 @@ name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+dependencies = [
+ "foldhash 0.2.0",
+]
+
+[[package]]
+name = "hashlink"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a596f1b20ed2cc5ecac41a164aaebc7258057060f06c0cf7a2ba3991ee7990fb"
+dependencies = [
+ "hashbrown 0.17.1",
+]
 
 [[package]]
 name = "heck"
@@ -1323,9 +1318,9 @@ dependencies = [
 
 [[package]]
 name = "jpeg-encoder"
-version = "0.6.1"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b454d911ac55068f53495488d8ccd0646eaa540c033a28ee15b07838afafb01f"
+checksum = "a0370574b86f7eca156b9f298392b5e69a23f8c86f3f865add60bbc2e79467a6"
 
 [[package]]
 name = "js-sys"
@@ -1347,182 +1342,6 @@ dependencies = [
  "pest",
  "pest_derive",
  "serde",
-]
-
-[[package]]
-name = "jxl-bitstream"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b480e752277e29eb4054f69546887a9b84656fe78c08f54ba5850ced98a378fe"
-dependencies = [
- "tracing",
-]
-
-[[package]]
-name = "jxl-coding"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd972bcd125e776f1eb241ac50e39f956095a1c2770c64736c968f8946bd9a3c"
-dependencies = [
- "jxl-bitstream",
- "tracing",
-]
-
-[[package]]
-name = "jxl-color"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f316b1358c1711755b3ee8e8cb5c4a1dad12e796233088a7a513440782de80b2"
-dependencies = [
- "jxl-bitstream",
- "jxl-coding",
- "jxl-grid",
- "jxl-image",
- "jxl-oxide-common",
- "jxl-threadpool",
- "tracing",
-]
-
-[[package]]
-name = "jxl-frame"
-version = "0.13.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d967c6fd669c7c01060b5022d8835fa82fd46b06ffc98b549f17600a097c2b3"
-dependencies = [
- "jxl-bitstream",
- "jxl-coding",
- "jxl-grid",
- "jxl-image",
- "jxl-modular",
- "jxl-oxide-common",
- "jxl-threadpool",
- "jxl-vardct",
- "tracing",
-]
-
-[[package]]
-name = "jxl-grid"
-version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01671307879a033bfa52e6e8784b941aca770b3f3a7d33830b455b6844f793fb"
-dependencies = [
- "tracing",
-]
-
-[[package]]
-name = "jxl-image"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5f752d62577c702a94dbbce4045caf08cb58639e8a4d56464b40ecf33ffe565"
-dependencies = [
- "jxl-bitstream",
- "jxl-grid",
- "jxl-oxide-common",
- "tracing",
-]
-
-[[package]]
-name = "jxl-jbr"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e35d032bcec660647828527ff42c6f5776d2fd44b8357f9f6d9ac6dc07218e46"
-dependencies = [
- "brotli-decompressor",
- "jxl-bitstream",
- "jxl-frame",
- "jxl-grid",
- "jxl-image",
- "jxl-modular",
- "jxl-oxide-common",
- "jxl-threadpool",
- "jxl-vardct",
- "tracing",
-]
-
-[[package]]
-name = "jxl-modular"
-version = "0.11.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a2f045b24c738dd91d482be385512b512721ae08a671bd4b27bf1c47f215235"
-dependencies = [
- "jxl-bitstream",
- "jxl-coding",
- "jxl-grid",
- "jxl-oxide-common",
- "jxl-threadpool",
- "tracing",
-]
-
-[[package]]
-name = "jxl-oxide"
-version = "0.12.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d36c662923f47586880211f3bc7c0d83fb3a9b410d278c7bde93450748abeef3"
-dependencies = [
- "brotli-decompressor",
- "jxl-bitstream",
- "jxl-color",
- "jxl-frame",
- "jxl-grid",
- "jxl-image",
- "jxl-jbr",
- "jxl-oxide-common",
- "jxl-render",
- "jxl-threadpool",
- "tracing",
-]
-
-[[package]]
-name = "jxl-oxide-common"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b62394c5021b3a9e7e0dbb2d639d555d019090c9946c39f6d3b09d390db4157b"
-dependencies = [
- "jxl-bitstream",
-]
-
-[[package]]
-name = "jxl-render"
-version = "0.12.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d34386bfdb6a19b5a30cc9beb4d475d537422c31ae8c39bb69640fcce3fcaf19"
-dependencies = [
- "bytemuck",
- "jxl-bitstream",
- "jxl-coding",
- "jxl-color",
- "jxl-frame",
- "jxl-grid",
- "jxl-image",
- "jxl-modular",
- "jxl-oxide-common",
- "jxl-threadpool",
- "jxl-vardct",
- "tracing",
-]
-
-[[package]]
-name = "jxl-threadpool"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25f15eb830aa77a7f21148d72e153562a26bfe570139bd4922eab1908dd499d3"
-dependencies = [
- "tracing",
-]
-
-[[package]]
-name = "jxl-vardct"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce72a18c6d3a47172ab6c479be2bdb56f22066b5d7092663f03b4490820b4511"
-dependencies = [
- "jxl-bitstream",
- "jxl-coding",
- "jxl-grid",
- "jxl-modular",
- "jxl-oxide-common",
- "jxl-threadpool",
- "tracing",
 ]
 
 [[package]]
@@ -1590,6 +1409,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "libsqlite3-sys"
+version = "0.38.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1d20bef17f513b9b3004532233187769cd072d790971f4e4da0e346eb6401e8"
+dependencies = [
+ "cc",
+ "pkg-config",
+ "vcpkg",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1628,6 +1458,15 @@ name = "lz4_flex"
 version = "0.11.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "373f5eceeeab7925e0c1098212f2fbc4d416adec9d35051a6ab251e824c1854a"
+dependencies = [
+ "twox-hash",
+]
+
+[[package]]
+name = "lz4_flex"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ecbdfe44b1bd960b68170b417450a628c43f7cf56bb3c5317e61cb230ee7f226"
 dependencies = [
  "twox-hash",
 ]
@@ -2170,6 +2009,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsqlite-vfs"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c51c9ae4df8a7fba42103df5c621fa3c37eccf3a3c650879e90fc48b11cc192c"
+dependencies = [
+ "hashbrown 0.16.1",
+ "thiserror",
+]
+
+[[package]]
+name = "rusqlite"
+version = "0.40.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23f2a97da3e3873c73cb2a2e71b35c40ff95e0b1eefa8d72d8499a6928c3b5b3"
+dependencies = [
+ "bitflags 2.13.1",
+ "fallible-iterator",
+ "fallible-streaming-iterator",
+ "hashlink",
+ "libsqlite3-sys",
+ "smallvec",
+ "sqlite-wasm-rs",
+]
+
+[[package]]
+name = "rust-recorder"
+version = "0.1.0"
+source = "git+https://github.com/jeff-hykin/rust-recorder?tag=v0.1.0#193cd2048e370c000f6de7913e2b5c85c88b73dc"
+dependencies = [
+ "anyhow",
+ "crossbeam-channel",
+ "image-webp",
+ "jpeg-encoder",
+ "lz4_flex 0.14.0",
+ "mcap",
+ "png",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "zune-core",
+ "zune-jpegxl",
+]
+
+[[package]]
 name = "rustc_version"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2503,6 +2386,18 @@ name = "spin"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "023a211cb3138dbc438680b32560ad89f699977624c9f8dbb95a47d5b4c07dd3"
+
+[[package]]
+name = "sqlite-wasm-rs"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc3efc0da82635d7e1ced0053bbbfa8c7ab9645d0bf36ceb4f7127bb85315d75"
+dependencies = [
+ "cc",
+ "js-sys",
+ "rsqlite-vfs",
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "stabby"
@@ -3010,6 +2905,12 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
+
+[[package]]
+name = "vcpkg"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "vec_map"
@@ -3596,7 +3497,7 @@ dependencies = [
  "crossbeam-utils",
  "flume",
  "lazy_static",
- "lz4_flex",
+ "lz4_flex 0.11.6",
  "paste",
  "rand 0.8.7",
  "ringbuffer-spsc",

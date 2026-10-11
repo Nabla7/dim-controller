@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { persistentStore, useStore } from "../core/store.ts"
-import { recorder, type Compression, type ImageFormat, type StreamRate } from "../core/recorder.ts"
+import { recorder, type Compression, type ImageFormat, type RecordFormat, type StreamRate } from "../core/recorder.ts"
 import { biggestStreams, formatBytes, formatClock, formatRate, inRecordingsFolder, isRecorded, isRpcTopic, TOP_STREAMS } from "../core/recordFormat.ts"
 import type { Topic } from "../core/transport.ts"
 import { Field, Select, Toggle } from "./controls.tsx"
@@ -209,6 +209,9 @@ function RecordOptions({ app, error, onClose }: { app: ViewerApp; error: string 
                     <span className="hint record-path" title={status.recording.path ?? ""}>{status.recording.path}</span>
                     {status.recording.dropped > 0 && <span className="problem">{status.recording.dropped.toLocaleString()} dropped: the disk can't keep up</span>}
                     {status.recording.skipped > 0 && <span className="hint">{status.recording.skipped.toLocaleString()} left out by max rates</span>}
+                    {(status.recording.rejected ?? 0) > 0 && <span className="problem">{status.recording.rejected!.toLocaleString()} couldn't be written in this format</span>}
+                    {(status.recording.fallback ?? 0) > 0 && <span className="hint">{status.recording.fallback!.toLocaleString()} kept as raw LCM (no ROS 2 type)</span>}
+                    {status.recording.failure && <span className="problem">stopped: {status.recording.failure}</span>}
                     {options.logs && <span className="hint">{status.logs.dirs.length ? `${status.logs.lines.toLocaleString()} dimos log lines` : "no dimos run logs found"}</span>}
                 </div>
             )}
@@ -268,7 +271,14 @@ function RecordOptions({ app, error, onClose }: { app: ViewerApp; error: string 
             </button>
             {advanced && (
                 <div className="record-advanced" data-testid="record-advanced">
-                    <Field label="Images" hint={active ? "can change once this recording ends" : "how camera images are stored"}>
+                    <Field label="Format" hint={active ? "can change once this recording ends" : "the file a recording is written as"}>
+                        <Select
+                            value={options.format ?? "ros2_mcap"}
+                            options={[["ros2_mcap", "mcap · ROS 2 (Foxglove)"], ["dimos_mcap", "mcap · dimos"], ["sqlite", "dimos .db (replay)"]]}
+                            onChange={(format) => run(recorder.settings({ format: format as RecordFormat }))}
+                        />
+                    </Field>
+                    <Field label="Images" hint={active ? "can change once this recording ends" : (options.format ?? "ros2_mcap") === "ros2_mcap" ? "how camera images are stored" : "dimos stores images as jpeg (depth lossless)"}>
                         <Select
                             value={options.image_format}
                             options={[["raw", "raw (exact)"], ["png", "png (lossless)"], ["jpegxl", "jpeg xl (lossless)"], ["webp", "webp"], ["jpeg", "jpeg"]]}

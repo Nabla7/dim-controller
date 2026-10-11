@@ -154,9 +154,7 @@ pub fn write(recorder: &Recorder, label: &Label, action: &str) {
         LABEL_TOPIC,
         Encoded {
             schema_name: "dimos.LocationLabel",
-            schema_encoding: "jsonschema",
             schema: LABEL_SCHEMA,
-            message_encoding: "json",
             data: as_json(message),
         },
         time,
@@ -165,9 +163,7 @@ pub fn write(recorder: &Recorder, label: &Label, action: &str) {
         SCENE_TOPIC,
         Encoded {
             schema_name: "foxglove.SceneUpdate",
-            schema_encoding: "jsonschema",
             schema: SCENE_SCHEMA,
-            message_encoding: "json",
             data: as_json(scene_update(label, action, time)),
         },
         time,

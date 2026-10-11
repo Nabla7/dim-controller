@@ -9,8 +9,18 @@ export interface RecordingStatus {
     dropped: number
     /** left out by a stream's max rate */
     skipped: number
+    /** couldn't be written in this format (invalid payload or time) */
+    rejected?: number
+    /** ROS 2 mcap: kept as raw LCM because no ROS 2 type fits */
+    fallback?: number
+    /** what stopped the recording (disk full, ...) */
+    failure?: string | null
+    format?: RecordFormat | null
     seconds: number
 }
+
+/** ros2_mcap: CDR that opens in Foxglove; dimos_mcap: dimos' storage layout; sqlite: a dimos .db (SqliteStore, --replay) */
+export type RecordFormat = "ros2_mcap" | "dimos_mcap" | "sqlite"
 
 export type ImageFormat = "raw" | "jpeg" | "png" | "webp" | "jpegxl"
 export type Compression = "none" | "lz4" | "zstd"
@@ -18,6 +28,7 @@ export type Compression = "none" | "lz4" | "zstd"
 /** The recorder's saved options (the lv.record.options setting, server/src/recorder.rs `Options`). */
 export interface RecorderOptions {
     recordNew: boolean
+    format: RecordFormat
     compression: Compression
     image_format: ImageFormat
     /** "" = the default folder */
@@ -53,7 +64,7 @@ export interface RecorderStatus {
     /** dimos log dirs being tailed into the recording, and the lines written so far */
     logs: { dirs: string[]; lines: number }
     files: RecordingFile[]
-    settings: { compression: Compression; image_format: ImageFormat }
+    settings: { format: RecordFormat; compression: Compression; image_format: ImageFormat }
     /** where the next recording goes */
     directory: string
     /** where it goes when no folder is chosen */
@@ -110,7 +121,7 @@ async function call(path: string, init?: RequestInit) {
     return body
 }
 
-export const DEFAULT_OPTIONS: RecorderOptions = { recordNew: true, compression: "none", image_format: "raw", directory: "", logs: true, rates: {} }
+export const DEFAULT_OPTIONS: RecorderOptions = { recordNew: true, format: "ros2_mcap", compression: "none", image_format: "raw", directory: "", logs: true, rates: {} }
 
 class RecorderClient {
     readonly status = new Store<RecorderStatus>({
@@ -118,7 +129,7 @@ class RecorderClient {
         keys: [],
         logs: { dirs: [], lines: 0 },
         files: [],
-        settings: { compression: "none", image_format: "raw" },
+        settings: { format: "ros2_mcap", compression: "none", image_format: "raw" },
         directory: "",
         default_directory: "",
         recordings_root: null,
