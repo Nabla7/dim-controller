@@ -84,7 +84,8 @@ impl Recorder {
         Ok(stream)
     }
 
-    /// Records a wire message received now; a full queue drops it (counted).
+    /// Records a wire message received now; a full queue drops it (counted). (The app records through zenoh_recording.)
+    #[cfg(test)]
     pub fn offer(&self, topic: &str, msg_type: &str, payload: &[u8]) {
         if let Ok(stream) = self.stream(topic, msg_type) {
             self.inner.record(&stream, payload);
