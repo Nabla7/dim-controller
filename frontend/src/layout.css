@@ -133,9 +133,6 @@ body { overscroll-behavior: none; }
 .gripper-row .dr-slider { min-width: 140px; flex: 1; }
 html.locked-viewport, html.locked-viewport body { touch-action: none; }
 
-/* ── the map's header wraps when its selects don't fit (a narrow floating panel) ── */
-.map-panel .dr-view-panel-head { flex-wrap: wrap; }
-
 /* ── phone ── */
 .mobile .app-topbar .dr-title, .mobile .app-topbar .dr-tabs__item > span:not(.dr-tabs__badge) { display: none; }
 .mobile .app-topbar { gap: 6px; }

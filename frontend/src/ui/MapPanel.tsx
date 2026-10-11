@@ -86,6 +86,7 @@ export function MapPanel({ app, mobile, dock }: { app: ControllerApp; mobile: bo
                     : undefined}
                 resize={floating && open && !mobile ? { corner: "right", minimum: { width: MIN_WIDTH, height: MIN_HEIGHT }, onDone: (next: { x: number; y: number; width: number; height: number }) => update(next) } : null}
                 bodyClassName="map-body"
+                wrapHead
                 head={
                     <>
                         {/* folded, a click on the title opens it (a drag moves it instead) */}
