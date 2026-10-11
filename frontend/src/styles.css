@@ -47,8 +47,8 @@ h3.dim-label { display: block; margin: 14px 0 6px; }
 
 /* recording sits in the bar (a phone: its top-right corner): the Record button and "…" (ui/RecordControl.tsx) */
 .action-dock .record-control, .phone-corners .record-control { display: flex; align-items: center; gap: 4px; padding: 0; background: none; border: 0; box-shadow: none; backdrop-filter: none;
-    /* recording is red in every skin (Portal's --danger is amber, and a record button should read as one) */
-    --record: var(--lv-stop); }
+    /* recording is red in every skin: Desktop's --close-red, else a fixed red (Portal's --danger is amber, and a record button should read as one) */
+    --record: var(--close-red, #ef5350); }
 .record-toggle { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .record-dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; flex: none; }
 .record-toggle.recording .record-dot { background: var(--record); border-radius: 2px; animation: blink 1s infinite; }
