@@ -37,7 +37,7 @@ provides:
         - api/events/*
     description: >-
         Controller: drive the running robot (keyboard / sticks, velocity commands, stop) while watching its live 3D view
-        (point clouds, costmap, pose, planned path, TF) and cameras; recording (ROS 2 or dimos mcap, or a dimos .db), location labels, live 3D
+        (point clouds, costmap, pose, planned path, TF) and cameras; recording to mcap, location labels, live 3D
         annotations (boxes with labels every open page shows), and the view's settings (layers, styles, fixed frame,
         follow). Coordinates are meters in the world frame, +z up. GET api/status is the overview; GET api/view what the
         user sees.
@@ -118,7 +118,7 @@ provides:
             method: POST
             path: api/recorder/start
             description: >-
-                Start recording (in the chosen format). Without keys: every topic on the bus except the ones turned off in the recorder
+                Start recording to mcap. Without keys: every topic on the bus except the ones turned off in the recorder
                 (lv.record.topics), and topics that appear later join (unless recordNew is off); the running dimos's
                 jsonl logs go in too (unless logs is off). Each stream is kept to its max rate (rates). Location labels
                 are written into it.
@@ -129,7 +129,7 @@ provides:
                         type: string
                     type: array
                 name:
-                    description: file name (default controller_<time>.mcap, or .db for the dimos .db format)
+                    description: file name (default controller_<time>.mcap)
                     type: string
         -
             method: POST
