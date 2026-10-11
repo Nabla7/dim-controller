@@ -1,18 +1,26 @@
 // The 3D view's right-click menu: label the clicked spot (a text label at that point in the fixed frame, written into
 // the recording if one runs) or remove the label under the cursor. A right-drag still pans: only a right click that
-// barely moved opens it (a long press on touch). "Go here" publishes clicked_point: it sends the spot to the nav stack (one message).
+// barely moved opens it (a long press on touch). "Go here" publishes clicked_point: it sends the spot to the nav stack
+// (one message).
 import { useEffect, useRef, useState } from "react"
-import type * as THREE from "three"
-import type { ViewerApp } from "../core/app.ts"
-import type { LocationLabel } from "../core/labels.ts"
-import { recorder } from "../core/recorder.ts"
-import { clickedPoint } from "../core/clickedPoint.ts"
-import { createRightClickTip, narrate, RIGHT_CLICK_TIP_TEXT } from "../core/rightClickTip.ts"
+import { Button, Column, Panel, Row, Text, TextInput, useToast } from "dimos-react"
+import type { ControllerApp } from "../logic/controller.ts"
+import type { LocationLabel } from "../logic/labels.ts"
+import { recorder } from "../logic/recorder.ts"
+import { clickedPoint } from "../logic/clickedPoint.ts"
+import { createRightClickTip, narrate, RIGHT_CLICK_TIP_TEXT } from "../logic/rightClickTip.ts"
+import { useStore } from "../logic/settings.ts"
+
+interface Point {
+    x: number
+    y: number
+    z: number
+}
 
 interface Menu {
     x: number
     y: number
-    point: THREE.Vector3 | null
+    point: Point | null
     on: string
     near: LocationLabel | null
     /** typing the label's text */
@@ -21,22 +29,27 @@ interface Menu {
 
 const fmt = (value: number) => value.toFixed(2)
 
-export function SceneMenu({ app }: { app: ViewerApp }) {
+export function SceneMenu({ app }: { app: ControllerApp }) {
     const [menu, setMenu] = useState<Menu | null>(null)
     const [text, setText] = useState("")
-    const [note, setNote] = useState<string | null>(null)
     const box = useRef<HTMLDivElement>(null)
+    const toast = useToast()
+    const { ready } = useStore(app.sceneReady)
 
     useEffect(() => {
-        const canvas = app.viewer.canvas
+        const viewer = ready ? app.scene?.viewer : null
+        if (!viewer) {
+            return
+        }
+        const canvas: HTMLCanvasElement = viewer.renderer.domElement
         let down: { x: number; y: number } | null = null
         let leftDown: { x: number; y: number } | null = null
         const tip = createRightClickTip({
-            show: () => narrate(RIGHT_CLICK_TIP_TEXT).then((narrated) => !narrated && setNote(RIGHT_CLICK_TIP_TEXT)),
+            show: () => narrate(RIGHT_CLICK_TIP_TEXT).then((narrated) => !narrated && toast.info(RIGHT_CLICK_TIP_TEXT)),
         })
         const open = (x: number, y: number) => {
             tip.rightClicked()
-            const picked = app.viewer.pick(x, y)
+            const picked = viewer.pick(x, y)
             setText("")
             setMenu({ x, y, point: picked?.point ?? null, on: picked?.on ?? "", near: app.labels.near(x, y), editing: false })
         }
@@ -76,7 +89,7 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
             canvas.removeEventListener("pointerup", onUp)
             canvas.removeEventListener("contextmenu", onContext)
         }
-    }, [app])
+    }, [app, ready])
 
     useEffect(() => {
         if (!menu) {
@@ -92,14 +105,6 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
         }
     }, [menu])
 
-    useEffect(() => {
-        if (!note) {
-            return
-        }
-        const timer = setTimeout(() => setNote(null), 3000)
-        return () => clearTimeout(timer)
-    }, [note])
-
     const save = async () => {
         if (!menu?.point || !text.trim()) {
             return
@@ -108,10 +113,10 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
         setMenu(null)
         try {
             const { recorded } = await app.labels.create(text.trim(), point)
-            setNote(recorded ? "Label saved to the recording" : "Label added (no recording running)")
+            toast.ok(recorded ? "Label saved to the recording" : "Label added (no recording running)")
             recorder.refresh()
         } catch (error) {
-            setNote(`Couldn't add the label: ${error instanceof Error ? error.message : error}`)
+            toast.error(`Couldn't add the label: ${error instanceof Error ? error.message : error}`)
         }
     }
 
@@ -120,69 +125,57 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
         try {
             await app.labels.remove(label.id)
         } catch (error) {
-            setNote(`Couldn't remove the label: ${error instanceof Error ? error.message : error}`)
+            toast.error(`Couldn't remove the label: ${error instanceof Error ? error.message : error}`)
         }
     }
 
-    const publishClickedPoint = async (point: THREE.Vector3) => {
+    const publishClickedPoint = async (point: Point) => {
         setMenu(null)
         const client = app.connection.client
         if (!client || client.state === "lost") {
-            setNote("Couldn't publish clicked_point: not connected to the gateway")
+            toast.error("Couldn't publish clicked_point: not connected to the gateway")
             return
         }
-        const frame = app.viewer.fixedFrame
+        const frame = app.fixedFrame
         const { key, bytes } = clickedPoint(point, frame)
         try {
             await client.put(key, bytes)
-            setNote(`Published clicked_point ${fmt(point.x)}, ${fmt(point.y)}, ${fmt(point.z)} (${frame})`)
+            toast.ok(`Published clicked_point ${fmt(point.x)}, ${fmt(point.y)}, ${fmt(point.z)} (${frame})`)
         } catch (error) {
-            setNote(`Couldn't publish clicked_point: ${error instanceof Error ? error.message : error}`)
+            toast.error(`Couldn't publish clicked_point: ${error instanceof Error ? error.message : error}`)
         }
     }
 
+    if (!menu) {
+        return null
+    }
     // keep the menu on screen
-    const left = menu ? Math.min(menu.x, innerWidth - 250) : 0
-    const top = menu ? Math.min(menu.y, innerHeight - 175) : 0
+    const left = Math.min(menu.x, innerWidth - 250)
+    const top = Math.min(menu.y, innerHeight - 175)
     return (
-        <>
-            {menu && (
-                <div ref={box} className="dim-panel scene-menu" style={{ left, top }} role="menu" onContextMenu={(event) => event.preventDefault()}>
-                    {menu.point && (
-                        <div className="scene-menu-where dim-mono">
-                            {fmt(menu.point.x)}, {fmt(menu.point.y)}, {fmt(menu.point.z)} · {app.viewer.fixedFrame}
-                            {menu.on === "ground" ? " · ground" : ""}
-                        </div>
+        <div ref={box} className="scene-menu" style={{ left, top }} role="menu" onContextMenu={(event) => event.preventDefault()}>
+            <Panel glass>
+                {menu.point && (
+                    <Text mono small muted>
+                        {fmt(menu.point.x)}, {fmt(menu.point.y)}, {fmt(menu.point.z)} · {app.fixedFrame}
+                        {menu.on === "ground" ? " · ground" : ""}
+                    </Text>
+                )}
+                {menu.editing
+                    ? (
+                        <Row gap={6}>
+                            <TextInput autoFocus placeholder="What happened here?" value={text} onChange={setText} onEnter={save} />
+                            <Button variant="primary" size="sm" disabled={!text.trim()} onClick={save}>Add</Button>
+                        </Row>
+                    )
+                    : (
+                        <Column gap={2}>
+                            <Button variant="ghost" block role="menuitem" disabled={!menu.point} onClick={() => publishClickedPoint(menu.point!)}>Go here</Button>
+                            <Button variant="ghost" block role="menuitem" disabled={!menu.point} onClick={() => setMenu({ ...menu, editing: true })}>Label this location…</Button>
+                            {menu.near && <Button variant="ghost" block role="menuitem" onClick={() => remove(menu.near!)}>Remove label “{menu.near.label}”</Button>}
+                        </Column>
                     )}
-                    {menu.editing ? (
-                        <form
-                            className="scene-menu-edit"
-                            onSubmit={(event) => {
-                                event.preventDefault()
-                                save()
-                            }}
-                        >
-                            <input className="dim-input" autoFocus placeholder="What happened here?" value={text} onChange={(event) => setText(event.target.value)} />
-                            <button type="submit" className="dim-btn primary" disabled={!text.trim()}>Add</button>
-                        </form>
-                    ) : (
-                        <>
-                            <button type="button" role="menuitem" className="scene-menu-item" disabled={!menu.point} onClick={() => publishClickedPoint(menu.point!)}>
-                                Go here
-                            </button>
-                            <button type="button" role="menuitem" className="scene-menu-item" disabled={!menu.point} onClick={() => setMenu({ ...menu, editing: true })}>
-                                Label this location…
-                            </button>
-                            {menu.near && (
-                                <button type="button" role="menuitem" className="scene-menu-item" onClick={() => remove(menu.near!)}>
-                                    Remove label “{menu.near.label}”
-                                </button>
-                            )}
-                        </>
-                    )}
-                </div>
-            )}
-            {note && <div className="dim-panel scene-note">{note}</div>}
-        </>
+            </Panel>
+        </div>
     )
 }

@@ -1,7 +1,7 @@
 // Settings → Layout: the saved choice (lv.layout, through the backend like every setting), and the boxes each layout
 // gives its regions at a desktop's and a phone's size.
 import { assert, assertEquals } from "jsr:@std/assert@1"
-import { applyRemoteSetting } from "../src/core/store.ts"
+import { applyRemoteSetting } from "../src/logic/settings.ts"
 import {
     DEFAULT_LAYOUT,
     type Frame,
@@ -19,7 +19,7 @@ import {
     swapTiles,
     TILE_REGIONS,
     toggleMaximized,
-} from "../src/ui/layout.ts"
+} from "../src/logic/layout.ts"
 
 const desktop: Frame = { width: 1440, height: 900, top: 48, bottom: 0, mobile: false, sticks: 0, sidePanel: false, gap: 8 }
 const phone: Frame = { width: 390, height: 844, top: 44, bottom: 0, mobile: true, sticks: stickHeight(390, 844), sidePanel: false, gap: 8 }

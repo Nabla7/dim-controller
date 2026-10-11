@@ -1,69 +1,62 @@
-// The page, in the layout picked in Settings (ui/layout.ts). Classic: the 3D view (or a camera) fills the screen and
+// The page, in the layout picked in Settings (logic/layout.ts). Classic: the 3D view (or a camera) fills the screen and
 // panels float over it. Cockpit, Split and Tiles: each region (camera, 3D view, map, drive, status, settings) docked in
 // the box the layout gives it. On a phone the side panels become a bottom sheet and driving moves to on-screen sticks,
-// whatever the layout.
-import { type CSSProperties, type PointerEvent, type ReactNode, useEffect, useRef, useState } from "react"
-import { ViewerApp } from "./core/app.ts"
-import { persistentStore, Store, useStore } from "./core/store.ts"
+// whatever the layout. Every piece of UI is dimos-react's; this file only composes them.
+import { type CSSProperties, type PointerEvent, type ReactNode, useEffect, useState } from "react"
+import { EmptyState, ErrorBoundary, Icon, Text, useMobile, ViewPanel } from "dimos-react"
+import { TfFeed } from "dimos-react/three"
+import type { ControllerApp } from "./logic/controller.ts"
+import { persistentStore, useStore } from "./logic/settings.ts"
 import { TopBar } from "./ui/TopBar.tsx"
 import { RecordControl } from "./ui/RecordControl.tsx"
 import { type SidePlacement, SidePanel, type Tab } from "./ui/SidePanel.tsx"
-import { CameraPanels, chooseLayout, type CameraLayout } from "./ui/CameraPanels.tsx"
+import { CameraPanels, type CameraLayout, chooseLayout } from "./ui/CameraPanels.tsx"
 import { MapPanel } from "./ui/MapPanel.tsx"
 import { DriveHud } from "./ui/DriveHud.tsx"
-import { useDriveKeys } from "./ui/useDriveKeys.ts"
-import { useArmKeys } from "./ui/useArmKeys.ts"
+import { useDriveKeys } from "./logic/useDriveKeys.ts"
+import { useArmKeys } from "./logic/useArmKeys.ts"
 import { ArmHud } from "./ui/ArmHud.tsx"
-import { useLockedViewport, useMobile } from "./ui/useMobile.ts"
-import { StatsOverlay } from "./ui/StatsOverlay.tsx"
 import { SceneMenu } from "./ui/SceneMenu.tsx"
 import { ScenePanel } from "./ui/ScenePanel.tsx"
 import { EmptyLayer, useOnboarding } from "./ui/Onboarding.tsx"
-import { type Frame, layoutSettings, maximized, type Rect, type Region, regionRects, stickHeight, toggleMaximized, useLayout } from "./ui/layout.ts"
-import { type Dock, Panel } from "./ui/Panel.tsx"
+import { type Frame, layoutSettings, maximized, type Rect, type Region, regionRects, stickHeight, toggleMaximized, useLayout } from "./logic/layout.ts"
 import { StatusPanel } from "./ui/StatusPanel.tsx"
 import { SettingsPanel } from "./ui/SettingsPanel.tsx"
-import { Icon } from "./ui/icons.tsx"
-import { ContainCrash } from "./ui/Unavailable.tsx"
+import { TfIssuesWatch } from "./ui/sceneState.tsx"
 
-const noRobot = new Store({ type: "dog" as const, auto: true, reason: "" })
 const cameraLayout = persistentStore<CameraLayout>("lv.cameras", { panels: [], main: null })
 
-declare global {
-    interface Window {
-        __lv?: ViewerApp
-    }
+/** A docked panel's part of the layout (dimos-react ViewPanel's `dock`). */
+export interface Dock {
+    region: Region
+    rect: Rect | null
+    maximized: boolean
+    onMaximize: () => void
+    tiles?: { order: Region[]; onOrder: (order: Region[]) => void }
 }
 
-export function App() {
-    const host = useRef<HTMLDivElement>(null)
-    const [app, setApp] = useState<ViewerApp | null>(null)
-    const mobile = useMobile()
+/** Keeps one view's crash in place (it says so there) instead of blanking the page. */
+export function Contained({ what, children }: { what: string; children: ReactNode }) {
+    return (
+        <ErrorBoundary
+            onError={(error: unknown) => console.error(`${what} crashed`, error)}
+            fallback={({ error }: { error: Error }) => <EmptyState layer icon="warn" tone="danger" title={`${what} unavailable`} message={String(error?.message ?? error)} />}
+        >
+            {children}
+        </ErrorBoundary>
+    )
+}
+
+export function App({ app }: { app: ControllerApp }) {
+    const mobile = useMobile(720)
     useLockedViewport(mobile)
     // no panel open at first: the 3D view gets the whole screen, and the Record button the top-left corner
     const [tab, setTab] = useState<Tab | null>(null)
-
-    useEffect(() => {
-        const created = new ViewerApp(host.current!)
-        window.__lv = created
-        setApp(created)
-        // theme.js picks Portal (dark) / Research (light), sets body.dark and fires `dim-theme`
-        const theme = () => {
-            const dark = document.body.classList.contains("dark")
-            document.querySelector('meta[name="theme-color"]')?.setAttribute("content", getComputedStyle(document.body).getPropertyValue("--bg").trim())
-            created.viewer.setTheme(dark)
-        }
-        theme()
-        addEventListener("dim-theme", theme)
-        return () => removeEventListener("dim-theme", theme)
-    }, [])
-
     const cameras = useStore(cameraLayout)
-    const robot = useStore(app?.robot ?? noRobot)
-    // the profile changes with the robot type: keys follow it
-    const profile = app && robot ? app.profile : null
-    useDriveKeys(app?.drive ?? null, profile)
-    useArmKeys(app?.arm ?? null, profile?.type === "arm" ? profile : null)
+    const robot = useStore(app.robot)
+    const profile = robot ? app.profile : null
+    useDriveKeys(app.drive, profile)
+    useArmKeys(app.arm, profile?.type === "arm" ? profile : null)
 
     const layout = useLayout()
     const classic = layout.mode === "classic"
@@ -74,13 +67,14 @@ export function App() {
     const sideTab = settingsTile && tab === "settings" ? null : tab
     const frame = useFrame(mobile, layout.mode === "split" && sideTab !== null)
     const rects = regionRects(layout.mode, frame, layout.tiles, maximizedRegion)
-    const dock = (region: Region): Dock | null => classic ? null : {
-        region,
-        rect: rects[region] ?? null,
-        maximized: maximizedRegion === region,
-        onMaximize: () => toggleMaximized(region),
-        tiles: layout.mode === "tiles" ? { order: layout.tiles, onOrder: (tiles) => layoutSettings.update({ tiles }) } : undefined,
-    }
+    const dock = (region: Region): Dock | null =>
+        classic ? null : {
+            region,
+            rect: rects[region] ?? null,
+            maximized: maximizedRegion === region,
+            onMaximize: () => toggleMaximized(region),
+            tiles: layout.mode === "tiles" ? { order: layout.tiles, onOrder: (tiles) => layoutSettings.update({ tiles }) } : undefined,
+        }
     // Classic only: a camera can take the screen (the 3D view becomes its picture-in-picture)
     const mainCamera = classic && cameras.main !== null && cameras.panels.some((panel) => panel.id === cameras.main)
     const sidePlacement: SidePlacement = mobile ? "sheet" : classic ? "side" : layout.mode === "split" ? "column" : "drawer"
@@ -92,7 +86,6 @@ export function App() {
         setTab(tab === next ? null : next)
     }
     const shownTab = settingsTile && maximizedRegion === "settings" ? "settings" : sideTab
-    // into Tiles with Settings open: it's a tile now, so the tab closes (and doesn't come back on leaving Tiles)
     useEffect(() => {
         if (settingsTile) {
             setTab((open) => open === "settings" ? null : open)
@@ -101,34 +94,43 @@ export function App() {
 
     return (
         <div className={`app ${mobile ? "mobile" : "desktop"} layout-${layout.mode} ${classic ? (mainCamera ? "camera-main" : "scene-main") : "docked"}`} onPointerDownCapture={takeKeyboard}>
-            <ContainCrash what="3D view">
-                <ScenePanel host={host} app={app} placement={classic ? (mainCamera ? "float" : "main") : "dock"} dock={dock("scene")} mobile={mobile} onTf={() => setTab("tf")} onMain={() => {
-                    chooseLayout()
-                    cameraLayout.update({ main: null, auto: false, autoPanel: null })
-                }} />
-            </ContainCrash>
-            {app && (
-                <>
-                    <TopBar app={app} tab={shownTab} onTab={onTab} />
-                    <RecordControl app={app} />
-                    {sideTab && <SidePanel app={app} tab={sideTab} onClose={() => setTab(null)} placement={sidePlacement} rect={rects.settings} />}
-                    <ContainCrash what="Cameras"><CameraPanels app={app} layout={cameraLayout} mobile={mobile} dock={dock("camera")} /></ContainCrash>
-                    <ContainCrash what="Map"><MapPanel app={app} mobile={mobile} dock={dock("map")} /></ContainCrash>
-                    {settingsTile && (
-                        <Panel placement="dock" dock={dock("settings")} className="settings-tile" head={<span className="map-title"><Icon name="settings" size={14} />Settings</span>} bodyClassName="panel-body">
-                            <SettingsPanel app={app} />
-                        </Panel>
-                    )}
-                    {layout.mode === "tiles" && (
-                        <Panel placement="dock" dock={dock("status")} className="status-tile" head={<span className="map-title"><Icon name="signal" size={14} />Status</span>} bodyClassName="panel-body">
-                            <StatusPanel app={app} />
-                        </Panel>
-                    )}
-                    <FirstRun app={app} mobile={mobile} dock={classic || mobile ? null : dock("drive")} tile={layout.mode === "tiles"} />
-                    <StatsOverlay app={app} />
-                    <SceneMenu app={app} />
-                </>
+            {/* the TF tree is fed whether or not the 3D view is on: the map and the agent use it too */}
+            <TfFeed tf={app.tf} />
+            <TfIssuesWatch app={app} />
+            <Contained what="3D view">
+                <ScenePanel
+                    app={app}
+                    placement={classic ? (mainCamera ? "float" : "main") : "dock"}
+                    dock={dock("scene")}
+                    mobile={mobile}
+                    onTf={() => setTab("tf")}
+                    onMain={() => {
+                        chooseLayout()
+                        cameraLayout.update({ main: null, auto: false, autoPanel: null })
+                    }}
+                />
+            </Contained>
+            <TopBar app={app} tab={shownTab} onTab={onTab} />
+            <RecordControl app={app} />
+            {sideTab && <SidePanel app={app} tab={sideTab} onClose={() => setTab(null)} placement={sidePlacement} rect={rects.settings} />}
+            <Contained what="Cameras">
+                <CameraPanels app={app} layout={cameraLayout} mobile={mobile} dock={dock("camera")} />
+            </Contained>
+            <Contained what="Map">
+                <MapPanel app={app} mobile={mobile} dock={dock("map")} />
+            </Contained>
+            {settingsTile && (
+                <ViewPanel placement="dock" dock={dock("settings")} className="settings-tile" head={<span className="dr-view-panel-title"><Icon name="settings" size={14} />Settings</span>} bodyClassName="tile-body">
+                    <SettingsPanel app={app} />
+                </ViewPanel>
             )}
+            {layout.mode === "tiles" && (
+                <ViewPanel placement="dock" dock={dock("status")} className="status-tile" head={<span className="dr-view-panel-title"><Icon name="signal" size={14} />Status</span>} bodyClassName="tile-body">
+                    <StatusPanel app={app} />
+                </ViewPanel>
+            )}
+            <FirstRun app={app} mobile={mobile} dock={classic || mobile ? null : dock("drive")} tile={layout.mode === "tiles"} />
+            <SceneMenu app={app} />
         </div>
     )
 }
@@ -146,19 +148,50 @@ function useEscapeRestores() {
     }, [])
 }
 
-/** The window as the layout sees it (ui/layout.ts Frame), measured again on a resize or a change of Desktop's dock. */
+/** The places a finger may still scroll on a phone (panels and menus); everywhere else is the view or a stick. */
+const SCROLLABLE = ".side-body, .tile-body, .dr-popover, .dr-menu, .record-options, select"
+
+/**
+ * While driving from a phone the page must never pan or zoom under a thumb: iOS ignores user-scalable=no, so pinch
+ * (gesture*) and a moving finger are stopped here outside the panels that scroll; double-tap zoom is touch-action's.
+ */
+function useLockedViewport(enabled: boolean) {
+    useEffect(() => {
+        if (!enabled) {
+            return
+        }
+        const outsideScrollable = (event: Event) => !(event.target instanceof Element && event.target.closest(SCROLLABLE))
+        const gesture = (event: Event) => event.preventDefault()
+        const touchMove = (event: TouchEvent) => {
+            if (event.touches.length > 1 || outsideScrollable(event)) {
+                event.preventDefault()
+            }
+        }
+        document.addEventListener("gesturestart", gesture, { passive: false })
+        document.addEventListener("gesturechange", gesture, { passive: false })
+        document.addEventListener("touchmove", touchMove, { passive: false })
+        document.documentElement.classList.add("locked-viewport")
+        return () => {
+            document.removeEventListener("gesturestart", gesture)
+            document.removeEventListener("gesturechange", gesture)
+            document.removeEventListener("touchmove", touchMove)
+            document.documentElement.classList.remove("locked-viewport")
+        }
+    }, [enabled])
+}
+
+/** The window as the layout sees it (logic/layout.ts Frame), measured again on a resize or a change of Desktop's dock. */
 function useFrame(mobile: boolean, sidePanel: boolean): Frame {
     const [, setTick] = useState(0)
     useEffect(() => {
         const again = () => setTick((tick) => tick + 1)
         addEventListener("resize", again)
-        // theme.js sets --dim-inset-* on <html> when Desktop's dock moves
+        // Desktop's dock moving sets --dim-inset-* on <html>
         const insets = new MutationObserver(again)
         insets.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] })
-        // the top bar appears once the app is up, and grows with a safe-area inset
         const bar = new ResizeObserver(again)
         const watchBar = () => {
-            const element = document.querySelector(".topbar")
+            const element = document.querySelector(".app-topbar")
             if (element) {
                 bar.observe(element)
             }
@@ -181,12 +214,12 @@ function useFrame(mobile: boolean, sidePanel: boolean): Frame {
     return {
         width,
         height,
-        top: document.querySelector(".topbar")?.getBoundingClientRect().bottom ?? (mobile ? 44 : 48),
+        top: document.querySelector(".app-topbar")?.getBoundingClientRect().bottom ?? (mobile ? 44 : 48),
         bottom: px("--dim-inset-bottom", 0),
         mobile,
         sticks: mobile ? stickHeight(width, height) : 0,
         sidePanel,
-        gap: px("--lv-gap", 8),
+        gap: 8,
     }
 }
 
@@ -207,16 +240,16 @@ function takeKeyboard(event: PointerEvent) {
 /** The drive keys (or a phone's sticks), or (until there's something to drive) the first-run message that says what's
  * missing. A docked layout gives the keys a place (`dock`): a tile in Tiles, else a plain box (Split's rail, the
  * Cockpit's bottom middle); without one (Classic, a phone, another region maximized) they keep their own corner. */
-function FirstRun({ app, mobile, dock, tile }: { app: ViewerApp; mobile: boolean; dock: Dock | null; tile: boolean }) {
+function FirstRun({ app, mobile, dock, tile }: { app: ControllerApp; mobile: boolean; dock: Dock | null; tile: boolean }) {
     const onboarding = useOnboarding(app)
     const isArm = useStore(app.robot).type === "arm"
     const hud = onboarding.blocksDriving ? null : isArm ? <ArmHud app={app} mobile={mobile} /> : <DriveHud app={app} mobile={mobile} />
     let placed: ReactNode = hud
     if (dock?.rect && tile) {
         placed = (
-            <Panel placement="dock" dock={dock} className="drive-tile" head={<span className="map-title"><Icon name="drive" size={14} />Drive</span>} bodyClassName="drive-region-body">
-                {hud ?? <p className="hint">Nothing to drive yet.</p>}
-            </Panel>
+            <ViewPanel placement="dock" dock={dock} className="drive-tile" head={<span className="dr-view-panel-title"><Icon name="drive" size={14} />Drive</span>} bodyClassName="drive-region-body">
+                {hud ?? <Text muted small>Nothing to drive yet.</Text>}
+            </ViewPanel>
         )
     } else if (dock?.rect && hud) {
         placed = <div className="drive-region" style={rectStyle(dock.rect)}>{hud}</div>

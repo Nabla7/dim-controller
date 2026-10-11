@@ -29,7 +29,7 @@ Desktop's `live-viewer` recordings folder if it exists (else `controller`). Sett
 ## What it shows
 
 Every dimos topic is `dimos/<topic>/<message type>` on zenoh, so the key says how to draw it. Each message type has a
-layer (one file in `frontend/src/layers/`), and each layer places what it draws by its header's `frame_id` through the
+layer (dimos-react's layer registry, `registerLayer`), and each layer places what it draws by its header's `frame_id` through the
 TF tree (`/tf`, `/tf_static`) into the fixed frame (auto: `world`, `map`, `odom`, ...). Data whose frame has no TF path
 to the fixed frame is not drawn; the layer list says why.
 
@@ -84,7 +84,7 @@ screen soonest), **Balanced** (the default: the gateway picks size and bitrate f
 (full size, never shrunk, up to 6 Mbit/s, drops frames before detail, and a 100-400 ms playout buffer so motion is even).
 All run at the camera's own rate. They are gateway subscription options (`maxResolution`, `maxBitrate`,
 `minResolutionScale`, `minQuality`, `qualityToHzTradeoff`, `playoutDelay`), so the gateway encodes and sends less or
-more; nothing is dropped in the browser ([core/videoQuality.ts](frontend/src/core/videoQuality.ts)). A switch changes
+more; nothing is dropped in the browser (dimos-react's `VIDEO_PRESETS`). A switch changes
 the running subscription in place (zenoh-gateway 0.5.1's `Subscription.update`: same track, no gap). `playoutDelay` is
 the one browser-side knob: the gateway marks each video packet with it, `[0, 0]` (Low latency, Balanced) shows a frame
 the moment it decodes, High quality's `[100, 400]` lets the jitter buffer hold frames to play them out evenly, which is
@@ -100,7 +100,7 @@ bandwidth) and a small bar is left to turn it back on (fullscreen, the same butt
 Its layers button lists every PointCloud2 on the bus, each with its own switch (the Layers tab's), color, point size,
 live points and bytes a second, and a bandwidth preset: **Low bandwidth** (up to 5 Hz, at most 1 point in 4),
 **Balanced** (the default: up to 20 Hz, every point unless the link is short) or **Full** (up to 30 Hz, never thinned),
-the gateway's `maxHz` / `encodeOptions.quality` / `minQuality` ([core/cloudQuality.ts](frontend/src/core/cloudQuality.ts)).
+the gateway's `maxHz` / `encodeOptions.quality` / `minQuality` (dimos-react's `CLOUD_PRESETS`).
 The presets, the off switch and where the panel sits are this viewer's (localStorage).
 
 The 3D camera follows the robot (`base_link`, or another frame: Settings → Follow frame): orbit and zoom keep
@@ -124,7 +124,7 @@ controls or the [arm panel](#arm-control). Changing it applies at once in every 
 | drone | W/S forward, A/D yaw, Q/E down/up (`linear.z`) | 1 m/s, 1 rad/s, 0.5 m/s vertical |
 | arm | the [arm panel](#arm-control)'s keys | 5 cm/s, 0.5 rad/s, joints 0.4 rad/s |
 
-Auto ([core/robotType.ts](frontend/src/core/robotType.ts)), first match wins:
+Auto ([logic/robotType.ts](frontend/src/logic/robotType.ts)), first match wins:
 
 1. a running blueprint that robots.json lists under a robot with a `type` (Desktop's `GET /api/launcher/robots`);
 2. what's running looks like an arm: a joint state / joint command / gripper stream and nothing takes `cmd_vel`;
@@ -153,7 +153,7 @@ Reconnect: a new gateway session, video and control alike. Driving picks up agai
 ### Driving: which topics
 
 Settings → Drive's **Topics** is **auto** by default, or a list you type (one per line, `/my_cmd_vel` or
-`/my_cmd_vel TwistStamped`; saved like the other settings). Auto ([core/cmdvel.ts](frontend/src/core/cmdvel.ts)):
+`/my_cmd_vel TwistStamped`; saved like the other settings). Auto ([logic/cmdvel.ts](frontend/src/logic/cmdvel.ts)):
 
 - A **velocity input** is a module input whose name contains `cmd_vel` (`cmd_vel`, `tele_cmd_vel`, `cmd_vel_in`, …) and
   whose type is Twist or TwistStamped. The running blueprints' modules come from Desktop's `/dimos/blueprints/<name>`.
@@ -181,7 +181,7 @@ On a phone the panels become a bottom sheet and driving moves to two thumb stick
 plus strafe for a profile that strafes), the right turns (plus up/down for a profile with a vertical axis), with a big
 STOP between them and FAST. Each stick's zone is a big share of the screen's bottom and the stick centers where the
 thumb lands. The output has a dead zone and an expo curve, and eases toward the thumb while held
-([core/stick.ts](frontend/src/core/stick.ts)); letting go is never eased: a lift, a touch cancel, a lost pointer, the
+(dimos-react's `ThumbStick`); letting go is never eased: a lift, a touch cancel, a lost pointer, the
 page losing focus or hiding, a rotation or STOP zero the stick at once, and the zero is published right then, not at the
 next tick. STOP also lets go of a held thumb (it has to lift to drive again). The page doesn't scroll, pan or zoom while
 driving. Sticks publish through the same drive loop and topics as the keys.
@@ -244,7 +244,7 @@ Like driving it needs no arming, and it is as safe:
 
 Nothing here is invented: the panel uses the ports of dimos's `ControlCoordinator` (`dimos/control/coordinator.py`)
 and its arm subclasses (`dimos/robot/manipulators/common/coordinators.py`, `dimos/control/teleop_coordinator.py`), found
-in the running blueprints' metadata ([core/armTopics.ts](frontend/src/core/armTopics.ts)); without metadata it uses the
+in the running blueprints' metadata ([logic/armTopics.ts](frontend/src/logic/armTopics.ts)); without metadata it uses the
 same standard names. A port `foo` is the topic `/foo`, zenoh key `dimos/foo/<type>`, payload the LCM encoding:
 
 | panel | topic | message | what the coordinator does with it |
@@ -281,7 +281,7 @@ encodes decode with dimos's own message classes. Not verified on a running arm: 
 Everything robot-specific is in **one file**, a profile under `frontend/src/profile/`, one per robot type (`dog.ts`,
 `humanoid.ts`, `wheeled.ts`, `arm.ts`, `drone.ts`): which frame is the robot, which Twist topics to prefer, speeds,
 what each key does, an arm's jog speeds, keys and joint limits, and extra controls (sliders and buttons that publish a
-message). `src/core/` (gateway, TF, renderer, drive loop, arm control, recorder) never needs to change.
+message). `src/logic/` (gateway, drive loop, arm control, recorder) never needs to change; the UI and the 3D view are [dimos-react](https://github.com/jeff-hykin/dimos-react) components.
 
 1. Edit the profile of your robot's type (e.g. `dog.ts` for a quadruped), or copy one and return it from `profileFor`
    in `frontend/src/profile/index.ts`.
@@ -310,9 +310,9 @@ keys: { ...turnKeys, KeyQ: { axis: "vertical", value: -1 }, KeyE: { axis: "verti
 
 A profile can also replace how the axes become a Twist (`drive.twist`), e.g. for a robot that steers differently.
 
-**A new message type** is one file too: copy the closest layer in `frontend/src/layers/` (e.g. `path.tsx`), change its
-`types` and drawing, and import it in `layers/index.ts`. A layer registered later for the same type wins, so a fork can
-also override a built-in one. Messages decode with the LCM schemas in `src/core/lcm/schemas.json` (every dimos_lcm
+**A new message type** is one file too: copy the closest layer in dimos-react's `src/three/layers/` (e.g. `path.js`), change its
+`types` and drawing, and call `registerLayer` from the app (e.g. in `main.tsx`). A layer registered later for the same type wins, so a fork can
+also override a built-in one. Messages decode with the LCM schemas in dimos-react's LCM schemas (every dimos_lcm
 type; regenerate with `deno run -A tools/gen_lcm_schemas.ts <dimos_lcm/lcm_files>`).
 
 ## Credits

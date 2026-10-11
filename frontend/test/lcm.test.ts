@@ -1,6 +1,6 @@
 // Fixtures in fixtures/lcm.json are dimos's own lcm_encode() output (made with the dimos venv).
 import { assertAlmostEquals, assertEquals, assertThrows } from "jsr:@std/assert@1"
-import { decode, encode, fingerprint, headerFrameId } from "../src/core/lcm/lcm.ts"
+import { decode, encode, fingerprint, headerFrameId } from "../src/lcm.ts"
 import fixtures from "./fixtures/lcm.json" with { type: "json" }
 
 const bytes = (type: keyof typeof fixtures) => Uint8Array.from(atob(fixtures[type]), (char) => char.charCodeAt(0))

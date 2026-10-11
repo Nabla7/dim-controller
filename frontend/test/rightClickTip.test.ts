@@ -1,6 +1,6 @@
 // The one-time "Try right-click" tip: a double click shows it once a session, a right click retires it for good.
 import { assertEquals } from "jsr:@std/assert@1"
-import { createRightClickTip, RIGHT_CLICK_TIP_KEY } from "../src/core/rightClickTip.ts"
+import { createRightClickTip, RIGHT_CLICK_TIP_KEY } from "../src/logic/rightClickTip.ts"
 
 function memoryStorage() {
     const items = new Map<string, string>()

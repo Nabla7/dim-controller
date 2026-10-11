@@ -1,7 +1,7 @@
 // Which topics auto drives, and whether the running blueprints take velocity commands (core/cmdvel.ts), against
 // real metadata from Desktop's GET /dimos/blueprints/<name> (test/fixtures/blueprint_*.json, 2026-10-05).
 import { assertEquals } from "jsr:@std/assert@1"
-import { autoTopics, entryPoints, type Module, parseTopics, takesVelocity, TWIST, TWIST_STAMPED, zenohKey } from "../src/core/cmdvel.ts"
+import { autoTopics, entryPoints, type Module, parseTopics, takesVelocity, TWIST, TWIST_STAMPED, zenohKey } from "../src/logic/cmdvel.ts"
 
 const load = (name: string): Module[] => JSON.parse(Deno.readTextFileSync(new URL(`./fixtures/blueprint_${name}.json`, import.meta.url))).modules
 const go2Basic = load("unitree-go2-basic")

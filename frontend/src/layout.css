@@ -1,0 +1,134 @@
+/* Where things go. Every component (and its look) is dimos-react's, themed by Desktop's skin; this file only places and
+   sizes them on the page: Classic has the scene (or a camera) fill the window and everything else float over it;
+   Cockpit, Split and Tiles (.docked, logic/layout.ts) place each panel in the box the layout works out. Stacking, bottom
+   to top: 3D view, cameras, map, drive keys, side panel, Record, top bar, drawers and sheets, menus. */
+html, body, #root { height: 100%; margin: 0; overflow: hidden; }
+body { overscroll-behavior: none; }
+.app { position: fixed; inset: 0; }
+
+/* ── top bar ── */
+.app-topbar { position: absolute; top: 0; left: 0; right: 0; z-index: 10; padding-top: max(6px, env(safe-area-inset-top)); }
+.mobile .app-topbar .dr-badge { display: none; }
+
+/* ── the 3D view: the full window, a picture-in-picture while a camera is main, or a docked region ── */
+.scene-slot.dr-view-panel--main { inset: 0; z-index: 0; }
+.scene-slot .scene { position: absolute; inset: 0; touch-action: none; }
+.scene-slot.off .scene { display: none; }
+.camera-main .scene-slot.dr-view-panel--float { inset: auto 16px 96px auto; width: min(36vw, 420px); height: min(26vw, 300px); z-index: 6; }
+.mobile.camera-main .scene-slot.dr-view-panel--float {
+    width: 42vw;
+    height: 30vw;
+    right: 10px;
+    bottom: calc(min(40vh, 330px) + 28px + env(safe-area-inset-bottom) + var(--dim-inset-bottom, 0px));
+}
+.camera-main .scene-slot.off { width: auto; height: auto; }
+.scene-tools { position: absolute; right: calc(60px + var(--dim-inset-right, 0px)); bottom: calc(62px + var(--dim-inset-bottom, 0px)); z-index: 4; }
+.mobile .scene-tools { bottom: auto; top: calc(62px + 28vw + env(safe-area-inset-top)); right: 52px; }
+.mobile .scene-tools .dr-view-panel-info { display: none; }
+.scene-off { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.scene .dr-scene-controls { bottom: calc(62px + var(--dim-inset-bottom, 0px)); }
+.stats-overlay { left: calc(12px + var(--dim-inset-left, 0px)); bottom: calc(96px + var(--dim-inset-bottom, 0px)); }
+.mobile .stats-overlay { bottom: auto; top: calc(98px + env(safe-area-inset-top)); }
+.cloud-menu { width: 320px; max-width: calc(100vw - 16px); max-height: min(70vh, 520px); overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.cloud-row { display: flex; flex-direction: column; gap: 6px; padding: 6px 4px; }
+.cloud-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cloud-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cloud-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cloud-controls .dr-slider { flex: 1 1 120px; }
+
+/* ── side panel (Layers, TF, Settings): beside the view, a drawer, a column, or a bottom sheet ── */
+.side-panel { position: absolute; z-index: 8; display: flex; flex-direction: column; max-height: none; }
+.side-panel .side-body { flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; }
+.side-side { top: 108px; left: calc(10px + var(--dim-inset-left, 0px)); bottom: calc(10px + var(--dim-inset-bottom, 0px)); width: 340px; }
+.side-drawer { right: calc(8px + var(--dim-inset-right, 0px)); top: 56px; bottom: calc(8px + var(--dim-inset-bottom, 0px)); width: min(360px, calc(100vw - 16px)); z-index: 12; }
+.side-column { z-index: 3; }
+.side-sheet { left: 0; right: 0; bottom: var(--dim-inset-bottom, 0px); max-height: 62vh; z-index: 12; padding-bottom: env(safe-area-inset-bottom); }
+
+/* ── Record (top left) and its options ── */
+.record-control { position: absolute; top: 58px; left: calc(10px + var(--dim-inset-left, 0px)); z-index: 9; display: flex; align-items: center; gap: 6px; }
+.mobile .record-control { top: calc(52px + env(safe-area-inset-top)); left: 8px; }
+.mobile.camera-main .record-control { top: calc(92px + env(safe-area-inset-top)); }
+.mobile .record-extra { display: none; }
+.record-options { position: fixed; top: calc(108px + env(safe-area-inset-top)); left: calc(10px + var(--dim-inset-left, 0px)); width: 400px; z-index: 20; }
+.record-options > .dr-panel { max-height: calc(100vh - 120px - var(--dim-inset-bottom, 0px)); }
+.mobile .record-options { left: 8px; right: 8px; width: auto; top: calc(98px + env(safe-area-inset-top)); }
+.record-path { overflow-wrap: anywhere; }
+.top-streams { display: flex; flex-direction: column; gap: 2px; }
+.topic-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.record-topics { max-height: 300px; overflow: auto; }
+.record-topic { display: grid; grid-template-columns: 22px minmax(0, 1fr) 64px 92px; align-items: center; gap: 6px; padding: 2px 0; }
+.record-topic.off .topic-name { text-decoration: line-through; }
+
+/* ── cameras ── */
+.camera-video.dr-view-panel--float { z-index: 5; }
+.camera-video.dr-view-panel--main { z-index: 1; }
+.desktop .camera-video.dr-view-panel--main .dr-view-panel-head { padding-left: 150px; }
+.add-camera { position: absolute; right: 12px; bottom: calc(16px + var(--dim-inset-bottom, 0px)); z-index: 5; }
+.mobile .add-camera { display: none; }
+.mobile .camera-video.dr-view-panel--float { top: calc(52px + env(safe-area-inset-top)); right: 8px; --cam-w: 42vw; width: var(--cam-w); height: calc(var(--cam-w) * var(--cam-aspect, 0.5625) + 33px); }
+.mobile .camera-video.dr-view-panel--float ~ .camera-video.dr-view-panel--float { display: none; }
+.mobile .camera-video.dr-view-panel--float .dr-select, .mobile .camera-video.dr-view-panel--float .dr-view-panel-info { display: none; }
+.depth-range { width: 64px; }
+.centered { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+
+/* ── the 2D map ── */
+.map-layer { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+.map-panel.dr-view-panel--float.default-spot { left: calc(10px + var(--dim-inset-left, 0px)); top: 108px; }
+.desktop .side-side ~ .map-layer .map-panel.default-spot:not(.dr-view-panel--main) { left: calc(360px + var(--dim-inset-left, 0px)); }
+.map-panel.collapsed { height: auto; width: auto; min-width: 0; min-height: 0; container-type: normal; }
+.map-panel.collapsed > .dr-view-panel-body { display: none; }
+.map-panel.collapsed .map-title { cursor: pointer; }
+.desktop .map-panel.dr-view-panel--main .dr-view-panel-head { padding-left: 160px; }
+.map-panel .map-frame { max-width: 28%; }
+.map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+.map-problem { position: absolute; left: 8px; bottom: 8px; right: 8px; }
+.map-recenter { position: absolute; right: 8px; bottom: 26px; z-index: 2; }
+
+/* ── driving: the key guide (desktop) or two thumb sticks (phone) ── */
+.drive-hud { position: absolute; left: calc(12px + var(--dim-inset-left, 0px)); bottom: calc(14px + var(--dim-inset-bottom, 0px)); z-index: 7; }
+.drive-hud .dr-panel-body { padding: 8px 10px; }
+.desktop .side-side ~ .drive-hud { left: calc(362px + var(--dim-inset-left, 0px)); }
+.drive-hud.moving { border-color: var(--primary); }
+.drive-hud-row { display: flex; align-items: center; gap: 12px; }
+.hud-readout { display: flex; flex-direction: column; min-width: 190px; }
+.drive-region { position: absolute; z-index: 7; display: flex; align-items: center; justify-content: center; }
+.drive-region .drive-hud { position: static; }
+.drive-region-body .drive-hud { position: static; }
+.drive-hud-mobile {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: var(--dim-inset-bottom, 0px);
+    height: min(40vh, 330px);
+    z-index: 7;
+    display: grid;
+    grid-template-columns: 1fr min(34vw, 180px) 1fr;
+    padding-bottom: env(safe-area-inset-bottom);
+    pointer-events: none;
+}
+.drive-hud-mobile > .dr-thumbstick, .hud-center > * { pointer-events: auto; }
+.hud-center { position: relative; display: flex; flex-direction: column; gap: 10px; align-items: stretch; justify-content: flex-end; padding: 0 0 16px; min-width: 0; }
+.hud-center .stop-button { height: 72px; font-size: 20px; letter-spacing: 0.08em; touch-action: manipulation; }
+@media (orientation: landscape) and (max-height: 520px) {
+    .drive-hud-mobile { height: min(62vh, 260px); grid-template-columns: 1fr min(30vw, 260px) 1fr; }
+    .hud-center .stop-button { height: 58px; }
+}
+
+/* ── docked layouts ── */
+.tile-body, .drive-region-body { padding: 8px 12px; overflow: auto; background: var(--card); }
+.drive-region-body { display: flex; align-items: center; justify-content: center; }
+
+/* ── menus, first-run messages ── */
+.scene-menu { position: fixed; z-index: 30; min-width: 200px; max-width: 260px; }
+.first-run { z-index: 9; }
+
+/* ── settings ── */
+.settings-panel, .drive-panel, .arm-panel, .status-panel { display: flex; flex-direction: column; gap: 8px; }
+.settings-section { display: flex; flex-direction: column; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.joint-row { display: grid; grid-template-columns: 58px 34px 1fr 34px 56px; align-items: center; gap: 6px; }
+.joint-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ee-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ee-axis { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 4px; }
+.gripper-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.gripper-row .dr-slider { min-width: 140px; flex: 1; }
+html.locked-viewport, html.locked-viewport body { touch-action: none; }

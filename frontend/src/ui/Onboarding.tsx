@@ -1,11 +1,12 @@
 // First-run messages over the 3D view: what's missing before the Controller can show or drive a robot, and a button to
 // the place that fixes it (the Launcher, filtered to blueprints that take cmd_vel). Live: they follow Desktop's `runs`
-// events (core/runs.ts) and the bridge's state, so the message goes away as soon as a blueprint starts.
-import { useEffect, useRef, useState } from "react"
-import type { ViewerApp } from "../core/app.ts"
-import { useStore } from "../core/store.ts"
-import { emptyState, type EmptyStateOptions } from "../dim-app/source/desktop.js"
-import { takesVelocity } from "../core/cmdvel.ts"
+// events (logic/runs.ts) and the bridge's state, so the message goes away as soon as a blueprint starts.
+import { useEffect, useState } from "react"
+import { Badge, Button, EmptyState, Row, Spinner } from "dimos-react"
+import type { ControllerApp } from "../logic/controller.ts"
+import { useStore } from "../logic/settings.ts"
+import { type EmptyStateOptions, openApp } from "../dim-app/source/desktop.js"
+import { takesVelocity } from "../logic/cmdvel.ts"
 
 const LAUNCH_DRIVABLE = { stream: "cmd_vel" }
 const LAUNCH_ARM = { stream: "joint_command" }
@@ -43,22 +44,41 @@ function useSustained(on: boolean, ms: number): boolean {
     return on && sustained
 }
 
-/** desktop.js's emptyState, centered over the view (above Desktop's dock). */
-export function EmptyLayer(props: EmptyStateOptions) {
-    const host = useRef<HTMLDivElement>(null)
-    const key = JSON.stringify({ ...props, actions: props.actions?.map((action) => action.label) })
-    const latest = useRef(props)
-    latest.current = props
-    useEffect(() => {
-        host.current?.replaceChildren(emptyState(latest.current))
-    }, [key])
-    return <div ref={host} className="dim-empty-layer" />
+/** A first-run message centered over the view (above Desktop's dock): dimos-react's EmptyState, its actions as Buttons. */
+export function EmptyLayer({ title, body, label, tone, busy, actions = [], testId }: EmptyStateOptions) {
+    return (
+        <EmptyState
+            layer
+            className="first-run"
+            data-testid={testId}
+            icon={busy ? null : tone === "warn" ? "warn" : "robot"}
+            tone={tone === "warn" ? "warn" : undefined}
+            title={title}
+            message={body as string}
+            actions={
+                <Row gap={8} justify="center" wrap>
+                    {actions.map((action) => (
+                        <Button
+                            key={action.label}
+                            size="sm"
+                            variant={action.primary === false ? "default" : "primary"}
+                            onClick={() => (action.onClick ? action.onClick() : action.app ? openApp(action.app, action.params) : action.href && globalThis.open(action.href, action.target ?? "_blank"))}
+                        >
+                            {action.label}
+                        </Button>
+                    ))}
+                </Row>
+            }
+        >
+            {(label || busy) && <Row gap={6} justify="center">{busy && <Spinner size={14} />}{label && <Badge tone={tone === "warn" ? "warn" : "default"}>{label}</Badge>}</Row>}
+        </EmptyState>
+    )
 }
 
 export type Onboarding = { message: EmptyStateOptions | null; blocksDriving: boolean }
 
 /** Which first-run message applies now (null: none), and whether the drive bar should step aside for it. */
-export function useOnboarding(app: ViewerApp): Onboarding {
+export function useOnboarding(app: ControllerApp): Onboarding {
     const runs = useStore(app.runs.state)
     const connection = useStore(app.connection.status)
     const [dismissed, setDismissed] = useState<string | null>(null)

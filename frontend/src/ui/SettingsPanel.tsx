@@ -1,149 +1,106 @@
-// Settings: the layout, the robot type, then driving (or the arm panel, for an arm; it was its own tab), then the view.
-import type { ViewerApp } from "../core/app.ts"
-import { useStore } from "../core/store.ts"
+// Settings: the layout, the robot type, then driving (or the arm panel, for an arm), then the view.
+import { Field, Heading, NumberInput, Row, Segmented, Select, Text, Toggle } from "dimos-react"
+import { RenderingSettings, useTfFrames } from "dimos-react/three"
+import type { ControllerApp } from "../logic/controller.ts"
+import { useStore } from "../logic/settings.ts"
 import { profiles } from "../profile/index.ts"
 import { RobotIcon } from "./RobotIcon.tsx"
 import { armShading } from "./armShading.ts"
 import { ArmPanel } from "./ArmPanel.tsx"
-import { Field, Toggle } from "./controls.tsx"
-import { maxLatencyOf } from "../core/linkWatch.ts"
+import { maxLatencyOf } from "../logic/linkWatch.ts"
 import { DrivePanel } from "./DrivePanel.tsx"
-import { rendering } from "../core/render/rendering.ts"
-import { StylePicker } from "./StylePicker.tsx"
-import { followFrameOptions } from "../core/map2d.ts"
-import { useEffect, useState } from "react"
-import { useTfFrames } from "./useTfFrames.ts"
-import { LAYOUTS, setLayoutMode, useLayout } from "./layout.ts"
-import { CUBE_SHADES, type CubeShade, type PointStyle } from "../core/render/pointMaterial.ts"
+import { followFrameOptions } from "../logic/map2d.ts"
+import { LAYOUTS, setLayoutMode, useLayout } from "../logic/layout.ts"
 
-export function SettingsPanel({ app }: { app: ViewerApp }) {
+export function SettingsPanel({ app }: { app: ControllerApp }) {
     const view = useStore(app.settings)
-    const render = useStore(rendering)
     const robot = useStore(app.robot)
     const current = profiles.find((profile) => profile.type === robot.type)
     return (
         <div className="settings-panel">
             <LayoutPicker />
-            <div className="field-block robot-type" data-testid="robot-type">
-                <span className="field-label">Robot</span>
-                <div className="robot-type-row">
+            <Field
+                label="Robot"
+                data-testid="robot-type"
+                hint={
+                    <>
+                        <span data-testid="robot-type-reason">{robot.auto ? `Auto: ${robot.reason}.` : "Picked here; Auto follows what's running."} Sets the keys, speeds, the drive or arm controls and the model in the view.</span>{" "}
+                        <span data-testid="robot-icon-credits">Icons after Izwar Muis's "Humanoid robot" and "robot dog" and rukanicon's "Robotics" (Noun Project, CC BY 3.0, modified) and Tabler's drone (MIT); see the README's Credits.</span>
+                    </>
+                }
+            >
+                <Row gap={10}>
                     <RobotIcon type={robot.type} size={40} />
-                    <select
-                        className="dim-select"
+                    <Select
                         aria-label="Robot type"
                         value={robot.auto ? "" : robot.type}
-                        // every open viewer switches with it (app.ts), no reload
-                        onChange={(event) => (app.settings.update({ profile: event.target.value }), event.target.value === "arm" && armShading())}
-                    >
-                        <option value="">Auto: {current?.name ?? robot.type}</option>
-                        {profiles.map((profile) => <option key={profile.type} value={profile.type}>{profile.name}</option>)}
-                    </select>
-                </div>
-                <p className="hint" data-testid="robot-type-reason">
-                    {robot.auto ? `Auto: ${robot.reason}.` : "Picked here; Auto follows what's running."} Sets the keys, speeds, the drive or arm controls and the model in the view.
-                </p>
-                <p className="hint" data-testid="robot-icon-credits">
-                    Icons after Izwar Muis's "Humanoid robot" and "robot dog" and rukanicon's "Robotics" (Noun Project, CC BY 3.0, modified) and Tabler's drone (MIT); see the README's Credits.
-                </p>
-            </div>
+                        options={[["", `Auto: ${current?.name ?? robot.type}`], ...profiles.map((profile) => [profile.type, profile.name])]}
+                        // every open viewer switches with it, no reload
+                        onChange={(profile: string) => {
+                            app.settings.update({ profile })
+                            if (profile === "arm") {
+                                armShading()
+                            }
+                        }}
+                    />
+                </Row>
+            </Field>
             {robot.type === "arm"
                 ? (
                     <section className="settings-section" data-section="arm">
-                        <h3 className="dim-label">Arm</h3>
+                        <Heading level={3}>Arm</Heading>
                         <ArmPanel app={app} />
                     </section>
                 )
                 : (
                     <section className="settings-section" data-section="drive">
-                        <h3 className="dim-label">Drive</h3>
+                        <Heading level={3}>Drive</Heading>
                         <DrivePanel app={app} />
                         <Field label="Max latency (ms)" hint="Over this, the drive panel stops driving and shows Reconnect (also when the link drops).">
-                            <MaxLatencyInput app={app} />
+                            <NumberInput aria-label="Max latency (ms)" data-testid="max-latency" min={1} step={100} value={maxLatencyOf(view.maxLatencyMs)} onChange={(value: number) => value > 0 && app.settings.update({ maxLatencyMs: Math.round(value) })} />
                         </Field>
                     </section>
                 )}
-            <h3 className="dim-label">Rendering</h3>
-            <div className="field-block">
-                <span className="field-label">Point style</span>
-                <StylePicker value={render.pointStyle} onChange={(pointStyle) => rendering.update({ pointStyle: pointStyle as PointStyle })} />
-                <p className="hint">The default for every point cloud; a layer can pick its own in its settings.</p>
-            </div>
-            <Field label="Cube shading" hint={CUBE_SHADES[render.cubeShade]?.about}>
-                <span className="dim-tabs segmented" data-cube-shade>
-                    {(Object.keys(CUBE_SHADES) as CubeShade[]).map((shade) => (
-                        <button type="button" key={shade} className={`dim-tab ${render.cubeShade === shade ? "on" : ""}`} aria-selected={render.cubeShade === shade} onClick={() => rendering.update({ cubeShade: shade })}>{CUBE_SHADES[shade].label}</button>
-                    ))}
-                </span>
+            <Heading level={3}>Rendering</Heading>
+            <RenderingSettings />
+            <Field label="Follow robot" inline hint="the 3D camera tracks a TF frame; a pan stops it, the follow button (top right) resumes it">
+                <Toggle value={view.follow} onChange={(follow: boolean) => app.settings.update({ follow })} />
             </Field>
-            <Field label="Follow robot" hint="the 3D camera tracks a TF frame; a pan stops it, the follow button (top right) resumes it"><Toggle value={view.follow} onChange={(follow) => app.settings.update({ follow })} /></Field>
             <FollowFramePicker app={app} />
-            <Field label="Robot model" hint="a stand-in for the robot type at the robot's pose (an arm is drawn by its TF frames)"><Toggle value={view.robotModel !== false} onChange={(robotModel) => app.settings.update({ robotModel })} /></Field>
-            <Field label="Stats"><Toggle value={view.showStats} onChange={(showStats) => app.settings.update({ showStats })} /></Field>
-            <p className="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom. Follow and top-down are on the view (top right).</p>
+            <Field label="Robot model" inline hint="a stand-in for the robot type at the robot's pose (an arm is drawn by its TF frames)">
+                <Toggle value={view.robotModel !== false} onChange={(robotModel: boolean) => app.settings.update({ robotModel })} />
+            </Field>
+            <Field label="Stats" inline><Toggle value={view.showStats} onChange={(showStats: boolean) => app.settings.update({ showStats })} /></Field>
+            <Text as="p" small muted>Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom. Follow and top-down are on the view (top right).</Text>
         </div>
-    )
-}
-
-/** Settings → Max latency: saved on Enter or leaving the field, so "1" on the way to "1500" never holds driving */
-function MaxLatencyInput({ app }: { app: ViewerApp }) {
-    const saved = maxLatencyOf(useStore(app.settings).maxLatencyMs)
-    const [text, setText] = useState(String(saved))
-    useEffect(() => setText(String(saved)), [saved])
-    const commit = () => {
-        const value = Math.round(Number(text))
-        if (Number.isFinite(value) && value > 0) {
-            app.settings.update({ maxLatencyMs: value })
-        } else {
-            setText(String(saved))
-        }
-    }
-    return (
-        <input
-            type="number"
-            className="dim-input number"
-            aria-label="Max latency (ms)"
-            data-testid="max-latency"
-            min={1}
-            step={100}
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            onBlur={commit}
-            onKeyDown={(event) => event.key === "Enter" && commit()}
-        />
     )
 }
 
 /** the TF frame the 3D camera follows: the robot's by default, or any frame in the tree (refreshed while shown) */
-function FollowFramePicker({ app }: { app: ViewerApp }) {
+function FollowFramePicker({ app }: { app: ControllerApp }) {
     const view = useStore(app.settings)
-    const frames = useTfFrames(app)
+    const frames: string[] = useTfFrames({ tf: app.tf })
     const base = app.profile.baseFrame
     const others = followFrameOptions(frames, view.followFrame || base).filter(({ frame }) => frame !== base)
     return (
         <Field label="Follow frame">
-            <select className="dim-select" aria-label="Frame to follow" value={view.followFrame === app.profile.baseFrame ? "" : view.followFrame} onChange={(event) => app.settings.update({ followFrame: event.target.value })}>
-                <option value="">robot ({base}){frames.includes(base) ? "" : " (waiting)"}</option>
-                {others.map(({ frame, waiting }) => <option key={frame} value={frame}>{frame}{waiting ? " (waiting)" : ""}</option>)}
-            </select>
+            <Select
+                aria-label="Frame to follow"
+                value={view.followFrame === base ? "" : view.followFrame}
+                options={[["", `robot (${base})${frames.includes(base) ? "" : " (waiting)"}`], ...others.map(({ frame, waiting }) => [frame, `${frame}${waiting ? " (waiting)" : ""}`])]}
+                onChange={(followFrame: string) => app.settings.update({ followFrame })}
+            />
         </Field>
     )
 }
 
-/** Settings → Layout: Classic or one of the docked arrangements (ui/layout.ts); every open page follows */
+/** Settings → Layout: Classic or one of the docked arrangements (logic/layout.ts); every open page follows */
 function LayoutPicker() {
     const { mode } = useLayout()
     const current = LAYOUTS.find((layout) => layout.id === mode)!
     return (
-        <div className="field-block layout-picker" data-testid="layout-picker">
-            <span className="field-label">Layout</span>
-            <span className="dim-tabs segmented layout-choices" role="radiogroup" aria-label="Layout">
-                {LAYOUTS.map((layout) => (
-                    <button type="button" key={layout.id} role="radio" data-layout={layout.id} className={`dim-tab ${mode === layout.id ? "on" : ""}`} aria-checked={mode === layout.id} title={layout.about} onClick={() => setLayoutMode(layout.id)}>
-                        {layout.label}
-                    </button>
-                ))}
-            </span>
-            <p className="hint" data-testid="layout-about">{current.about}</p>
-        </div>
+        <Field label="Layout" data-testid="layout-picker" hint={<span data-testid="layout-about">{current.about}</span>}>
+            <Segmented label="Layout" value={mode} onChange={setLayoutMode} items={LAYOUTS.map((layout) => ({ value: layout.id, label: layout.label, title: layout.about }))} />
+        </Field>
     )
 }

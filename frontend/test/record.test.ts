@@ -1,8 +1,8 @@
 // The recorder popover's choices: everything is recorded unless turned off, the biggest streams are offered first,
 // and a folder outside Desktop's recordings folder is called out.
 import { assert, assertEquals } from "jsr:@std/assert@1"
-import { biggestStreams, formatClock, formatRate, inRecordingsFolder, isRecorded, isRpcTopic, TOP_STREAMS } from "../src/core/recordFormat.ts"
-import type { StreamRate } from "../src/core/recorder.ts"
+import { biggestStreams, formatClock, formatRate, inRecordingsFolder, isRecorded, isRpcTopic, TOP_STREAMS } from "../src/logic/recordFormat.ts"
+import type { StreamRate } from "../src/logic/recorder.ts"
 
 const stream = (topic: string, bytesPerSecond: number): StreamRate => ({
     key: `dimos${topic}/x.Y`,

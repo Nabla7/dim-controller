@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1"
-import { batteryAlert, batteryPercent } from "../src/core/batteryFeed.ts"
+import { batteryAlert, batteryPercent } from "../src/logic/batteryFeed.ts"
 
 Deno.test("batteryPercent reads ROS 0..1, 0..100, and charge/capacity", () => {
     assertEquals(batteryPercent({ percentage: 0.42 }), 42)

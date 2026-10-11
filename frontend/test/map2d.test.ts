@@ -22,10 +22,9 @@ import {
     Trail,
     worldToScreen,
     zoomAt,
-} from "../src/core/map2d.ts"
-import { parseKey, rememberTopics, type Topic } from "../src/core/transport.ts"
-import { clampPanelBox, startPanelDrag } from "../src/ui/panelDrag.ts"
-import { loadMapLayout } from "../src/ui/mapLayout.ts"
+} from "../src/logic/map2d.ts"
+import { parseKey, rememberTopics, type Topic } from "../src/logic/connection.ts"
+import { loadMapLayout } from "../src/logic/mapLayout.ts"
 
 const topic = (name: string, type: string): Topic => parseKey(`dimos${name}/${type}`)!
 
@@ -167,51 +166,6 @@ Deno.test("discovery: a slow topic that misses a round stays listed until it's b
     assertEquals(rememberTopics(lastSeen, [lidar], 12_001, 10_000).map((t) => t.name), ["/lidar"])
 })
 
-Deno.test("panel box: a remembered position or size can never put the panel out of reach", () => {
-    const defaults = { x: -1, y: -1, width: 320, height: 353 }
-    const minimum = { width: 200, height: 150 }
-    const screen = { width: 1400, height: 900 }
-    assertEquals(clampPanelBox({ x: 100, y: 200, width: 400, height: 300 }, defaults, screen, minimum), { x: 100, y: 200, width: 400, height: 300 })
-    // off the right / bottom (a bigger window before), above the top bar, too small, too big
-    const off = clampPanelBox({ x: 5000, y: 5000, width: 0, height: 1e6 }, defaults, screen, minimum)
-    assert(off.x + 80 <= screen.width && off.y + 40 <= screen.height)
-    assertEquals([off.width, off.height], [200, 900 - 48 - 8])
-    assertEquals(clampPanelBox({ x: 10, y: 0 }, defaults, screen, minimum).y, 48)
-    // NaN / null / strings from a broken entry: the defaults
-    assertEquals(clampPanelBox({ x: NaN, y: null as never, width: "wide" as never }, defaults, screen, minimum), { x: -1, y: -1, width: 320, height: 353 })
-    // a window with no size yet (a hidden frame) still gives a real box
-    const hidden = clampPanelBox({ x: 300, y: 300 }, defaults, { width: 0, height: 0 }, minimum)
-    assert(Number.isFinite(hidden.x) && hidden.width >= 200)
-})
-
-Deno.test("a header drag leaves no inline right/bottom behind (they'd squash the panel to nothing in fullscreen)", () => {
-    const globals = globalThis as unknown as Record<string, number>
-    const before = [globals.innerWidth, globals.innerHeight]
-    globals.innerWidth = 1400
-    globals.innerHeight = 900
-    try {
-        let box = { left: 10, top: 108 }
-        const style: Record<string, string> = {}
-        const element = { style, getBoundingClientRect: () => box } as unknown as HTMLElement
-        let dropped: number[] = []
-        startPanelDrag({ clientX: 20, clientY: 115 } as never, element, (x, y) => (dropped = [x, y]))
-        globalThis.dispatchEvent(Object.assign(new Event("pointermove"), { clientX: 120, clientY: 215 }))
-        assertEquals([style.left, style.top, style.right, style.bottom], ["110px", "208px", "auto", "auto"])
-        box = { left: 110, top: 208 }
-        globalThis.dispatchEvent(new Event("pointerup"))
-        assertEquals([style.right, style.bottom], ["", ""])
-        assertEquals(dropped, [110, 208])
-        // a click without a move (half of a double-click) changes nothing
-        dropped = []
-        startPanelDrag({ clientX: 20, clientY: 115 } as never, element, (x, y) => (dropped = [x, y]))
-        globalThis.dispatchEvent(new Event("pointerup"))
-        assertEquals(dropped, [])
-    } finally {
-        globals.innerWidth = before[0]
-        globals.innerHeight = before[1]
-    }
-})
-
 Deno.test("follow: on by default (base_link); a pan suspends it, a zoom keeps it, a re-center resumes it", () => {
     const follow = new MapFollow()
     assertEquals([follow.following, follow.frame], [true, DEFAULT_FOLLOW_FRAME])
@@ -283,21 +237,3 @@ Deno.test("layout: a first-time viewer gets the map folded; an open or a fold is
     assert(!("follow" in loadMapLayout({ follow: false } as never, screen)))
 })
 
-Deno.test("a folded map keeps its header on screen (inline-size containment would size it to 0 px wide)", () => {
-    const css = Deno.readTextFileSync(new URL("../src/styles.css", import.meta.url))
-    // .lv-panel (every panel, the map too) contains its inline size; a shrink-to-fit folded panel must opt out
-    assert(/\.lv-panel\s*\{[^}]*container-type:\s*inline-size/.test(css))
-    const folded = css.match(/\.map-panel\.collapsed\s*\{([^}]*)\}/)?.[1] ?? ""
-    assert(/width:\s*auto/.test(folded))
-    assert(/container-type:\s*normal/.test(folded), "a folded map panel must not contain its inline size")
-    assert(!/display:\s*none|(^|[;\s])width:\s*0|visibility:\s*hidden/.test(folded))
-})
-
-Deno.test("the map panel stacks above a fullscreen camera and the 3D inset, under the HUD and side panel", () => {
-    const css = Deno.readTextFileSync(new URL("../src/styles.css", import.meta.url))
-    const z = (selector: string) => Number(css.match(new RegExp(`${selector.replace(/[.]/g, "\\.")}\\s*\\{[^}]*z-index:\\s*(\\d+)`))?.[1])
-    const map = z(".map-layer")
-    assert(map > z(".camera-layer"), "over the camera layer (a main camera fills the screen)")
-    assert(map >= z(".camera-main .scene-slot.floating"), "level with the 3D inset (later in the page, so on top)")
-    assert(map < z(".side-panel") && map < z(".drive-hud") && map < z(".topbar"))
-})

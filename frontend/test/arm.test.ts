@@ -3,12 +3,12 @@
 // rules: a joint jog's target never runs more than LEAD_S ahead, a release holds, the twist has a
 // zero deadman, disarming stops.
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
-import { ArmControl, eeTwist, jointCommand, LEAD_S } from "../src/core/arm.ts"
-import { armTopics, STANDARD_ARM } from "../src/core/armTopics.ts"
-import { Drive } from "../src/core/drive.ts"
-import { decode, encode } from "../src/core/lcm/lcm.ts"
+import { ArmControl, eeTwist, jointCommand, LEAD_S } from "../src/logic/arm.ts"
+import { armTopics, STANDARD_ARM } from "../src/logic/armTopics.ts"
+import { Drive } from "../src/logic/drive.ts"
+import { decode, encode } from "../src/lcm.ts"
 import armProfile from "../src/profile/arm.ts"
-import type { Connection } from "../src/core/transport.ts"
+import type { Connection } from "../src/logic/connection.ts"
 import mock from "./fixtures/blueprint_coordinator-mock.json" with { type: "json" }
 import keyboardXarm7 from "./fixtures/blueprint_keyboard-teleop-xarm7.json" with { type: "json" }
 import teleopXarm7 from "./fixtures/blueprint_coordinator-teleop-xarm7.json" with { type: "json" }

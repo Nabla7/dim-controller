@@ -1,7 +1,7 @@
 // The clicked_point the 3D view's menu publishes: the key and bytes dimos's nav stack reads.
 import { assertEquals } from "jsr:@std/assert@1"
-import { decode } from "../src/core/lcm/lcm.ts"
-import { clickedPoint } from "../src/core/clickedPoint.ts"
+import { decode } from "../src/lcm.ts"
+import { clickedPoint } from "../src/logic/clickedPoint.ts"
 
 Deno.test("clicked_point is a PointStamped on dimos/clicked_point", () => {
     const { key, bytes } = clickedPoint({ x: 1.5, y: -2.25, z: 0.1 }, "world", 1_700_000_123_456)

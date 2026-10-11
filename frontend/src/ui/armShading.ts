@@ -27,13 +27,13 @@ export function armShading() {
 function show(image: HTMLImageElement, url: string) {
     const still = matchMedia("(prefers-reduced-motion: reduce)").matches
     const overlay = document.createElement("div")
-    overlay.style.cssText = "position:fixed;inset:0;z-index:2000;display:grid;place-items:center;background:rgb(0 0 0 / 0.55);cursor:pointer"
+    overlay.style.cssText = "position:fixed;inset:0;z-index:2000;display:grid;place-items:center;background:var(--scrim);cursor:pointer"
     const frame = document.createElement("div")
     frame.style.cssText = "position:relative;overflow:hidden;border-radius:var(--radius, 8px);max-width:min(92vw, 1041px)"
     image.style.cssText = "display:block;width:100%;height:auto"
     const label = document.createElement("div")
     label.textContent = "Loading..."
-    label.style.cssText = `position:absolute;top:10px;left:${still ? "50%" : "0"};transform:translateX(${still ? "-50%" : "-100%"});white-space:nowrap;font:700 clamp(16px, 3vw, 28px) var(--display, var(--mono, monospace));letter-spacing:0.08em;color:var(--fg, #fff);text-shadow:0 1px 6px rgb(0 0 0 / 0.6)`
+    label.style.cssText = `position:absolute;top:10px;left:${still ? "50%" : "0"};transform:translateX(${still ? "-50%" : "-100%"});white-space:nowrap;font:700 clamp(16px, 3vw, 28px) var(--display, var(--mono, monospace));letter-spacing:0.08em;color:var(--fg);text-shadow:0 1px 6px var(--scrim)`
     frame.append(image, label)
     overlay.append(frame)
     document.body.append(overlay)

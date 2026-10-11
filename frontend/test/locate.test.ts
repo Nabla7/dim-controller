@@ -1,6 +1,6 @@
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
 import { Vector3 } from "three"
-import { frontObject, groundLevel, nearestCluster } from "../src/core/locate.ts"
+import { frontObject, groundLevel, nearestCluster } from "../src/logic/locate.ts"
 
 Deno.test("the nearest dense depth band wins over a wall behind it", () => {
     const person = Array.from({ length: 40 }, (_, index) => ({ depth: 2.4 + (index % 4) * 0.08, id: "person" }))

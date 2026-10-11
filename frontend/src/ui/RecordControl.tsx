@@ -3,18 +3,17 @@
 // Advanced section (image format, chunk compression, new topics, dimos logs, every stream with its rate and a max
 // rate). Every topic is recorded unless turned off; the options are saved in the backend (lv.record.options).
 import { useEffect, useRef, useState } from "react"
-import type { ViewerApp } from "../core/app.ts"
-import { persistentStore, useStore } from "../core/store.ts"
-import { recorder, type Compression, type ImageFormat, type StreamRate } from "../core/recorder.ts"
-import { biggestStreams, formatBytes, formatClock, formatRate, inRecordingsFolder, isRecorded, isRpcTopic, TOP_STREAMS } from "../core/recordFormat.ts"
-import type { Topic } from "../core/transport.ts"
-import { Field, Select, Toggle } from "./controls.tsx"
-import { Icon } from "./icons.tsx"
+import { Alert, Badge, Button, ButtonGroup, Checkbox, Field, Heading, IconButton, NumberInput, Panel, Row, Select, Text, TextInput, Toggle } from "dimos-react"
+import type { ControllerApp } from "../logic/controller.ts"
+import { persistentStore, useStore } from "../logic/settings.ts"
+import { type Compression, type ImageFormat, recorder, type StreamRate } from "../logic/recorder.ts"
+import { biggestStreams, formatBytes, formatClock, formatRate, inRecordingsFolder, isRecorded, isRpcTopic, TOP_STREAMS } from "../logic/recordFormat.ts"
+import type { Topic } from "../logic/connection.ts"
 import { appInstalled, openApp, underDesktop } from "../dim-app/source/desktop.js"
 
 /** topic key → recorded or not; a topic not in it is recorded (so new ones are too) */
 export const recordedTopics = persistentStore<Record<string, boolean>>("lv.record.topics", {})
-export function RecordControl({ app }: { app: ViewerApp }) {
+export function RecordControl({ app }: { app: ControllerApp }) {
     const status = useStore(recorder.status)
     const pending = useStore(recorder.pending)
     const { topics } = useStore(app.connection.status)
@@ -45,67 +44,45 @@ export function RecordControl({ app }: { app: ViewerApp }) {
         ? `Record every stream${topics.length - selected.length ? ` but ${topics.length - selected.length} turned off` : ""}; new ones join`
         : `Record ${selected.length} streams`
 
-    // the options are the button's sibling, not its child: the button's frosted glass would pin a fixed child to itself
     return (
         <>
-            <div className={`dim-panel glass record-control ${active ? "recording" : ""}`} data-testid="record-control">
-                {/* one split button: Record │ … */}
-                <div className="record-split">
-                    <button
-                        type="button"
-                        className={`dim-btn sm record-toggle ${active ? "danger recording" : ""}`}
-                        aria-pressed={active}
+            <div className={`record-control ${active ? "recording" : ""}`} data-testid="record-control">
+                <ButtonGroup>
+                    <Button
+                        size="sm"
+                        variant={active ? "danger" : "default"}
+                        className="record-toggle"
+                        icon="record"
+                        pressed={active}
                         title={status.unavailable ?? (error ? `${label}: ${error}` : label)}
                         aria-label={label}
                         // with new streams joining, a recording can start before anything is on the bus: they join as they appear
                         disabled={busy || !!status.unavailable || (!active && !status.options.recordNew && !selected.length)}
                         onClick={toggle}
                     >
-                        <span className="record-dot" />
                         {active
                             ? (
-                                <span className="record-live" data-testid="record-live">
-                                    <span className="record-label">{busy ? "Stopping…" : "Stop recording"}</span>
-                                    <span className="record-clock dim-mono">{formatClock(status.recording.seconds)}</span>
-                                    <span className="record-extra dim-mono">· {formatBytes(status.recording.bytes)} · {status.keys.length} streams</span>
+                                <span data-testid="record-live">
+                                    {busy ? "Stopping…" : "Stop recording"} <Text mono>{formatClock(status.recording.seconds)}</Text>{" "}
+                                    <Text mono muted className="record-extra">· {formatBytes(status.recording.bytes)} · {status.keys.length} streams</Text>
                                 </span>
                             )
-                            : <span className="record-label">{busy ? "Starting…" : "Record"}</span>}
-                    </button>
-                    <button
-                        type="button"
-                        className={`dim-btn sm icon record-more ${open ? "on" : ""}`}
-                        aria-haspopup="dialog"
-                        aria-expanded={open}
-                        title="Recording options"
-                        aria-label="Recording options"
-                        onClick={() => setOpen(!open)}
-                    >
-                        {/* the shared set's dots are hairline at this size: solid ones */}
-                        <svg width={16} height={16} viewBox="0 0 24 24" aria-hidden="true">
-                            {[5, 12, 19].map((x) => <rect key={x} x={x - 2} y={10} width={4} height={4} rx={2} fill="currentColor" />)}
-                        </svg>
-                    </button>
-                </div>
-                {error && !open && <span className="dim-badge danger record-error" title={error}>failed</span>}
+                            : busy ? "Starting…" : "Record"}
+                    </Button>
+                    <IconButton size="sm" variant="default" icon="more-horizontal" label="Recording options" pressed={open} aria-haspopup="dialog" aria-expanded={open} className="record-more" onClick={() => setOpen(!open)} />
+                </ButtonGroup>
+                {error && !open && <Badge tone="danger" title={error}>failed</Badge>}
             </div>
             {open && <RecordOptions app={app} error={error} onClose={() => setOpen(false)} />}
         </>
     )
 }
 
-function RecordOptions({ app, error, onClose }: { app: ViewerApp; error: string | null; onClose: () => void }) {
+function RecordOptions({ app, error, onClose }: { app: ControllerApp; error: string | null; onClose: () => void }) {
     const status = useStore(recorder.status)
     const streams = useStore(recorder.streams)
     const { topics } = useStore(app.connection.status)
     const chosen = useStore(recordedTopics)
-    const [advanced, setAdvanced] = useState(() => {
-        try {
-            return localStorage.getItem("controller.record.advanced") === "1"
-        } catch {
-            return false
-        }
-    })
     const [problem, setProblem] = useState<string | null>(null)
     const [recordings, setRecordings] = useState<"checking" | "installed" | "missing" | "outside">("checking")
     const panel = useRef<HTMLDivElement>(null)
@@ -138,14 +115,6 @@ function RecordOptions({ app, error, onClose }: { app: ViewerApp; error: string 
     const active = status.recording.active
     const options = status.options
     const run = (work: Promise<unknown>) => work.then(() => setProblem(null)).catch((failure) => setProblem(String(failure.message ?? failure)))
-    const setAdvancedOpen = (value: boolean) => {
-        setAdvanced(value)
-        try {
-            localStorage.setItem("controller.record.advanced", value ? "1" : "0")
-        } catch {
-            // private window: it just isn't remembered
-        }
-    }
     const rateOf = new Map(streams.list.map((stream) => [stream.key, stream]))
     // the biggest streams, ranked once and then held in place while this is open, so a switch doesn't move under the
     // pointer as rates change (new ones fill free places; the numbers stay live)
@@ -175,130 +144,122 @@ function RecordOptions({ app, error, onClose }: { app: ViewerApp; error: string 
     const outside = !inRecordingsFolder(status.directory, status.recordings_root)
 
     return (
-        <div ref={panel} className="dim-panel glass record-options" role="dialog" aria-label="Recording options" data-testid="record-options">
-            <div className="record-options-head">
-                <h2 className="dim-card-title">Recording</h2>
-                <button type="button" className="dim-btn icon icon-button" title="Close" aria-label="Close" onClick={onClose}><Icon name="close" size={16} /></button>
-            </div>
-            {status.unavailable === "connecting…" && <p className="hint">connecting to the recorder…</p>}
-            {status.unavailable && status.unavailable !== "connecting…" && (
-                <div className="dim-alert warn" data-testid="onboard-recorder-down">
-                    <div>
-                        <div className="dim-alert-title">Recording isn't available</div>
+        <div ref={panel} className="record-options" role="dialog" aria-label="Recording options" data-testid="record-options">
+            <Panel glass title="Recording" actions={<IconButton icon="close" label="Close" onClick={onClose} />}>
+                {status.unavailable === "connecting…" && <Text small muted>connecting to the recorder…</Text>}
+                {status.unavailable && status.unavailable !== "connecting…" && (
+                    <Alert tone="warn" title="Recording isn't available" data-testid="onboard-recorder-down" actions={<Button size="sm" onClick={() => recorder.refresh()}>Try again</Button>}>
                         The Controller's server isn't answering. Closing the Controller (✕) and opening it again restarts it.
-                        <div className="hint">{status.unavailable}</div>
-                        <button type="button" className="dim-btn sm" onClick={() => recorder.refresh()}>Try again</button>
-                    </div>
-                </div>
-            )}
-            {!status.unavailable && !all.length && (
-                <div className="dim-alert" data-testid="onboard-nothing-to-record">
-                    <div>
-                        <div className="dim-alert-title">Nothing to record yet</div>
+                        <Text as="div" small muted>{status.unavailable}</Text>
+                    </Alert>
+                )}
+                {!status.unavailable && !all.length && (
+                    <Alert title="Nothing to record yet" data-testid="onboard-nothing-to-record" actions={<Button size="sm" onClick={() => openApp("launcher")}>Open the Launcher</Button>}>
                         Launch a blueprint (or a replay) and its topics show up here to record.
-                        <div>
-                            <button type="button" className="dim-btn sm" onClick={() => openApp("launcher")}>Open the Launcher</button>
-                        </div>
-                    </div>
+                    </Alert>
+                )}
+                {active && (
+                    <Row gap={8} wrap data-testid="record-now">
+                        <Badge tone="danger" solid dot>REC {formatClock(status.recording.seconds)}</Badge>
+                        <Text mono small>{formatBytes(status.recording.bytes)} · {status.keys.length} streams · {status.recording.messages.toLocaleString()} msgs</Text>
+                        <Text small muted className="record-path" title={status.recording.path ?? ""}>{status.recording.path}</Text>
+                        {status.recording.dropped > 0 && <Text small tone="danger">{status.recording.dropped.toLocaleString()} dropped: the disk can't keep up</Text>}
+                        {status.recording.skipped > 0 && <Text small muted>{status.recording.skipped.toLocaleString()} left out by max rates</Text>}
+                        {options.logs && <Text small muted>{status.logs.dirs.length ? `${status.logs.lines.toLocaleString()} dimos log lines` : "no dimos run logs found"}</Text>}
+                    </Row>
+                )}
+                {(error || problem) && <Alert tone="danger">{error ?? problem}</Alert>}
+
+                <Field
+                    label="Folder"
+                    hint={outside ? "Outside Desktop's recordings folder: the Recordings app won't list these." : options.directory ? "Inside Desktop's recordings folder." : "Desktop's recordings folder (the Recordings app lists it)."}
+                    error={undefined}
+                >
+                    <Row gap={6}>
+                        <FolderInput directory={status.directory} disabled={active} onCommit={(directory) => run(recorder.settings({ directory }))} />
+                        {options.directory && <Button size="sm" disabled={active} title={status.default_directory} onClick={() => run(recorder.settings({ directory: "" }))}>Default</Button>}
+                    </Row>
+                </Field>
+
+                <Heading level={3}>Biggest streams</Heading>
+                <div className="top-streams" data-testid="top-streams">
+                    {top.map((stream) => (
+                        <Row key={stream.key} gap={8} className="stream-row">
+                            <Toggle size="sm" value={isRecorded(stream.key, chosen)} onChange={(value: boolean) => recordedTopics.update({ [stream.key]: value })} />
+                            <Text small className="topic-name" title={stream.key}>{stream.topic}</Text>
+                            <Text small mono muted>{formatRate(stream.bytesPerSecond)}</Text>
+                        </Row>
+                    ))}
+                    {!top.length && <Text small muted>{streams.error ? `can't measure: ${streams.error}` : streams.seconds < 2 ? "measuring…" : "nothing is sending"}</Text>}
                 </div>
-            )}
-            {active && (
-                <div className="record-now" data-testid="record-now">
-                    <span className="dim-badge danger solid"><span className="dot" /> REC {formatClock(status.recording.seconds)}</span>
-                    <span className="dim-mono">{formatBytes(status.recording.bytes)} · {status.keys.length} streams · {status.recording.messages.toLocaleString()} msgs</span>
-                    <span className="hint record-path" title={status.recording.path ?? ""}>{status.recording.path}</span>
-                    {status.recording.dropped > 0 && <span className="problem">{status.recording.dropped.toLocaleString()} dropped: the disk can't keep up</span>}
-                    {status.recording.skipped > 0 && <span className="hint">{status.recording.skipped.toLocaleString()} left out by max rates</span>}
-                    {options.logs && <span className="hint">{status.logs.dirs.length ? `${status.logs.lines.toLocaleString()} dimos log lines` : "no dimos run logs found"}</span>}
-                </div>
-            )}
-            {(error || problem) && <p className="problem">{error ?? problem}</p>}
+                <Text as="p" small muted data-testid="record-summary">
+                    Recording {recordedCount} of {all.length} streams{recordedRate > 0 ? ` · about ${formatRate(recordedRate)}` : ""}
+                    {active && !options.recordNew ? "" : " · new ones join"}
+                </Text>
 
-            <div className="field-block">
-                <span className="field-label">Folder</span>
-                <div className="record-folder">
-                    <input
-                        className="dim-input dim-mono"
-                        aria-label="Recording folder"
-                        defaultValue={status.directory}
-                        key={status.directory}
-                        disabled={active}
-                        title={active ? "The folder can change once this recording ends" : status.directory}
-                        onKeyDown={(event) => event.key === "Enter" && (event.target as HTMLInputElement).blur()}
-                        onBlur={(event) => event.target.value.trim() !== status.directory && run(recorder.settings({ directory: event.target.value }))}
-                    />
-                    {options.directory && (
-                        <button type="button" className="dim-btn sm" disabled={active} title={status.default_directory} onClick={() => run(recorder.settings({ directory: "" }))}>Default</button>
-                    )}
-                </div>
-                <p className={`hint ${outside ? "warn-text" : ""}`}>
-                    {outside ? "Outside Desktop's recordings folder: the Recordings app won't list these." : options.directory ? "Inside Desktop's recordings folder." : "Desktop's recordings folder (the Recordings app lists it)."}
-                </p>
-            </div>
+                <Row gap={6}>
+                    {recordings === "missing"
+                        ? <Button size="sm" icon="download" onClick={() => openApp("appstore")}>Install Recordings from the App Store</Button>
+                        : (
+                            <Button size="sm" icon="folder" disabled={recordings === "outside"} title={recordings === "outside" ? "Open the Controller inside dimOS Desktop to open Recordings" : "Open the Recordings app"} onClick={() => openApp("dim-recordings")}>
+                                See recordings
+                            </Button>
+                        )}
+                </Row>
 
-            <h3 className="dim-label">Biggest streams</h3>
-            <div className="top-streams" data-testid="top-streams">
-                {top.map((stream) => (
-                    <div key={stream.key} className="stream-row">
-                        <Toggle value={isRecorded(stream.key, chosen)} onChange={(value) => recordedTopics.update({ [stream.key]: value })} />
-                        <span className="topic-name" title={`${stream.key}`}>{stream.topic}</span>
-                        <span className="stream-rate dim-mono">{formatRate(stream.bytesPerSecond)}</span>
-                    </div>
-                ))}
-                {!top.length && <p className="empty">{streams.error ? `can't measure: ${streams.error}` : streams.seconds < 2 ? "measuring…" : "nothing is sending"}</p>}
-            </div>
-            <p className="hint" data-testid="record-summary">
-                Recording {recordedCount} of {all.length} streams{recordedRate > 0 ? ` · about ${formatRate(recordedRate)}` : ""}
-                {active && !options.recordNew ? "" : " · new ones join"}
-            </p>
-
-            <div className="button-row">
-                {recordings === "missing"
-                    ? <button type="button" className="dim-btn sm" onClick={() => openApp("appstore")}><Icon name="download" size={14} /> Install Recordings from the App Store</button>
-                    : (
-                        <button type="button" className="dim-btn sm" disabled={recordings === "outside"} title={recordings === "outside" ? "Open the Controller inside dimOS Desktop to open Recordings" : "Open the Recordings app"} onClick={() => openApp("dim-recordings")}>
-                            <Icon name="folder" size={14} /> See recordings
-                        </button>
-                    )}
-            </div>
-
-            <button type="button" className="advanced-toggle" aria-expanded={advanced} onClick={() => setAdvancedOpen(!advanced)}>
-                <Icon name="chevron-right" size={14} />
-                Advanced
-            </button>
-            {advanced && (
-                <div className="record-advanced" data-testid="record-advanced">
+                <Panel collapsible defaultOpen={false} persistKey="controller.record.advanced" title="Advanced" className="record-advanced" data-testid="record-advanced">
                     <Field label="Images" hint={active ? "can change once this recording ends" : "how camera images are stored"}>
                         <Select
+                            size="sm"
                             value={options.image_format}
                             options={[["raw", "raw (exact)"], ["png", "png (lossless)"], ["jpegxl", "jpeg xl (lossless)"], ["webp", "webp"], ["jpeg", "jpeg"]]}
-                            onChange={(image_format) => run(recorder.settings({ image_format: image_format as ImageFormat }))}
+                            onChange={(image_format: string) => run(recorder.settings({ image_format: image_format as ImageFormat }))}
                         />
                     </Field>
                     <Field label="Chunks" hint="mcap chunk compression; uncompressed survives a hard kill best">
-                        <Select value={options.compression} options={[["none", "uncompressed"], ["lz4", "lz4"], ["zstd", "zstd"]]} onChange={(compression) => run(recorder.settings({ compression: compression as Compression }))} />
+                        <Select size="sm" value={options.compression} options={[["none", "uncompressed"], ["lz4", "lz4"], ["zstd", "zstd"]]} onChange={(compression: string) => run(recorder.settings({ compression: compression as Compression }))} />
                     </Field>
-                    <Field label="New topics"><Toggle value={options.recordNew} onChange={(recordNew) => run(recorder.settings({ recordNew }))} label="join a running recording" /></Field>
-                    <Field label="dimos logs"><Toggle value={options.logs} onChange={(logs) => run(recorder.settings({ logs }))} label="record the running dimos's logs" /></Field>
-                    <div className="all-streams-head">
-                        <span className="dim-label">All streams · {recordedCount} of {all.length}</span>
-                        <span className="all-streams-actions">
-                            <button type="button" className="link" onClick={() => recordedTopics.update(Object.fromEntries(all.map((topic) => [topic.key, true])))}>all</button>
-                            <button type="button" className="link" onClick={() => recordedTopics.update(Object.fromEntries(all.map((topic) => [topic.key, false])))}>none</button>
-                        </span>
-                    </div>
+                    <Field label="New topics"><Toggle size="sm" value={options.recordNew} onChange={(recordNew: boolean) => run(recorder.settings({ recordNew }))} label="join a running recording" /></Field>
+                    <Field label="dimos logs"><Toggle size="sm" value={options.logs} onChange={(logs: boolean) => run(recorder.settings({ logs }))} label="record the running dimos's logs" /></Field>
+                    <Row gap={6} justify="space-between">
+                        <Heading level={3}>All streams · {recordedCount} of {all.length}</Heading>
+                        <Row gap={4}>
+                            <Button size="sm" variant="ghost" onClick={() => recordedTopics.update(Object.fromEntries(all.map((topic) => [topic.key, true])))}>all</Button>
+                            <Button size="sm" variant="ghost" onClick={() => recordedTopics.update(Object.fromEntries(all.map((topic) => [topic.key, false])))}>none</Button>
+                        </Row>
+                    </Row>
                     <div className="record-topics" data-testid="all-streams">
                         <div className="record-topic legend">
                             <span />
-                            <span>topic</span>
-                            <span className="stream-rate">now</span>
-                            <span className="max-rate" title="At most this many messages per second are recorded; empty = every message">max Hz</span>
+                            <Text small muted>topic</Text>
+                            <Text small muted>now</Text>
+                            <Text small muted title="At most this many messages per second are recorded; empty = every message">max Hz</Text>
                         </div>
                         {all.map((topic) => <StreamRow key={topic.key} topic={topic} rate={rateOf.get(topic.key)} chosen={chosen} maxRate={options.rates[topic.key]} onRate={(hz) => run(recorder.settings({ rates: { [topic.key]: hz } }))} />)}
                     </div>
-                </div>
-            )}
+                </Panel>
+            </Panel>
         </div>
+    )
+}
+
+/** The recording folder: typed freely, saved on Enter or leaving the field. */
+function FolderInput({ directory, disabled, onCommit }: { directory: string; disabled: boolean; onCommit: (directory: string) => void }) {
+    const [text, setText] = useState(directory)
+    useEffect(() => setText(directory), [directory])
+    const commit = () => text.trim() !== directory && onCommit(text)
+    return (
+        <TextInput
+            mono
+            size="sm"
+            aria-label="Recording folder"
+            value={text}
+            disabled={disabled}
+            title={disabled ? "The folder can change once this recording ends" : directory}
+            onChange={setText}
+            onEnter={commit}
+            onBlur={commit}
+        />
     )
 }
 
@@ -306,29 +267,23 @@ function StreamRow({ topic, rate, chosen, maxRate, onRate }: { topic: Topic; rat
     const on = isRecorded(topic.key, chosen)
     return (
         <div className={`record-topic ${on ? "" : "off"} ${isRpcTopic(topic) ? "rpc" : ""}`}>
-            <input type="checkbox" aria-label={`Record ${topic.name}`} checked={on} onChange={(event) => recordedTopics.update({ [topic.key]: event.target.checked })} />
-            <span className="topic-name" title={`${topic.key}`}>
+            <Checkbox aria-label={`Record ${topic.name}`} value={on} onChange={(value: boolean) => recordedTopics.update({ [topic.key]: value })} />
+            <Text small className="topic-name" title={topic.key}>
                 {topic.name}
-                <span className="topic-type"> {topic.type.split(".")[1]}</span>
-            </span>
-            <span className="stream-rate dim-mono" title={rate ? `${rate.messagesPerSecond} msg/s` : "quiet"}>{rate ? formatRate(rate.bytesPerSecond) : "–"}</span>
-            <input
-                type="number"
-                className="dim-input number max-rate"
-                aria-label={`Max messages per second for ${topic.name}`}
-                min={0}
-                step={1}
-                placeholder="all"
-                defaultValue={maxRate ?? ""}
-                key={maxRate ?? "none"}
-                onKeyDown={(event) => event.key === "Enter" && (event.target as HTMLInputElement).blur()}
-                onBlur={(event) => {
-                    const value = event.target.value === "" ? null : Number(event.target.value)
-                    if ((value || null) !== (maxRate ?? null)) {
-                        onRate(value && value > 0 ? value : null)
-                    }
-                }}
-            />
+                <Text muted> {topic.type.split(".")[1]}</Text>
+            </Text>
+            <Text small mono muted title={rate ? `${rate.messagesPerSecond} msg/s` : "quiet"}>{rate ? formatRate(rate.bytesPerSecond) : "–"}</Text>
+            <MaxRate topic={topic} maxRate={maxRate} onRate={onRate} />
         </div>
+    )
+}
+
+/** Max messages a second: a number, or empty for every message (cleared with the ✕). */
+function MaxRate({ topic, maxRate, onRate }: { topic: Topic; maxRate: number | undefined; onRate: (hz: number | null) => void }) {
+    return (
+        <Row gap={2}>
+            <NumberInput size="sm" className="max-rate" aria-label={`Max messages per second for ${topic.name}`} min={0} step={1} placeholder="all" value={maxRate ?? null} onChange={(value: number) => onRate(value > 0 ? value : null)} />
+            {maxRate ? <IconButton size="sm" icon="close" label="Every message" onClick={() => onRate(null)} /> : null}
+        </Row>
     )
 }

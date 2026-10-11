@@ -1,10 +1,10 @@
 // The drive loop against a fake bridge client: what gets published, when, and with which speeds.
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
-import { Drive } from "../src/core/drive.ts"
-import { decode } from "../src/core/lcm/lcm.ts"
+import { Drive } from "../src/logic/drive.ts"
+import { decode } from "../src/lcm.ts"
 import go2 from "../src/profile/dog.ts"
 import drone from "../src/profile/drone.ts"
-import type { Connection } from "../src/core/transport.ts"
+import type { Connection } from "../src/logic/connection.ts"
 
 function fakeBridge() {
     const puts: { key: string; twist: { linear: { x: number; y: number; z: number }; angular: { z: number } } }[] = []

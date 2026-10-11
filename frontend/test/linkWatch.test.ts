@@ -1,10 +1,10 @@
 // The link watch: when driving holds (latency over the max, the link lost) and when it lets go; and the drive while held.
 import { assertEquals } from "jsr:@std/assert@1"
-import { checkLink, DEFAULT_MAX_LATENCY_MS, maxLatencyOf } from "../src/core/linkWatch.ts"
-import { Drive, type DriveHalt } from "../src/core/drive.ts"
-import { decode } from "../src/core/lcm/lcm.ts"
+import { checkLink, DEFAULT_MAX_LATENCY_MS, maxLatencyOf } from "../src/logic/linkWatch.ts"
+import { Drive, type DriveHalt } from "../src/logic/drive.ts"
+import { decode } from "../src/lcm.ts"
 import go2 from "../src/profile/dog.ts"
-import type { Connection } from "../src/core/transport.ts"
+import type { Connection } from "../src/logic/connection.ts"
 
 const held = (reason: DriveHalt["reason"], reconnecting = false): DriveHalt => ({ reason, latencyMs: null, maxMs: 1000, reconnecting })
 

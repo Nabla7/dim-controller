@@ -1,7 +1,7 @@
 // Auto robot type (core/robotType.ts): robots.json's type for a running blueprint, joint topics without cmd_vel → arm,
 // Desktop's default robot, the blueprint's name, else dog.
 import { assertEquals } from "jsr:@std/assert@1"
-import { chosenType, resolveType, typeFromName } from "../src/core/robotType.ts"
+import { chosenType, resolveType, typeFromName } from "../src/logic/robotType.ts"
 import go2 from "./fixtures/blueprint_unitree-go2.json" with { type: "json" }
 
 const go2Modules = (go2 as { modules: never[] }).modules

@@ -6,13 +6,14 @@
 // the page's life (a collapse, a reopen or a topic missing from discovery never blanks it). Redrawn only when something
 // changed (new data, the robot moved, a zoom or pan, a resize, the theme).
 import { useEffect, useRef, useState } from "react"
-import type { ViewerApp } from "../core/app.ts"
-import { useStore } from "../core/store.ts"
-import type { Topic } from "../core/transport.ts"
-import { decode, headerFrameId, type LcmValue } from "../core/lcm/lcm.ts"
-import { poseMatrix } from "../core/layers/helpers.ts"
-import { writeLocal } from "../core/videoQuality.ts"
-import { rememberTopics } from "../core/transport.ts"
+import { Button, clampPanelBox, Icon, IconButton, PanelInfo, Select, ViewPanel } from "dimos-react"
+import { poseMatrix, useTfFrames } from "dimos-react/three"
+import type { ControllerApp } from "../logic/controller.ts"
+import { useStore } from "../logic/settings.ts"
+import { rememberTopics, type Topic } from "../logic/connection.ts"
+import { decode, headerFrameId, type LcmValue } from "../lcm.ts"
+import { writeLocal } from "../logic/local.ts"
+import type { Dock } from "../App.tsx"
 import {
     chooseMapTopic,
     chooseOverlay,
@@ -38,16 +39,12 @@ import {
     wheelGesture,
     worldToScreen,
     zoomAt,
-} from "../core/map2d.ts"
-import { Icon } from "./icons.tsx"
-import { clampPanelBox } from "./panelDrag.ts"
-import { LAYOUT_KEY, loadMapLayout, type MapLayout, MIN_HEIGHT, MIN_WIDTH, viewport } from "./mapLayout.ts"
-import { type Dock, Panel } from "./Panel.tsx"
-import { useTfFrames } from "./useTfFrames.ts"
+} from "../logic/map2d.ts"
+import { LAYOUT_KEY, loadMapLayout, type MapLayout, MIN_HEIGHT, MIN_WIDTH, viewport } from "../logic/mapLayout.ts"
 
 /** every map topic this page has seen (the 3D view's layers outlive discovery the same way): a 0.5 Hz map that misses a
  * discovery round, or drops off for a while, stays the map instead of the panel falling back to /lidar */
-const seenTopics = new WeakMap<ViewerApp, Map<string, { topic: Topic; at: number }>>()
+const seenTopics = new WeakMap<ControllerApp, Map<string, { topic: Topic; at: number }>>()
 
 /** each topic's last message (decoded), kept for the page's life so a reopened panel or a re-picked topic shows it at once */
 interface Retained {
@@ -58,8 +55,8 @@ interface Retained {
     cloudMatrix?: number[]
     cloudInfo?: string
 }
-const retained = new WeakMap<ViewerApp, Map<string, Retained>>()
-function retainedFor(app: ViewerApp, key: string): Retained {
+const retained = new WeakMap<ControllerApp, Map<string, Retained>>()
+function retainedFor(app: ControllerApp, key: string): Retained {
     let topics = retained.get(app)
     if (!topics) {
         retained.set(app, topics = new Map())
@@ -71,7 +68,7 @@ function retainedFor(app: ViewerApp, key: string): Retained {
     return entry
 }
 
-export function MapPanel({ app, mobile, dock }: { app: ViewerApp; mobile: boolean; dock: Dock | null }) {
+export function MapPanel({ app, mobile, dock }: { app: ControllerApp; mobile: boolean; dock: Dock | null }) {
     const [layout, setLayout] = useState(() => loadMapLayout())
     const update = (patch: Partial<MapLayout>) =>
         setLayout((old) => {
@@ -128,7 +125,7 @@ export function MapPanel({ app, mobile, dock }: { app: ViewerApp; mobile: boolea
     }, [layout.followFrame, open])
 
     // the TF frames to offer for following, refreshed while open
-    const frames = useTfFrames(app, open)
+    const frames: string[] = useTfFrames({ tf: app.tf })
 
     useEffect(() => {
         renderer.current?.setTopics(topic, overlay)
@@ -145,64 +142,47 @@ export function MapPanel({ app, mobile, dock }: { app: ViewerApp; mobile: boolea
     const openFromHead = () => !open && !dragged.current && update({ collapsed: false })
     return (
         <div className="map-layer">
-            <Panel
+            <ViewPanel
                 placement={dock ? "dock" : full && open ? "main" : "float"}
                 dock={dock}
                 className={`map-panel ${open ? "open" : "collapsed"} ${box.x < 0 ? "default-spot" : ""}`}
                 style={style}
                 title={open ? status.info : "Show the 2D map (drag to move it)"}
                 onHeadDoubleClick={() => open && !mobile && update({ full: !layout.full })}
-                onDrag={floating && !mobile
-                    ? (x, y) => {
+                top={48}
+                onMove={floating && !mobile
+                    ? (x: number, y: number) => {
                         dragged.current = true
                         update({ x, y })
                     }
                     : undefined}
-                resize={floating && open && !mobile ? { corner: "right", minimum: { width: MIN_WIDTH, height: MIN_HEIGHT }, onDone: (next) => update(next) } : null}
+                resize={floating && open && !mobile ? { corner: "right", minimum: { width: MIN_WIDTH, height: MIN_HEIGHT }, onDone: (next: { x: number; y: number; width: number; height: number }) => update(next) } : null}
                 bodyClassName="map-body"
                 head={
                     <>
                         {/* folded, a click on the title opens it (a drag moves it instead) */}
-                        <span className="map-title" onPointerDown={() => (dragged.current = false)} onClick={openFromHead}><Icon name="map" size={14} />Map</span>
-                        {!open && <span className="map-show" onPointerDown={() => (dragged.current = false)} onClick={openFromHead}>show</span>}
+                        <span className="dr-view-panel-title map-title" onPointerDown={() => (dragged.current = false)} onClick={openFromHead}><Icon name="map" size={14} />Map</span>
+                        {!open && <PanelInfo className="map-show" onPointerDown={() => (dragged.current = false)} onClick={openFromHead}>show</PanelInfo>}
                         {open && candidates.length > 1 && (
-                            <select className="dim-select" value={layout.topic} onChange={(event) => update({ topic: event.target.value })} aria-label="Map topic">
-                                <option value="">auto ({label})</option>
-                                {candidates.map((other) => <option key={other.key} value={other.key}>{name(other)}</option>)}
-                            </select>
+                            <Select size="sm" value={layout.topic} aria-label="Map topic" options={[["", `auto (${label})`], ...candidates.map((other) => [other.key, name(other)])]} onChange={(topic: string) => update({ topic })} />
                         )}
-                        {open && candidates.length <= 1 && <span className="camera-info map-source">{label}</span>}
+                        {open && candidates.length <= 1 && <PanelInfo className="map-source">{label}</PanelInfo>}
                         {open && grids.length > 0 && (
-                            <select className="dim-select map-overlay" value={overlay?.key ?? ""} onChange={(event) => update({ overlay: event.target.value })} aria-label="Costmap overlay" title="A costmap drawn over the map">
-                                <option value="">no costmap</option>
-                                {grids.map((grid) => <option key={grid.key} value={grid.key}>+ {grid.name}</option>)}
-                            </select>
+                            <Select size="sm" className="map-overlay" value={overlay?.key ?? ""} aria-label="Costmap overlay" title="A costmap drawn over the map" options={[["", "no costmap"], ...grids.map((grid) => [grid.key, `+ ${grid.name}`])]} onChange={(next: string) => update({ overlay: next })} />
                         )}
-                        {open && <span className="camera-info">{status.info}</span>}
+                        {open && <PanelInfo>{status.info}</PanelInfo>}
                         {open && (
-                            <select className="dim-select map-frame" value={layout.followFrame} onChange={(event) => update({ followFrame: event.target.value })} aria-label="Frame to follow" title="The TF frame the map follows">
-                                {followFrameOptions(frames, layout.followFrame).map(({ frame, waiting }) => <option key={frame} value={frame}>follow {frame}{waiting ? " (waiting)" : ""}</option>)}
-                            </select>
+                            <Select size="sm" className="map-frame" value={layout.followFrame} aria-label="Frame to follow" title="The TF frame the map follows" options={followFrameOptions(frames, layout.followFrame).map(({ frame, waiting }) => [frame, `follow ${frame}${waiting ? " (waiting)" : ""}`])} onChange={(followFrame: string) => update({ followFrame })} />
                         )}
                         {open && (
                             <>
-                                <button type="button" className="dim-btn icon icon-button map-follow" aria-pressed={follow.following} title={follow.following ? `Following ${layout.followFrame} (pan the map to look around)` : `Re-center on ${layout.followFrame} and follow it (or double-click the map)`} onClick={() => renderer.current?.recenter()}>
-                                    <Icon name="target" size={15} />
-                                </button>
-                                <button type="button" className="dim-btn icon icon-button" title="Fit the whole map" onClick={() => renderer.current?.fit()}>
-                                    <Icon name="fit" size={15} />
-                                </button>
-                                {!mobile && !dock && (
-                                    <button type="button" className="dim-btn icon icon-button" title={layout.full ? "Back to a floating panel" : "Fullscreen map"} onClick={() => update({ full: !layout.full })}>
-                                        <Icon name={layout.full ? "fullscreen-exit" : "fullscreen"} size={15} />
-                                    </button>
-                                )}
+                                <IconButton size="sm" icon="target" className="map-follow" pressed={follow.following} label={follow.following ? `Following ${layout.followFrame} (pan the map to look around)` : `Re-center on ${layout.followFrame} and follow it (or double-click the map)`} onClick={() => renderer.current?.recenter()} />
+                                <IconButton size="sm" icon="fit" label="Fit the whole map" onClick={() => renderer.current?.fit()} />
+                                {!mobile && !dock && <IconButton size="sm" icon={layout.full ? "fullscreen-exit" : "fullscreen"} label={layout.full ? "Back to a floating panel" : "Fullscreen map"} onClick={() => update({ full: !layout.full })} />}
                             </>
                         )}
                         {!dock && (
-                            <button type="button" className="dim-btn icon icon-button" aria-expanded={open} title={open ? "Collapse the map" : "Show the 2D map"} onClick={() => update({ collapsed: open, full: open ? false : layout.full })}>
-                                <Icon name={open ? "chevron-up" : "chevron-down"} size={15} />
-                            </button>
+                            <IconButton size="sm" icon={open ? "chevron-up" : "chevron-down"} aria-expanded={open} label={open ? "Collapse the map" : "Show the 2D map"} onClick={() => update({ collapsed: open, full: open ? false : layout.full })} />
                         )}
                     </>
                 }
@@ -210,16 +190,14 @@ export function MapPanel({ app, mobile, dock }: { app: ViewerApp; mobile: boolea
                 {open && (
                     <>
                         <canvas ref={canvas} className="map-canvas" aria-label="Top-down map" />
-                        {status.problem && <div className="map-problem">{status.problem}</div>}
-                        {!status.problem && follow.following && follow.waiting && <div className="map-problem">waiting for TF frame "{layout.followFrame}"</div>}
+                        {status.problem && <PanelInfo className="map-problem">{status.problem}</PanelInfo>}
+                        {!status.problem && follow.following && follow.waiting && <PanelInfo className="map-problem">waiting for TF frame "{layout.followFrame}"</PanelInfo>}
                         {!follow.following && (
-                            <button type="button" className="dim-btn map-recenter" title="Follow it again (or double-click the map)" onClick={() => renderer.current?.recenter()}>
-                                <Icon name="target" size={13} />Re-center on {layout.followFrame}
-                            </button>
+                            <Button size="sm" icon="target" className="map-recenter" title="Follow it again (or double-click the map)" onClick={() => renderer.current?.recenter()}>Re-center on {layout.followFrame}</Button>
                         )}
                     </>
                 )}
-            </Panel>
+            </ViewPanel>
         </div>
     )
 }
@@ -244,7 +222,7 @@ const css = ([r, g, b, a]: Rgba, alpha = 1) => `rgba(${r}, ${g}, ${b}, ${(a / 25
 const blend = (a: Rgba, b: Rgba, t: number): Rgba => [0, 1, 2, 3].map((index) => Math.round(a[index] + (b[index] - a[index]) * t)) as Rgba
 
 /** A theme token (any CSS color, color-mix included) as rgba bytes, read back off a 1×1 canvas. */
-function token(name: string, fallback: string): Rgba {
+function token(name: string): Rgba {
     const probe = document.createElement("span")
     probe.style.color = `var(${name})`
     document.body.appendChild(probe)
@@ -253,7 +231,6 @@ function token(name: string, fallback: string): Rgba {
     const pixel = document.createElement("canvas")
     pixel.width = pixel.height = 1
     const context = pixel.getContext("2d", { willReadFrequently: true })!
-    context.fillStyle = fallback
     context.fillStyle = color
     context.fillRect(0, 0, 1, 1)
     const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data
@@ -261,8 +238,8 @@ function token(name: string, fallback: string): Rgba {
 }
 
 function themePalette(): Palette {
-    const background = token("--scene-bg, var(--bg)", "#05070d")
-    const fg = token("--fg", "#ece8f0"), muted = token("--muted-fg", "#8e8898"), primary = token("--primary", "#7cc8ec")
+    const background = token("--scene-bg, var(--bg)")
+    const fg = token("--fg"), muted = token("--muted-fg"), primary = token("--primary")
     const opaque = (color: Rgba): Rgba => [color[0], color[1], color[2], 255]
     const base = opaque(background)
     const clear: Rgba = [0, 0, 0, 0]
@@ -271,9 +248,9 @@ function themePalette(): Palette {
         fg,
         muted,
         primary,
-        robot: token("--warn", "#e8bf6a"),
-        axisX: css(token("--axis-x", "#e5484d")),
-        axisY: css(token("--axis-y", "#46a758")),
+        robot: token("--warn"),
+        axisX: css(token("--axis-x")),
+        axisY: css(token("--axis-y")),
         // free floor a shade off the background, costs toward the accent, walls in the text color, unknown clear
         gridLut: gridLut({ free: blend(base, opaque(fg), 0.1), low: blend(base, opaque(primary), 0.3), high: blend(base, opaque(primary), 0.8), lethal: opaque(fg), unknown: clear }),
         overlayLut: gridLut({ free: clear, low: [...primary.slice(0, 3), 70] as Rgba, high: [...primary.slice(0, 3), 190] as Rgba, lethal: [...primary.slice(0, 3), 235] as Rgba, unknown: clear }),
@@ -314,7 +291,7 @@ class MapSource {
     problem = ""
     #stop: (() => void)[] = []
 
-    constructor(readonly app: ViewerApp, readonly topic: Topic, readonly lut: () => Uint8ClampedArray, readonly changed: () => void) {
+    constructor(readonly app: ControllerApp, readonly topic: Topic, readonly lut: () => Uint8ClampedArray, readonly changed: () => void) {
         const connection = app.connection
         const kept = retainedFor(app, topic.key)
         this.problem = `waiting for ${topic.name}`
@@ -368,9 +345,9 @@ class MapSource {
             if (!positions || this.#cloudFrame === null) {
                 return
             }
-            const placed = app.tf.lookup(this.#cloudFrame, app.viewer.fixedFrame)
+            const placed = app.tf.lookup(this.#cloudFrame, app.fixedFrame)
             if (!placed) {
-                this.#status(this.info, `no TF from "${this.#cloudFrame}" to "${app.viewer.fixedFrame}"`)
+                this.#status(this.info, `no TF from "${this.#cloudFrame}" to "${app.fixedFrame}"`)
                 return
             }
             this.#cloudPositions = kept.cloudPositions = positions
@@ -478,7 +455,7 @@ class MapRenderer {
     #dragged = false
     #dispose: (() => void)[] = []
 
-    constructor(readonly app: ViewerApp, readonly canvas: HTMLCanvasElement, view: MapView | null, followFrame: string, readonly events: {
+    constructor(readonly app: ControllerApp, readonly canvas: HTMLCanvasElement, view: MapView | null, followFrame: string, readonly events: {
         onView(view: MapView): void
         onFollow(follow: { following: boolean; waiting: boolean }): void
         onStatus(status: { info: string; problem: string }): void
@@ -486,15 +463,22 @@ class MapRenderer {
         this.#view = isValidView(view) ? view : { centerX: 0, centerY: 0, metersPerPixel: DEFAULT_METERS_PER_PIXEL }
         this.#fitted = isValidView(view)
         this.#follow = new MapFollow(followFrame)
-        this.#dispose.push(app.viewer.onFrame(() => this.#eachFrame()))
+        // its own frame loop (the 3D view may be off): cheap, it redraws only when something changed
+        let loop = 0
+        const tick = () => {
+            this.#eachFrame()
+            loop = requestAnimationFrame(tick)
+        }
+        loop = requestAnimationFrame(tick)
+        this.#dispose.push(() => cancelAnimationFrame(loop))
         const theme = () => {
             this.#palette = themePalette()
             this.#base?.rebuild()
             this.#overlay?.rebuild()
             this.requestDraw()
         }
-        addEventListener("dim-theme", theme)
-        this.#dispose.push(() => removeEventListener("dim-theme", theme))
+        addEventListener("dimos-react-theme", theme)
+        this.#dispose.push(() => removeEventListener("dimos-react-theme", theme))
         const resize = new ResizeObserver(() => this.requestDraw())
         resize.observe(canvas)
         this.#dispose.push(() => resize.disconnect())
@@ -537,7 +521,7 @@ class MapRenderer {
     }
 
     #lookupTarget(): { x: number; y: number } | null {
-        const placed = this.app.tf.lookup(this.#follow.frame, this.app.viewer.fixedFrame)
+        const placed = this.app.tf.lookup(this.#follow.frame, this.app.fixedFrame)
         return placed && this.app.tf.has(this.#follow.frame) ? floorPose(placed.elements) : null
     }
 
@@ -567,13 +551,13 @@ class MapRenderer {
 
     /** every 3D frame: the robot's pose, the grids' TF placement, the fixed frame; a redraw only when one changed */
     #eachFrame() {
-        const fixedFrame = this.app.viewer.fixedFrame
+        const fixedFrame = this.app.fixedFrame
         if (fixedFrame !== this.#fixedFrame) {
             this.#fixedFrame = fixedFrame
             this.#trail.clear()
             this.requestDraw()
         }
-        const matrix = this.app.robotMatrix
+        const matrix = this.app.tf.lookup(this.app.profile.baseFrame, fixedFrame)
         const robot = matrix ? floorPose(matrix.elements) : null
         const old = this.#robot
         if (!robot !== !old || (robot && old && (Math.abs(robot.x - old.x) > POSE_EPSILON || Math.abs(robot.y - old.y) > POSE_EPSILON || Math.abs(robot.yaw - old.yaw) > YAW_EPSILON))) {

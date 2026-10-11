@@ -1,6 +1,6 @@
 // What a robot profile can say. A fork for a new robot copies one of the profiles next to this file and edits it;
 // nothing under src/core needs to change. See README "Fork this for your robot".
-import type { LcmValue } from "../core/lcm/lcm.ts"
+import type { LcmValue } from "../lcm.ts"
 
 /** The drive axes keys, sticks and buttons push; each is -1..1. */
 export type Axis = "forward" | "strafe" | "turn" | "vertical"

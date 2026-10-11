@@ -1,14 +1,25 @@
 import { createRoot } from "react-dom/client"
-// Portal (dark) / Research (light), following dimOS Desktop's theme; set before the first render
-import { initTheme } from "./dim-app/source/theme.js"
-import "./dim-app/source/theme.css"
-import "./styles.css"
-// every built-in layer type registers itself on import; a fork adds its own files to layers/index.ts
-import "./layers/index.ts"
+import { AppProvider, CameraStreamsProvider } from "dimos-react"
+import "./layout.css"
 import { App } from "./App.tsx"
-import { loadSettings } from "./core/store.ts"
+import { ControllerApp } from "./logic/controller.ts"
+import { loadSettings } from "./logic/settings.ts"
 
-initTheme()
+declare global {
+    interface Window {
+        __lv?: ControllerApp
+    }
+}
 
 // the settings are the backend's (api/settings): the app starts once they're here
-loadSettings().then(() => createRoot(document.getElementById("root")!).render(<App />))
+loadSettings().then(() => {
+    const app = new ControllerApp()
+    window.__lv = app
+    createRoot(document.getElementById("root")!).render(
+        <AppProvider source={app.connection.source} url={false} toastPosition="bottom">
+            <CameraStreamsProvider streams={app.cameras}>
+                <App app={app} />
+            </CameraStreamsProvider>
+        </AppProvider>,
+    )
+})
