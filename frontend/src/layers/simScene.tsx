@@ -58,7 +58,8 @@ class SimSceneLayer {
             }
             this.#show(data)
         })
-        context.setStatus({ info: "asking for the scene", problem: "no SceneData module has answered yet (asks every 3 s)" })
+        // on a real robot nothing answers: say so quietly, not as a problem
+        context.setStatus({ info: "no simulated world has answered (asks every 3 s)", problem: null })
         this.#ask()
         this.#asking = setInterval(() => this.#ask(), ASK_EVERY_MS)
     }
