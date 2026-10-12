@@ -2,7 +2,7 @@
 // MuJoCo's, height fields the right way up.
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
 import * as THREE from "three"
-import { buildScene, type SceneData } from "../src/core/sceneData.ts"
+import { averageColor, buildScene, type SceneData } from "../src/core/sceneData.ts"
 
 const b64 = (array: Float32Array | Uint32Array) => btoa(String.fromCharCode(...new Uint8Array(array.buffer)))
 const I: [number, number, number, number] = [0, 0, 0, 1]
@@ -87,4 +87,11 @@ Deno.test("grass grows only on a height field whose material is grass*, hidden u
     assert(hill.children.includes(grass[0].mesh))
     assertEquals(grass[0].mesh.visible, false)
     assertEquals(grass[0].area, 4)
+})
+
+Deno.test("a texture's mean color, read as sRGB", () => {
+    const pixels = new Uint8Array([0, 255, 0, 0, 155, 0]) // two rgb pixels: (0, 255, 0) and (0, 155, 0)
+    const color = averageColor(pixels, 3).getRGB(new THREE.Color(), THREE.SRGBColorSpace)
+    assertAlmostEquals(color.g, 205 / 255, 1e-4) // through linear and back
+    assertAlmostEquals(color.r, 0, 1e-6)
 })

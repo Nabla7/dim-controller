@@ -50,6 +50,19 @@ const uints = (b64: string) => {
     return new Uint32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4)
 }
 
+/** a texture's mean color (its bytes are sRGB, like the DataTexture made from them) */
+export function averageColor(pixels: Uint8Array, channels: number): THREE.Color {
+    const sum = [0, 0, 0]
+    const count = Math.floor(pixels.length / channels)
+    for (let index = 0; index < count; index++) {
+        for (let channel = 0; channel < 3; channel++) {
+            sum[channel] += pixels[index * channels + Math.min(channel, channels - 1)]
+        }
+    }
+    const mean = (channel: number) => (count ? sum[channel] / count / 255 : 1)
+    return new THREE.Color().setRGB(mean(0), mean(1), mean(2), THREE.SRGBColorSpace)
+}
+
 /** MuJoCo's cylinders and capsules run along z; three's along y */
 const Y_TO_Z = new THREE.Matrix4().makeRotationX(Math.PI / 2)
 
@@ -195,7 +208,10 @@ export function buildScene(data: SceneData): BuiltScene {
             group.add(mesh)
             if (geom.type === "hfield" && geom.hfield && geom.material?.startsWith("grass")) {
                 const field = data.hfields[geom.hfield]
-                const blades = grassFor({ ...field, heights: floats(field.heights) }, new THREE.Color(r, g, b))
+                // a textured hill (World Builder's speckled grass) carries its green in the texture, not its rgba
+                const source = geom.texture ? data.textures[geom.texture] : undefined
+                const green = source ? averageColor(bytes(source.pixels), source.channels) : new THREE.Color(r, g, b)
+                const blades = grassFor({ ...field, heights: floats(field.heights) }, green)
                 blades.mesh.visible = false
                 mesh.add(blades.mesh)
                 grass.push(blades)
