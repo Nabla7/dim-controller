@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { persistentStore, useStore } from "../core/store.ts"
 import { recorder, type Compression, type ImageFormat, type StreamRate } from "../core/recorder.ts"
-import { biggestStreams, formatBytes, formatClock, formatRate, inRecordingsFolder, isRecorded, isRpcTopic, TOP_STREAMS } from "../core/recordFormat.ts"
+import { biggestStreams, formatBytes, formatClock, formatRate, inRecordingsFolder, isRecorded, isRpcTopic, recordToggleState, TOP_STREAMS } from "../core/recordFormat.ts"
 import type { Topic } from "../core/transport.ts"
 import { Alert, Badge, Button, Card, Field, Heading, Label, NumberInput, Select, Text, TextInput, Toggle } from "dimos-react"
 import { Icon } from "./icons.tsx"
@@ -69,7 +69,7 @@ export function RecordControl({ app }: { app: ViewerApp }) {
                         title={status.unavailable ?? (error ? `${label}: ${error}` : label)}
                         aria-label={label}
                         // with new streams joining, a recording can start before anything is on the bus: they join as they appear
-                        disabled={busy || !!status.unavailable || (!active && !status.options.recordNew && !selected.length)}
+                        disabled={recordToggleState({ active, pending: pending.action, unavailable: status.unavailable, recordNew: status.options.recordNew, selected: selected.length, seconds: status.recording.seconds }).disabled}
                         onClick={toggle}
                     >
                         <span className="record-dot" />
@@ -103,6 +103,34 @@ export function RecordControl({ app }: { app: ViewerApp }) {
             </Card>
             {open && <RecordOptions app={app} error={error} onClose={() => setOpen(false)} />}
         </>
+    )
+}
+
+/** The phone HUD's Record toggle (by FAST): the same recording as the corner's Record (toggleRecording), red outline; filled with a blinking dot and the time while recording. */
+export function HudRecordButton({ app }: { app: ViewerApp }) {
+    const status = useStore(recorder.status)
+    const pending = useStore(recorder.pending)
+    const { topics } = useStore(app.connection.status)
+    const chosen = useStore(recordedTopics)
+    const [error, setError] = useState<string | null>(null)
+    const selected = topics.filter((topic) => isRecorded(topic.key, chosen)).length
+    const state = recordToggleState({ active: status.recording.active, pending: pending.action, unavailable: status.unavailable, recordNew: status.options.recordNew, selected, seconds: status.recording.seconds })
+    return (
+        <Button
+            className={`hud-record-button ${state.recording ? "recording" : ""} ${error ? "failed" : ""}`}
+            data-testid="hud-record-button"
+            pressed={state.recording}
+            disabled={state.disabled}
+            title={status.unavailable ?? error ?? (state.recording ? "Stop recording" : "Record")}
+            aria-label={state.recording ? `Stop recording (${state.text})` : "Record"}
+            onClick={() => {
+                setError(null)
+                toggleRecording(app).catch((problem) => setError(String(problem.message ?? problem)))
+            }}
+        >
+            <span className="record-dot" />
+            <span className="hud-record-text">{state.text}</span>
+        </Button>
     )
 }
 

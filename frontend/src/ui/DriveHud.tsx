@@ -1,6 +1,6 @@
 // Driving on screen (no arming: keys and sticks always drive). Desktop: the profile's keys lighting up as they're held,
 // in the action dock (ui/ActionDock.tsx). Phone: two thumbs, a left stick that translates (forward/back, plus strafe for profiles
-// that strafe) and a right stick that turns (plus up/down for profiles with a vertical axis), STOP and boost. Both show the agent's commands (POST api/drive), dry runs included.
+// that strafe) and a right stick that turns (plus up/down for profiles with a vertical axis), STOP, boost and Record. Both show the agent's commands (POST api/drive), dry runs included.
 import { disengagedText } from "./barStatus.ts"
 import { profileAxes } from "../core/gamepad.ts"
 import type { ViewerApp } from "../core/app.ts"
@@ -12,6 +12,7 @@ import type { DriveHalt } from "../core/drive.ts"
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { popoverPosition } from "./panelDrag.ts"
+import { HudRecordButton } from "./RecordControl.tsx"
 
 /** Driving disengaged by the link watch: why, and Reconnect (the only way to drive again). */
 function DisengagedNotice({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
@@ -65,6 +66,7 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
                         STOP
                     </Button>
                     <Button className="boost-button" pressed={state.boost} onClick={() => drive.setBoost(!state.boost)}>{state.boost ? "FAST ON" : "FAST"}</Button>
+                    <HudRecordButton app={app} />
                 </div>
                 <ThumbStick
                     className="stick-zone right"

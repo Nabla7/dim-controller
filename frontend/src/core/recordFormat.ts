@@ -33,3 +33,20 @@ export function inRecordingsFolder(directory: string, root: string | null): bool
     return directory === trimmed || directory.startsWith(`${trimmed}/`)
 }
 
+
+/**
+ * The Record toggle's state, the bar's and the phone HUD's alike: recording (and for how long), the short text, and
+ * whether it can be pressed (not while starting / stopping, not with the recorder down, not with nothing to record).
+ */
+export function recordToggleState(input: {
+    active: boolean
+    pending: "start" | "stop" | null
+    unavailable: string | null | undefined
+    recordNew: boolean
+    selected: number
+    seconds: number
+}): { recording: boolean; text: string; disabled: boolean } {
+    const { active, pending, unavailable, recordNew, selected, seconds } = input
+    const text = pending === "start" ? "Starting…" : pending === "stop" ? "Stopping…" : active ? formatClock(seconds) : "REC"
+    return { recording: active, text, disabled: pending !== null || !!unavailable || (!active && !recordNew && selected === 0) }
+}
