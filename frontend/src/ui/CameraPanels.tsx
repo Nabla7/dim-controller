@@ -2,13 +2,13 @@
 // the bus; until then it says there's none), more from the palette. Each is a workspace panel like any other (the
 // main view by default). Its tools: a tab per image topic, a 2D detection overlay, the depth colormap and range; a gear
 // over the picture picks latency vs quality. Depth is drawn as a colormap. Collapsed (or off screen: a shut drawer, a
-// rail hidden by focus) it holds no stream. As the main view it offers the dock fit / fill, the next camera and quality.
+// rail hidden by focus, a hidden browser tab) it holds no stream and no overlay subscription. As the main view it offers the dock fit / fill, the next camera and quality.
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import type { ViewerApp } from "../core/app.ts"
 import { persistentStore, useStore } from "../core/store.ts"
 import { parseKey, type Topic } from "../core/transport.ts"
-import { isDepthTopic } from "../core/video.ts"
+import { isDepthTopic, pageVisibility, panelStreams } from "../core/video.ts"
 import { cameraTabs, isImage, pickDefault as pickPreferred, retargetPanels } from "../core/cameraChoice.ts"
 import { overlayTypeFor } from "../core/layers/registry.ts"
 import { decode } from "../core/lcm/lcm.ts"
@@ -151,7 +151,8 @@ function CameraPanel({ app, panel, topics, onChange }: {
     const [size, setSize] = useState({ width: 0, height: 0, fps: 0 })
     const depth = topic ? isDepthTopic(topic) : false
     const slot = useWorkspaceApi().layout.slots[cameraId(panel.id)]
-    const open = !!slot && !slot.hidden && !slot.collapsed
+    const { hidden: pageHidden } = useStore(pageVisibility)
+    const open = panelStreams(slot, pageHidden)
 
     // the stream (shared with a 3D projection of the same topic), only while the panel is open
     useEffect(() => {
@@ -205,7 +206,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
         const overlayTopic = topics.find((other) => other.key === panel.overlay)
         const type = overlayTopic && overlayTypeFor(overlayTopic.type)
         const canvas = overlayCanvas.current
-        if (!overlayTopic || !type || !canvas) {
+        if (!open || !overlayTopic || !type || !canvas) {
             canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height)
             return
         }
@@ -223,7 +224,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
                 // a message the overlay can't read: leave it blank
             }
         })
-    }, [app, panel.overlay, topics.length, size.width, size.height])
+    }, [app, panel.overlay, topics.length, size.width, size.height, open])
 
     // the shown camera's tab in view (it can be off the end of a long row)
     useEffect(() => {

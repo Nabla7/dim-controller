@@ -1,6 +1,6 @@
 // Camera latency/quality presets (core/videoQuality.ts) reach the bridge as subscription options; a change updates it in place.
 import { assertEquals } from "jsr:@std/assert@1"
-import { DEPTH_OPTIONS, DEPTH_PREVIEW_OPTIONS, needsNewReceiver, optionChanges, PREVIEW_OPTIONS, streamOptions, VideoSources } from "../src/core/video.ts"
+import { DEPTH_OPTIONS, DEPTH_PREVIEW_OPTIONS, needsNewReceiver, optionChanges, panelStreams, PREVIEW_OPTIONS, streamOptions, VideoSources } from "../src/core/video.ts"
 import { loadQuality, presetFor, QUALITY_PRESETS, saveQuality } from "../src/core/videoQuality.ts"
 import type { Connection, SubscribeOptions, SubscriptionUpdate } from "../src/core/transport.ts"
 
@@ -202,4 +202,52 @@ Deno.test("streamOptions: any panel on screen means the full stream", () => {
     assertEquals(streamOptions(false, { view: 1, preview: 1 }, "quality"), preset("quality"))
     assertEquals(streamOptions(true, { view: 0, preview: 2 }, "balanced"), DEPTH_PREVIEW_OPTIONS)
     assertEquals(streamOptions(true, { view: 1, preview: 0 }, "balanced"), DEPTH_OPTIONS)
+})
+
+Deno.test("panelStreams: a camera panel holds its stream only while on screen in a visible tab", () => {
+    const shown = { hidden: false, collapsed: false }
+    assertEquals(panelStreams(shown, false), true)
+    assertEquals(panelStreams({ ...shown, collapsed: true }, false), false, "minimized")
+    assertEquals(panelStreams({ ...shown, hidden: true }, false), false, "a shut drawer, a rail hidden by focus")
+    assertEquals(panelStreams(shown, true), false, "a hidden browser tab")
+    assertEquals(panelStreams(undefined, false), false, "not laid out")
+})
+
+// what a camera panel does as it's minimized and shown again: its stream and its quality hook each hold a "view" use
+Deno.test("minimizing a camera panel unsubscribes it; showing it subscribes again", () => {
+    localStorage.clear()
+    const { connection, subscriptions } = fakeConnection()
+    const sources = new VideoSources(connection)
+    sources.acquire(camera, "view")
+    sources.acquire(camera, "view")
+    assertEquals(subscriptions.filter((entry) => entry.open).length, 1)
+    sources.release(camera, "view")
+    sources.release(camera, "view")
+    assertEquals(subscriptions.filter((entry) => entry.open).length, 0, "minimized: nothing left for the gateway to send")
+    sources.acquire(camera, "view")
+    assertEquals(subscriptions.filter((entry) => entry.open).length, 1, "shown: one subscription again")
+    assertEquals(subscriptions.at(-1)!.options, { delivery: "latest", encoding: "dimos_lcm_image" })
+})
+
+Deno.test("minimizing a camera panel leaves the 3D view's projection of it subscribed (at the preview), and the other way round", async () => {
+    localStorage.clear()
+    const { connection, subscriptions } = fakeConnection()
+    const sources = new VideoSources(connection)
+    const projection = sources.acquire(camera, "preview")
+    sources.acquire(camera, "view")
+    sources.acquire(camera, "view")
+    sources.release(camera, "view")
+    sources.release(camera, "view")
+    await Promise.resolve()
+    const open = subscriptions.filter((entry) => entry.open)
+    assertEquals(open.length, 1, "the 3D view's texture keeps its stream")
+    assertEquals(open[0].options, { delivery: "latest", ...PREVIEW_OPTIONS, encoding: "dimos_lcm_image" }, "down to the small, slow preview")
+    assertEquals(sources.acquire(camera, "preview"), projection, "still the same source the texture plays")
+    sources.release(camera, "preview")
+    // the 3D view leaving doesn't touch a shown panel's stream
+    sources.acquire(camera, "view")
+    await Promise.resolve()
+    sources.release(camera, "preview")
+    assertEquals(subscriptions.filter((entry) => entry.open).length, 1)
+    assertEquals(subscriptions.filter((entry) => entry.open)[0].options, { delivery: "latest", encoding: "dimos_lcm_image" })
 })
