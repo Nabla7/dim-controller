@@ -2,7 +2,7 @@
 // menu. The backend keeps them for the session, tells every page (the `labels` event, via AgentLink) and writes them
 // into a running recording. Drawn here as a marker plus its text, placed through TF like the annotations.
 import * as THREE from "three"
-import { LabelPool } from "dimos-react/three"
+import { LabelPool } from "./render/labels.ts"
 import { Store } from "./store.ts"
 import type { ViewerApp } from "./app.ts"
 
@@ -23,7 +23,7 @@ const url = (path: string) => new URL(path, location.href).href
 export class LocationLabels {
     readonly list = new Store<LocationLabel[]>([])
     readonly group = new THREE.Group()
-    #text = new LabelPool("dr-scene-label dr-note")
+    #text = new LabelPool("scene-label location-label")
     #markers = new Map<string, THREE.Mesh>()
     #geometry = new THREE.SphereGeometry(0.07, 16, 12)
     #material = new THREE.MeshBasicMaterial({ color: COLOR, depthTest: false, transparent: true })

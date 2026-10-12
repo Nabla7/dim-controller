@@ -4,12 +4,12 @@ import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { placeInFixedFrame, subscribeDecoded } from "../core/layers/helpers.ts"
 import { headerFrameId } from "../core/lcm/lcm.ts"
-import { FatLines } from "dimos-react/three"
+import { FatLines } from "../core/render/lines.ts"
 import { useStore, type Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { cameraInfoFor, isDepthTopic } from "../core/video.ts"
 import { DEFAULT_DEPTH_LOOK, DEPTH_COLORMAPS, DepthMaterial, type DepthLook } from "../core/render/depth.ts"
-import { Field, NumberInput, Row, Select, Slider, Toggle } from "dimos-react"
+import { Field, NumberInput, Select, Slider, Toggle } from "../ui/controls.tsx"
 
 export interface Camera3dSettings {
     /** meters from the camera to the picture */
@@ -231,25 +231,25 @@ function Camera3dSettingsEditor({ settings, topic }: { settings: Store<Camera3dS
     const value = useStore(settings)
     return (
         <>
-            <Field inline label="Picture"><Toggle value={value.image} onChange={(image: boolean) => settings.update({ image })} /></Field>
-            <Field inline label="Frustum"><Toggle value={value.frustum} onChange={(frustum: boolean) => settings.update({ frustum })} /></Field>
-            <Field inline label="Distance"><Slider min={0.2} max={10} step={0.1} value={value.distance} format={(distance: number) => `${distance.toFixed(1)} m`} onChange={(distance: number) => settings.update({ distance })} /></Field>
-            <Field inline label="Opacity"><Slider min={0.1} max={1} step={0.05} value={value.opacity} format={(opacity: number) => `${Math.round(opacity * 100)}%`} onChange={(opacity: number) => settings.update({ opacity })} /></Field>
+            <Field label="Picture"><Toggle value={value.image} onChange={(image) => settings.update({ image })} /></Field>
+            <Field label="Frustum"><Toggle value={value.frustum} onChange={(frustum) => settings.update({ frustum })} /></Field>
+            <Field label="Distance"><Slider min={0.2} max={10} step={0.1} value={value.distance} format={(distance) => `${distance.toFixed(1)} m`} onChange={(distance) => settings.update({ distance })} /></Field>
+            <Field label="Opacity"><Slider min={0.1} max={1} step={0.05} value={value.opacity} format={(opacity) => `${Math.round(opacity * 100)}%`} onChange={(opacity) => settings.update({ opacity })} /></Field>
             {topic && isDepthTopic(topic) && (
                 <>
-                    <Field inline label="Colormap">
-                        <Select value={(value.depth ?? DEFAULT_DEPTH_LOOK).colormap} options={DEPTH_COLORMAPS.map((name) => [name, name])} onChange={(colormap: string) => settings.update({ depth: { ...(value.depth ?? DEFAULT_DEPTH_LOOK), colormap } })} />
+                    <Field label="Colormap">
+                        <Select value={(value.depth ?? DEFAULT_DEPTH_LOOK).colormap} options={DEPTH_COLORMAPS.map((name) => [name, name])} onChange={(colormap) => settings.update({ depth: { ...(value.depth ?? DEFAULT_DEPTH_LOOK), colormap } })} />
                     </Field>
-                    <Field inline label="Range" title="meters; empty = automatic (2nd–98th percentile)">
-                        <Row gap={6}>
-                            <NumberInput nullable step={0.1} size="sm" value={(value.depth ?? DEFAULT_DEPTH_LOOK).near} placeholder="auto" onChange={(near: number | null) => settings.update({ depth: { ...(value.depth ?? DEFAULT_DEPTH_LOOK), near } })} />
-                            <NumberInput nullable step={0.1} size="sm" value={(value.depth ?? DEFAULT_DEPTH_LOOK).far} placeholder="auto" onChange={(far: number | null) => settings.update({ depth: { ...(value.depth ?? DEFAULT_DEPTH_LOOK), far } })} />
-                        </Row>
+                    <Field label="Range" hint="meters; empty = automatic (2nd–98th percentile)">
+                        <span className="range-inputs">
+                            <NumberInput value={(value.depth ?? DEFAULT_DEPTH_LOOK).near} placeholder="auto" onChange={(near) => settings.update({ depth: { ...(value.depth ?? DEFAULT_DEPTH_LOOK), near } })} />
+                            <NumberInput value={(value.depth ?? DEFAULT_DEPTH_LOOK).far} placeholder="auto" onChange={(far) => settings.update({ depth: { ...(value.depth ?? DEFAULT_DEPTH_LOOK), far } })} />
+                        </span>
                     </Field>
                 </>
             )}
-            <Field inline label="Frame">
-                <Select value={value.convention} options={[["auto", "auto (by name)"], ["optical", "optical (z forward)"], ["body", "body (x forward)"]]} onChange={(convention: string) => settings.update({ convention: convention as Camera3dSettings["convention"] })} />
+            <Field label="Frame">
+                <Select value={value.convention} options={[["auto", "auto (by name)"], ["optical", "optical (z forward)"], ["body", "body (x forward)"]]} onChange={(convention) => settings.update({ convention: convention as Camera3dSettings["convention"] })} />
             </Field>
         </>
     )

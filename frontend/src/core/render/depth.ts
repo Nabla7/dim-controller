@@ -2,7 +2,7 @@
 // looks each pixel up in a colour ramp (near = hot, far = cold); zero / NaN (no return) is transparent. Used by the
 // camera panels (a WebGL2 canvas each) and the 3D projection (a three.js material).
 import * as THREE from "three"
-import { sampleGradient } from "dimos-react/three"
+import { sampleGradient } from "./gradients.ts"
 import type { DepthImage } from "../video.ts"
 
 export interface DepthLook {

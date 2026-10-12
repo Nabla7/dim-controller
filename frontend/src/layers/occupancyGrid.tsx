@@ -6,7 +6,7 @@ import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { placeInFixedFrame, poseMatrix, subscribeDecoded } from "../core/layers/helpers.ts"
 import { useStore, type Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
-import { Field, Select, Slider } from "dimos-react"
+import { Field, Select, Slider } from "../ui/controls.tsx"
 
 export interface GridSettings {
     opacity: number
@@ -130,8 +130,8 @@ function GridSettingsEditor({ settings }: { settings: Store<GridSettings>; topic
     const value = useStore(settings)
     return (
         <>
-            <Field inline label="Style"><Select value={value.style} options={[["costmap", "costmap (floor plan)"], ["map", "map (gray)"]]} onChange={(style: string) => settings.update({ style: style as GridSettings["style"] })} /></Field>
-            <Field inline label="Opacity"><Slider min={0.1} max={1} step={0.05} value={value.opacity} format={(opacity: number) => `${Math.round(opacity * 100)}%`} onChange={(opacity: number) => settings.update({ opacity })} /></Field>
+            <Field label="Style"><Select value={value.style} options={[["costmap", "costmap (floor plan)"], ["map", "map (gray)"]]} onChange={(style) => settings.update({ style: style as GridSettings["style"] })} /></Field>
+            <Field label="Opacity"><Slider min={0.1} max={1} step={0.05} value={value.opacity} format={(opacity) => `${Math.round(opacity * 100)}%`} onChange={(opacity) => settings.update({ opacity })} /></Field>
         </>
     )
 }

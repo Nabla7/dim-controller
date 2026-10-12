@@ -4,8 +4,8 @@ import { allLayerTypes, type LayerInstance, type LayerStatus, type LayerType } f
 import { layerTypeFor } from "./registry.ts"
 import { persistentStore, Store } from "../store.ts"
 import type { Connection, Topic } from "../transport.ts"
-import type { TfTree } from "dimos-react/three"
-import type { Viewer } from "dimos-react/three"
+import type { TfTree } from "../tf.ts"
+import type { Viewer } from "../render/viewer.ts"
 import type { VideoSources } from "../video.ts"
 import type { RobotProfile } from "../../profile/types.ts"
 

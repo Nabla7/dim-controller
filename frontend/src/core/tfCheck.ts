@@ -1,7 +1,7 @@
 // What's wrong with the live TF tree, worst first, for the view's footnote and the TF panel (the Recordings app's
 // warnings.ts checks a recording the same way): a cycle, a frame with two parents, separate trees, a fixed frame or a
 // drawn layer's frame_id with no path in the tree, and dynamic transforms that stopped while others keep coming.
-import type { TfSnapshot } from "dimos-react/three"
+import type { TfSnapshot } from "./tf.ts"
 
 export type TfIssueKind = "cycle" | "twoParents" | "separateTrees" | "fixedFrame" | "unplaced" | "stale"
 

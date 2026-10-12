@@ -1,10 +1,10 @@
 // One TF frame picked out in the 3D view (the TF panel's hovered row): big axes drawn over everything, with a halo
 // behind them and the frame's name, following the frame as it moves. Works whether or not a TF layer is on.
 import * as THREE from "three"
-import { FatLines } from "dimos-react/three"
-import { LabelPool } from "dimos-react/three"
-import type { Viewer } from "dimos-react/three"
-import type { TfTree } from "dimos-react/three"
+import { FatLines } from "./lines.ts"
+import { LabelPool } from "./labels.ts"
+import type { Viewer } from "./viewer.ts"
+import type { TfTree } from "../tf.ts"
 import { Store } from "../store.ts"
 
 /** axes length (m) and line widths (CSS px) of the highlight */
@@ -17,7 +17,7 @@ export class FrameHighlight {
     readonly state = new Store<{ frame: string | null; placed: boolean }>({ frame: null, placed: false })
     #axes: FatLines
     #halo: FatLines
-    #label = new LabelPool("dr-scene-label dr-highlight")
+    #label = new LabelPool("scene-label frame-highlight")
     #group = new THREE.Group()
 
     constructor(readonly viewer: Viewer, readonly tf: TfTree) {

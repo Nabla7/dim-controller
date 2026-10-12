@@ -2,10 +2,10 @@
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { colorFor, placeInFixedFrame, poseMatrix, subscribeDecoded } from "../core/layers/helpers.ts"
-import { FatLines } from "dimos-react/three"
+import { FatLines } from "../core/render/lines.ts"
 import { useStore, type Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
-import { ColorSwatch, Field, Slider } from "dimos-react"
+import { Field, Slider } from "../ui/controls.tsx"
 
 export interface ArrowSettings {
     length: number
@@ -71,8 +71,8 @@ function ArrowSettingsEditor({ settings }: { settings: Store<ArrowSettings>; top
     const value = useStore(settings)
     return (
         <>
-            <Field inline label="Length"><Slider min={0.05} max={2} step={0.05} value={value.length} format={(length: number) => `${length} m`} onChange={(length: number) => settings.update({ length })} /></Field>
-            <Field inline label="Color"><ColorSwatch value={value.color} onChange={(color: string) => settings.update({ color })} /></Field>
+            <Field label="Length"><Slider min={0.05} max={2} step={0.05} value={value.length} format={(length) => `${length} m`} onChange={(length) => settings.update({ length })} /></Field>
+            <Field label="Color"><input type="color" value={value.color} onChange={(event) => settings.update({ color: event.target.value })} /></Field>
         </>
     )
 }

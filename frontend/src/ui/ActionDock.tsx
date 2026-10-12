@@ -15,8 +15,7 @@ import type { WorkspaceApi } from "./Workspace.tsx"
 import { BarChips } from "./BarChips.tsx"
 import { RecordControl } from "./RecordControl.tsx"
 import type { Onboarding } from "./Onboarding.tsx"
-import { openApp } from "dimos-react/dim-app/desktop.js"
-import { Button, Kbd } from "dimos-react"
+import { openApp } from "../dim-app/source/desktop.js"
 
 export function ActionDock({ app, api, onboarding }: { app: ViewerApp; api: WorkspaceApi; onboarding: Onboarding }) {
     useStore(app.robot)
@@ -36,31 +35,31 @@ export function ActionDock({ app, api, onboarding }: { app: ViewerApp; api: Work
             </div>
             <div className="dock-group dock-actions" role="toolbar" aria-label="Actions">
                 {actions.map((action) => (
-                    <Button
+                    <button
                         key={action.id}
-                        size="sm"
-                        className="dock-action main-action"
+                        type="button"
+                        className={`dim-btn sm dock-action main-action ${action.pressed ? "on" : ""}`}
                         data-action={action.id}
-                        pressed={action.pressed}
+                        aria-pressed={action.pressed}
                         title={action.title}
                         onClick={action.run}
                     >
                         <Icon name={action.icon} size={15} />
                         <span>{action.label}</span>
-                    </Button>
+                    </button>
                 ))}
-                <Button size="sm" className="dock-action" pressed={focused} title="Focus the main view: hide both rails (\\)" onClick={api.toggleFocus}><Icon name={focused ? "fullscreen-exit" : "fullscreen"} size={15} /><span>Focus</span></Button>
-                <Button size="sm" className="dock-action" title="Every action, searchable (/)" onClick={() => openOverlay("palette")}><Icon name="search" size={15} /><span>All actions</span><Kbd className="lv-kbd">/</Kbd></Button>
+                <button type="button" className={`dim-btn sm dock-action ${focused ? "on" : ""}`} aria-pressed={focused} title="Focus the main view: hide both rails (\\)" onClick={api.toggleFocus}><Icon name={focused ? "fullscreen-exit" : "fullscreen"} size={15} /><span>Focus</span></button>
+                <button type="button" className="dim-btn sm dock-action" title="Every action, searchable (/)" onClick={() => openOverlay("palette")}><Icon name="search" size={15} /><span>All actions</span><kbd className="lv-kbd">/</kbd></button>
             </div>
             <div className="dock-stop-slot">
                 <BarChips app={app} api={api} />
-                <Button className="dr-btn--icon dock-help" title="Keyboard and gamepad shortcuts (?)" aria-label="Shortcuts" onClick={() => openOverlay("help")}>
+                <button type="button" className="dim-btn icon dock-help" title="Keyboard and gamepad shortcuts (?)" aria-label="Shortcuts" onClick={() => openOverlay("help")}>
                     <Icon name="keyboard" size={16} />
-                </Button>
-                <Button className="dock-stop" data-testid="stop-button" title="Stop now (Space, always)" onPointerDown={stop} onClick={stop}>
+                </button>
+                <button type="button" className="dim-btn dock-stop" data-testid="stop-button" title="Stop now (Space, always)" onPointerDown={stop} onClick={stop}>
                     <span>STOP</span>
-                    <Kbd className="lv-kbd">Space</Kbd>
-                </Button>
+                    <kbd className="lv-kbd">Space</kbd>
+                </button>
             </div>
         </footer>
     )
@@ -72,7 +71,7 @@ function NothingToDrive({ onboarding }: { onboarding: Onboarding }) {
         <span className="dock-note" data-testid="dock-nothing-to-drive">
             <span className="hint">Nothing to drive yet: {onboarding.reason ?? "no robot to drive"}.</span>
             {onboarding.launch && (
-                <Button size="sm" onClick={() => void openApp("launcher", onboarding.launch)}>Open the Launcher</Button>
+                <button type="button" className="dim-btn sm" onClick={() => void openApp("launcher", onboarding.launch)}>Open the Launcher</button>
             )}
         </span>
     )

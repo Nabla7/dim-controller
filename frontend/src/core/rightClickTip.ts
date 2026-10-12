@@ -1,6 +1,6 @@
 // One-time tip: a double click (two clicks within 500 ms) on the 3D view says "Try right-click" (Desktop's narration,
 // else an in-app note), at most once a session; the first right click on the view retires it for good (localStorage).
-import { underDesktop } from "dimos-react/dim-app/notify.js"
+import { underDesktop } from "../dim-app/source/notify.js"
 
 export const RIGHT_CLICK_TIP_KEY = "controller.rightClickTip.done"
 export const RIGHT_CLICK_TIP_TEXT = "Try right-click"

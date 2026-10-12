@@ -1,11 +1,10 @@
 // First-run messages over the 3D view: what's missing before the Controller can show or drive a robot, and a button to
 // the place that fixes it (the Launcher, filtered to blueprints that take cmd_vel). Live: they follow Desktop's `runs`
 // events (core/runs.ts) and the bridge's state, so the message goes away as soon as a blueprint starts.
-import { useEffect, useState } from "react"
-import { Button, EmptyState } from "dimos-react"
+import { useEffect, useRef, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
-import { appInstalled, type EmptyStateOptions, openApp, underDesktop } from "dimos-react/dim-app/desktop.js"
+import { emptyState, type EmptyStateOptions } from "../dim-app/source/desktop.js"
 import { takesVelocity } from "../core/cmdvel.ts"
 
 const LAUNCH_DRIVABLE = { stream: "cmd_vel" }
@@ -44,46 +43,16 @@ function useSustained(on: boolean, ms: number): boolean {
     return on && sustained
 }
 
-/** The first-run message (dim-app's emptyState look: Desktop's notice card), centered over the view. An app action
- * opens that Desktop app, or offers to install it from the App Store when it isn't installed. */
-export function EmptyLayer({ title, body, label, tone = "info", busy = false, actions = [], testId }: EmptyStateOptions) {
-    return (
-        <EmptyState
-            layer
-            variant="notice"
-            data-testid={testId}
-            tone={tone === "warn" ? "warn" : undefined}
-            busy={busy}
-            label={label}
-            title={title}
-            message={body as string}
-            actions={actions.length > 0 && actions.map((action, index) => <EmptyAction key={index} action={action} primary={action.primary ?? index === 0} />)}
-        />
-    )
-}
-
-type EmptyStateAction = NonNullable<EmptyStateOptions["actions"]>[number]
-
-function EmptyAction({ action, primary }: { action: EmptyStateAction; primary: boolean }) {
-    const [installed, setInstalled] = useState(true)
+/** desktop.js's emptyState, centered over the view (above Desktop's dock). */
+export function EmptyLayer(props: EmptyStateOptions) {
+    const host = useRef<HTMLDivElement>(null)
+    const key = JSON.stringify({ ...props, actions: props.actions?.map((action) => action.label) })
+    const latest = useRef(props)
+    latest.current = props
     useEffect(() => {
-        if (action.app && underDesktop()) {
-            appInstalled(action.app).then(setInstalled)
-        }
-    }, [action.app])
-    const variant = primary ? "primary" : "default"
-    if (action.href) {
-        return <Button variant={variant} href={action.href} target={action.target ?? "_blank"} rel="noreferrer">{action.label}</Button>
-    }
-    if (action.app) {
-        if (!underDesktop()) {
-            return null
-        }
-        return installed
-            ? <Button variant={variant} data-app={action.app} onClick={() => openApp(action.app!, action.params)}>{action.label}</Button>
-            : <Button variant={variant} data-app="appstore" onClick={() => openApp("appstore")}>{`Install ${action.appTitle ?? action.app} from the App Store`}</Button>
-    }
-    return action.onClick ? <Button variant={variant} onClick={action.onClick}>{action.label}</Button> : null
+        host.current?.replaceChildren(emptyState(latest.current))
+    }, [key])
+    return <div ref={host} className="dim-empty-layer" />
 }
 
 /**

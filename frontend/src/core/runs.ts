@@ -1,7 +1,7 @@
 // What's running, for the first-run messages and the drive topic: Desktop's GET /dimos/runs (+ each running
 // blueprint's modules and streams), refreshed live on Desktop's zenoh `runs` and the dimos server's `launch` events, and again
 // after the zenoh-gateway connection comes back (docs/events.md: snapshot + live). GET /dimos/info says if dimOS is there.
-import { getZenoh } from "dimos-react/dim-app/zenoh.js"
+import { getZenoh } from "../dim-app/source/zenoh.js"
 import { Store } from "./store.ts"
 import type { Module } from "./cmdvel.ts"
 

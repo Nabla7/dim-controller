@@ -2,7 +2,7 @@
 // (re-armed above 25 %), with the "battery" sound. Outside Desktop notify() does nothing.
 import { decode, type LcmValue } from "./lcm/lcm.ts"
 import type { Connection } from "./transport.ts"
-import { lowLevelAlert, notify, type Notification } from "dimos-react/dim-app/notify.js"
+import { lowLevelAlert, notify, type Notification } from "../dim-app/source/notify.js"
 
 export const LOW_BATTERY_PERCENT = 20
 

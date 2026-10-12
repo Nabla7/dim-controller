@@ -9,7 +9,7 @@ export function useTfFrames(app: ViewerApp, enabled = true): string[] {
             return
         }
         const read = () => {
-            const next = app.tf.frames()
+            const next = app.tf.snapshot(app.viewer.fixedFrame).frames
             setFrames((old) => old.length === next.length && old.every((frame, index) => frame === next[index]) ? old : next)
         }
         read()

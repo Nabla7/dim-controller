@@ -4,7 +4,6 @@ import { useEffect, useState } from "react"
 import { useStore } from "../core/store.ts"
 import { readLocal, writeLocal } from "../core/videoQuality.ts"
 import { DISMISS_KEY, fetchSteamDeck, LAUNCH_KEY, openInSteam, shouldShowSteamBanner, type SteamDeckInfo } from "../core/steamDeck.ts"
-import { Button, Card } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { gamepadStatus } from "./useGamepad.ts"
 
@@ -38,17 +37,17 @@ export function SteamDeckBanner() {
         setBusy(false)
     }
     return (
-        <Card padded={false} className="steam-banner" role="status" data-testid="steam-deck-banner">
+        <div className="steam-banner dim-panel" role="status" data-testid="steam-deck-banner">
             <Icon name="gamepad" size={16} />
             <span className="steam-text">
                 On a Steam Deck the controls only work as a gamepad when dimOS is opened from Steam.
                 {result && <span className={`steam-result ${result.ok ? "" : "tone-warn"}`}>{result.message}</span>}
             </span>
-            <Button size="sm" disabled={busy} onClick={open}>Open dimOS in Steam</Button>
+            <button type="button" className="dim-btn sm" disabled={busy} onClick={open}>Open dimOS in Steam</button>
             {info?.runGameUrl && <a className="steam-link" href={info.runGameUrl}>or run it from Steam</a>}
-            <Button className="dr-btn--icon icon-button" aria-label="Dismiss" title="Dismiss" onClick={() => (writeLocal(DISMISS_KEY, true), setDismissed(true))}>
+            <button type="button" className="dim-btn icon icon-button" aria-label="Dismiss" title="Dismiss" onClick={() => (writeLocal(DISMISS_KEY, true), setDismissed(true))}>
                 <Icon name="close" size={14} />
-            </Button>
-        </Card>
+            </button>
+        </div>
     )
 }

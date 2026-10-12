@@ -11,11 +11,11 @@ import type { ViewerApp } from "../core/app.ts"
 import type { LayerEntry } from "../core/layers/manager.ts"
 import { type Store, useStore } from "../core/store.ts"
 import { CLOUD_PRESETS, cloudQualities, cloudQualityOf, type CloudQuality, type CloudRate, cloudRates, formatBytes, formatCount, setCloudQuality } from "../core/cloudQuality.ts"
-import { GRADIENTS } from "dimos-react/three"
-import type { PointLook } from "../core/render/rendering.ts"
+import { GRADIENTS } from "../core/render/gradients.ts"
+import type { PointLook } from "../core/render/pointMaterial.ts"
 import type { CloudSettings } from "../layers/pointcloud.tsx"
 import { Icon } from "./icons.tsx"
-import { Button, Card, Select, Slider, Toggle } from "dimos-react"
+import { Toggle } from "./controls.tsx"
 import { popoverPosition } from "./panelDrag.ts"
 import { Panel } from "./Panel.tsx"
 import { ViewControls } from "./ViewControls.tsx"
@@ -107,10 +107,10 @@ function CloudButton({ app, open, onOpen, buttonRef }: { app: ViewerApp; open: b
     const clouds = list.filter(isCloud)
     const on = clouds.filter((entry) => entry.enabled).length
     return (
-        <Button ref={buttonRef} className="dr-btn--icon icon-button scene-clouds" aria-haspopup="menu" aria-expanded={open} title={`3D view settings: cameras in 3D, point clouds (${on} of ${clouds.length} shown)`} aria-label="3D view settings" onClick={() => onOpen(!open)}>
+        <button ref={buttonRef} type="button" className="dim-btn icon icon-button scene-clouds" aria-haspopup="menu" aria-expanded={open} title={`3D view settings: cameras in 3D, point clouds (${on} of ${clouds.length} shown)`} aria-label="3D view settings" onClick={() => onOpen(!open)}>
             <Icon name="layers" size={15} />
             {clouds.length > 0 && <span className="scene-count">{on}/{clouds.length}</span>}
-        </Button>
+        </button>
     )
 }
 
@@ -129,12 +129,12 @@ function CloudMenu({ app, anchor, onClose }: { app: ViewerApp; anchor: HTMLEleme
         return () => removeEventListener("pointerdown", close, true)
     }, [onClose])
     return createPortal(
-        <Card padded={false} className="cloud-menu" role="menu" aria-label="3D view settings" style={popoverPosition(anchor, 320)}>
+        <div className="dim-panel cloud-menu" role="menu" aria-label="3D view settings" style={popoverPosition(anchor, 320)}>
             <CamerasIn3dRow app={app} />
             <div className="quality-title">Point clouds</div>
             {!clouds.length && <p className="cloud-empty">No PointCloud2 on the bus yet.</p>}
             {clouds.map((entry) => <CloudRow key={entry.topic.key} app={app} entry={entry} rate={rates[entry.topic.key]} />)}
-        </Card>,
+        </div>,
         document.body,
     )
 }
@@ -175,13 +175,20 @@ function CloudRow({ app, entry, rate }: { app: ViewerApp; entry: LayerEntry; rat
                             </button>
                         ))}
                     </div>
-                    <Select size="sm" className="cloud-color" value={look.colorMode} aria-label={`${entry.topic.name} color by`} options={COLOR_MODES} onChange={(colorMode) => setLook({ colorMode })} />
+                    <select className="dim-select cloud-color" value={look.colorMode} aria-label={`${entry.topic.name} color by`} onChange={(event) => setLook({ colorMode: event.target.value as PointLook["colorMode"] })}>
+                        {COLOR_MODES.map(([mode, label]) => <option key={mode} value={mode}>{label}</option>)}
+                    </select>
                     {look.colorMode === "solid"
                         ? <input type="color" className="cloud-solid" value={look.solid} aria-label={`${entry.topic.name} solid color`} onChange={(event) => setLook({ solid: event.target.value })} />
                         : (
-                            <Select size="sm" className="cloud-color" value={look.gradient} aria-label={`${entry.topic.name} colormap`} options={GRADIENTS} onChange={(gradient) => setLook({ gradient })} />
+                            <select className="dim-select cloud-color" value={look.gradient} aria-label={`${entry.topic.name} colormap`} onChange={(event) => setLook({ gradient: event.target.value })}>
+                                {GRADIENTS.map((gradient) => <option key={gradient} value={gradient}>{gradient}</option>)}
+                            </select>
                         )}
-                    <Slider className="cloud-size" title="point size" min={0.01} max={0.5} step={0.01} value={look.size} aria-label={`${entry.topic.name} point size`} format={(size) => `${Math.round(size * 100)} cm`} onChange={(size) => setLook({ size })} />
+                    <label className="cloud-size" title="point size">
+                        <input type="range" className="dim-range" min={0.01} max={0.5} step={0.01} value={look.size} aria-label={`${entry.topic.name} point size`} onChange={(event) => setLook({ size: Number(event.target.value) })} />
+                        <span>{Math.round(look.size * 100)} cm</span>
+                    </label>
                 </div>
             )}
         </div>

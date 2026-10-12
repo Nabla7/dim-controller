@@ -4,12 +4,12 @@
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { placeInFixedFrame, subscribeDecoded } from "../core/layers/helpers.ts"
-import { FatLines } from "dimos-react/three"
-import { sampleGradient } from "dimos-react/three"
-import { applyLook, makePointMaterial } from "dimos-react/three"
+import { FatLines } from "../core/render/lines.ts"
+import { sampleGradient } from "../core/render/gradients.ts"
+import { applyLook, makePointMaterial } from "../core/render/pointMaterial.ts"
 import { useStore, type Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
-import { Field, Select, Slider, Toggle } from "dimos-react"
+import { Field, Select, Slider, Toggle } from "../ui/controls.tsx"
 
 export interface GraphSettings {
     width: number
@@ -105,11 +105,11 @@ function GraphSettingsEditor({ settings }: { settings: Store<GraphSettings>; top
     const value = useStore(settings)
     return (
         <>
-            <Field inline label="Edge width"><Slider min={1} max={8} step={0.5} value={value.width} format={(width: number) => `${width}px`} onChange={(width: number) => settings.update({ width })} /></Field>
-            <Field inline label="Nodes"><Toggle value={value.nodes} onChange={(nodes: boolean) => settings.update({ nodes })} /></Field>
-            <Field inline label="Node size"><Slider min={0.02} max={0.5} step={0.01} value={value.nodeSize} format={(size: number) => `${Math.round(size * 100)} cm`} onChange={(nodeSize: number) => settings.update({ nodeSize })} /></Field>
-            <Field inline label="Weights">
-                <Select value={value.gradient} options={[["viridis", "viridis"], ["turbo", "turbo"], ["plasma", "plasma"], ["magma", "magma"]]} onChange={(gradient: string) => settings.update({ gradient })} />
+            <Field label="Edge width"><Slider min={1} max={8} step={0.5} value={value.width} format={(width) => `${width}px`} onChange={(width) => settings.update({ width })} /></Field>
+            <Field label="Nodes"><Toggle value={value.nodes} onChange={(nodes) => settings.update({ nodes })} /></Field>
+            <Field label="Node size"><Slider min={0.02} max={0.5} step={0.01} value={value.nodeSize} format={(size) => `${Math.round(size * 100)} cm`} onChange={(nodeSize) => settings.update({ nodeSize })} /></Field>
+            <Field label="Weights">
+                <Select value={value.gradient} options={[["viridis", "viridis"], ["turbo", "turbo"], ["plasma", "plasma"], ["magma", "magma"]]} onChange={(gradient) => settings.update({ gradient })} />
             </Field>
         </>
     )

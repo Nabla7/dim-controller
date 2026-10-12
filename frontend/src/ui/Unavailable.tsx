@@ -1,16 +1,15 @@
 // Crippled, not crashed: a view that can't run (no WebGL, or it threw while rendering) says so in place, and the rest of
 // the page keeps working.
 import { Component, type ReactNode } from "react"
-import { Card } from "dimos-react"
 import { Icon } from "./icons.tsx"
 
 /** A short notice centered over the view that can't run. */
 export function Unavailable({ what, reason }: { what: string; reason: string }) {
     return (
-        <Card padded={false} className="view-unavailable" role="status">
+        <div className="dim-panel view-unavailable" role="status">
             <Icon name="warn" size={15} />
             <span>{what} unavailable: {reason}</span>
-        </Card>
+        </div>
     )
 }
 

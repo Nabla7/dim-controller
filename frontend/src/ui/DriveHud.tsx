@@ -6,8 +6,7 @@ import { profileAxes } from "../core/gamepad.ts"
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import type { Axis } from "../profile/types.ts"
-import { Badge, Button, Card, releaseAllThumbSticks, TextInput, ThumbStick } from "dimos-react"
-import { shapeStick, smoothToward } from "../core/stick.ts"
+import { Joystick, releaseAllSticks } from "./Joystick.tsx"
 import type { DriveHalt } from "../core/drive.ts"
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
@@ -18,9 +17,9 @@ function DisengagedNotice({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
     return (
         <div className="drive-halt" role="alert" data-testid="drive-halt">
             <span>{disengagedText(halt)}</span>
-            <Button className="reconnect-button" data-testid="reconnect-button" disabled={halt.reconnecting} onClick={() => app.reconnect()}>
+            <button type="button" className="dim-btn reconnect-button" data-testid="reconnect-button" disabled={halt.reconnecting} onClick={() => app.reconnect()}>
                 {halt.reconnecting ? "Reconnecting…" : "Reconnect"}
-            </Button>
+            </button>
         </div>
     )
 }
@@ -36,43 +35,40 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
         const moving = state.publishing && [...state.twist.linear, ...state.twist.angular].some((value) => value !== 0)
         return (
             <div className={`drive-hud mobile ${moving ? "moving" : ""}`} data-testid="drive-hud-mobile">
-                <ThumbStick
-                    className="stick-zone left"
+                <Joystick
+                    side="left"
                     label={usesStrafe ? "move" : "forward / back"}
                     axes={usesStrafe ? "xy" : "y"}
-                    shape={shapeStick}
-                    smooth={smoothToward}
-                    onMove={(x: number, y: number) => drive.setAxes("left-stick", { forward: y, strafe: usesStrafe ? -x : 0 })}
+                    onMove={(x, y) => drive.setAxes("left-stick", { forward: y, strafe: usesStrafe ? -x : 0 })}
                 />
                 <div className="hud-center">
                     {state.halt && <DisengagedNotice app={app} halt={state.halt} />}
-                    <Badge className="hud-note" data-testid="drive-readout">
+                    <span className="dim-badge hud-note" data-testid="drive-readout">
                         {command ? `${command.dryRun ? "dry run" : command.source} · ${velocity(command.linear, command.angular)}` : velocity(state.twist.linear, state.twist.angular)}
-                    </Badge>
-                    <Button
-                        className="stop-button"
+                    </span>
+                    <button
+                        type="button"
+                        className="dim-btn stop-button"
                         data-testid="stop-button"
                         onPointerDown={() => {
                             // on touch, not on the click after it: no 300 ms, and it works while a thumb holds a stick
-                            releaseAllThumbSticks()
+                            releaseAllSticks()
                             drive.stop()
                         }}
                         onClick={() => {
-                            releaseAllThumbSticks()
+                            releaseAllSticks()
                             drive.stop()
                         }}
                     >
                         STOP
-                    </Button>
-                    <Button className="boost-button" pressed={state.boost} onClick={() => drive.setBoost(!state.boost)}>{state.boost ? "FAST ON" : "FAST"}</Button>
+                    </button>
+                    <button type="button" className={`dim-btn boost-button ${state.boost ? "on" : ""}`} aria-pressed={state.boost} onClick={() => drive.setBoost(!state.boost)}>{state.boost ? "FAST ON" : "FAST"}</button>
                 </div>
-                <ThumbStick
-                    className="stick-zone right"
+                <Joystick
+                    side="right"
                     label={usesVertical ? "turn · up / down" : "turn"}
                     axes={usesVertical ? "xy" : "x"}
-                    shape={shapeStick}
-                    smooth={smoothToward}
-                    onMove={(x: number, y: number) => drive.setAxes("right-stick", { turn: -x, vertical: usesVertical ? y : 0 })}
+                    onMove={(x, y) => drive.setAxes("right-stick", { turn: -x, vertical: usesVertical ? y : 0 })}
                 />
             </div>
         )
@@ -135,7 +131,7 @@ function DriveTopicChip({ app }: { app: ViewerApp }) {
                 → {state.topic || "no drive topic"} ▾
             </button>
             {open && createPortal(
-                <Card padded={false} className="quality-menu drive-topic-menu" role="menu" aria-label="Drive topic" style={popoverPosition(chip.current, 260)}>
+                <div className="dim-panel quality-menu drive-topic-menu" role="menu" aria-label="Drive topic" style={popoverPosition(chip.current, 260)}>
                     <div className="quality-title">Drive topic</div>
                     <button type="button" role="menuitemradio" aria-checked={auto} className={`quality-option ${auto ? "on" : ""}`} onClick={() => choose([])}>
                         <span className="quality-name">auto</span>
@@ -160,10 +156,10 @@ function DriveTopicChip({ app }: { app: ViewerApp }) {
                             }
                         }}
                     >
-                        <TextInput aria-label="Custom drive topic" placeholder="custom: /my_cmd_vel" value={custom} onChange={setCustom} />
-                        <Button type="submit" disabled={!custom.trim()}>Use</Button>
+                        <input className="dim-input" aria-label="Custom drive topic" placeholder="custom: /my_cmd_vel" value={custom} onChange={(event) => setCustom(event.target.value)} />
+                        <button type="submit" className="dim-btn" disabled={!custom.trim()}>Use</button>
                     </form>
-                </Card>,
+                </div>,
                 document.body,
             )}
         </>

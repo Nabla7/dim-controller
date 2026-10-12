@@ -3,7 +3,6 @@
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import type { EeAxis } from "../profile/types.ts"
-import { Button, Card } from "dimos-react"
 
 export function ArmHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     const state = useStore(app.arm.state)
@@ -20,13 +19,13 @@ export function ArmHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
         return (
             <div className="drive-hud mobile arm-hud">
                 <div className="hud-center">
-                    <Button variant="danger" size="lg" className="stop-button" onClick={() => app.arm.stop()}>STOP</Button>
+                    <button type="button" className="dim-btn danger lg stop-button" onClick={() => app.arm.stop()}>STOP</button>
                 </div>
             </div>
         )
     }
     return (
-        <Card glass padded={false} className="drive-hud corner arm-hud" data-testid="arm-hud">
+        <div className="dim-panel glass drive-hud corner arm-hud" data-testid="arm-hud">
             {state.topics.eeTwist && (
                 <div className="keys" aria-label="end-effector keys">
                     <div>{cell("z", 1)}{cell("x", 1)}{cell("z", -1)}{cell("roll", 1)}{cell("pitch", 1)}{cell("yaw", 1)}</div>
@@ -42,6 +41,6 @@ export function ArmHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
             <div className="hud-readout" data-testid="arm-hud-readout">
                 {activity || "hold a key or a jog button"}<br /><span className="dim" title={[state.topics.eeTwist, state.topics.jointCommand, ...state.topics.grippers].filter(Boolean).join(", ")}>{state.topics.jointCommand || state.topics.eeTwist || state.topics.grippers.length ? `sent ${state.sent}` : "no arm inputs running"}</span>
             </div>
-        </Card>
+        </div>
     )
 }

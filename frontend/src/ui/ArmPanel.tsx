@@ -1,16 +1,45 @@
 // The arm panel (robot type arm, in place of the drive settings): arm, joints (hold − / + to jog, or drag a slider to
 // send a target), the end effector (hold to move along / about an axis), the gripper, and home. Everything is sent by
 // core/arm.ts on the topics core/armTopics.ts found; a section whose input isn't running says so instead.
-import { useState } from "react"
+import { type PointerEvent as ReactPointerEvent, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { isGripperJoint } from "../core/armTopics.ts"
 import type { ArmControl, Joint } from "../core/arm.ts"
 import { EE_AXES, type EeAxis } from "../profile/types.ts"
-import { Button, Field, Heading, HoldButton, Slider } from "dimos-react"
+import { Field, Slider } from "./controls.tsx"
 
 const degrees = (radians: number) => `${((radians * 180) / Math.PI).toFixed(1)}°`
 const shortName = (name: string) => name.replace(/^.*\//, "")
+
+/** A button that acts while held: pointer down starts, up / cancel / leaving stops (so a lost release still stops). */
+function HoldButton({ label, title, onHold, onRelease, disabled, active, testId }: { label: string; title: string; onHold: () => void; onRelease: () => void; disabled?: boolean; active?: boolean; testId?: string }) {
+    const start = (event: ReactPointerEvent<HTMLButtonElement>) => {
+        if (disabled || event.button !== 0) {
+            return
+        }
+        event.currentTarget.setPointerCapture(event.pointerId)
+        onHold()
+    }
+    return (
+        <button
+            type="button"
+            className={`dim-btn sm hold-button ${active ? "on" : ""}`}
+            title={title}
+            aria-label={title}
+            aria-pressed={active}
+            disabled={disabled}
+            data-testid={testId}
+            onPointerDown={start}
+            onPointerUp={onRelease}
+            onPointerCancel={onRelease}
+            onLostPointerCapture={onRelease}
+            onContextMenu={(event) => event.preventDefault()}
+        >
+            {label}
+        </button>
+    )
+}
 
 function JointRow({ arm, joint, armed, canCommand }: { arm: ArmControl; joint: Joint; armed: boolean; canCommand: boolean }) {
     const state = useStore(arm.state)
@@ -22,24 +51,25 @@ function JointRow({ arm, joint, armed, canCommand }: { arm: ArmControl; joint: J
     return (
         <div className={`joint-row ${jogging ? "jogging" : ""}`} data-joint={joint.name}>
             <span className="joint-name" title={joint.name}>{shortName(joint.name)}</span>
-            <HoldButton size="sm" className="hold-button" title={`Hold to turn ${joint.name} negative`} aria-label={`Hold to turn ${joint.name} negative`} pressed={jogging < 0} disabled={!enabled} onHold={() => arm.jogJoint(joint.name, -1)} onRelease={() => arm.releaseJoint()} data-testid={`jog-${shortName(joint.name)}-minus`}>−</HoldButton>
-            <Slider
-                className="joint-slider"
-                showValue={false}
+            <HoldButton label="−" title={`Hold to turn ${joint.name} negative`} disabled={!enabled} active={jogging < 0} onHold={() => arm.jogJoint(joint.name, -1)} onRelease={() => arm.releaseJoint()} testId={`jog-${shortName(joint.name)}-minus`} />
+            <input
+                type="range"
+                className="dim-range joint-slider"
                 aria-label={`${joint.name} target`}
                 min={joint.min}
                 max={joint.max}
                 step={span / 400}
                 value={value}
                 disabled={!enabled}
-                onChange={(next) => {
+                onChange={(event) => {
+                    const next = Number(event.target.value)
                     setDragging(next)
                     arm.setJoint(joint.name, next)
                 }}
                 onPointerUp={() => setDragging(null)}
                 onBlur={() => setDragging(null)}
             />
-            <HoldButton size="sm" className="hold-button" title={`Hold to turn ${joint.name} positive`} aria-label={`Hold to turn ${joint.name} positive`} pressed={jogging > 0} disabled={!enabled} onHold={() => arm.jogJoint(joint.name, 1)} onRelease={() => arm.releaseJoint()} data-testid={`jog-${shortName(joint.name)}-plus`}>+</HoldButton>
+            <HoldButton label="+" title={`Hold to turn ${joint.name} positive`} disabled={!enabled} active={jogging > 0} onHold={() => arm.jogJoint(joint.name, 1)} onRelease={() => arm.releaseJoint()} testId={`jog-${shortName(joint.name)}-plus`} />
             <span className="joint-value">{degrees(joint.position)}</span>
         </div>
     )
@@ -50,9 +80,12 @@ function GripperRow({ arm, armed, topic, label, openKey, closeKey, value }: { ar
     return (
         <div className="gripper-row" data-gripper={topic ?? "all"}>
             {label && <span className="joint-name"><code>{label}</code></span>}
-            <Button size="sm" disabled={!armed} data-testid={topic ? undefined : "gripper-open"} onClick={() => arm.setGripper(1, topic)}>Open{openKey ? ` · ${openKey}` : ""}</Button>
-            <Button size="sm" disabled={!armed} data-testid={topic ? undefined : "gripper-close"} onClick={() => arm.setGripper(0, topic)}>Close{closeKey ? ` · ${closeKey}` : ""}</Button>
-            <Slider aria-label={`${topic ?? "gripper"} opening`} min={0} max={1} step={0.05} disabled={!armed} value={value ?? 1} format={() => (value === undefined ? "—" : `${Math.round(value * 100)}% open`)} onChange={(opening) => arm.setGripper(opening, topic)} />
+            <button type="button" className="dim-btn sm" disabled={!armed} data-testid={topic ? undefined : "gripper-open"} onClick={() => arm.setGripper(1, topic)}>Open{openKey ? ` · ${openKey}` : ""}</button>
+            <button type="button" className="dim-btn sm" disabled={!armed} data-testid={topic ? undefined : "gripper-close"} onClick={() => arm.setGripper(0, topic)}>Close{closeKey ? ` · ${closeKey}` : ""}</button>
+            <span className="slider">
+                <input type="range" className="dim-range" aria-label={`${topic ?? "gripper"} opening`} min={0} max={1} step={0.05} disabled={!armed} value={value ?? 1} onChange={(event) => arm.setGripper(Number(event.target.value), topic)} />
+                <span className="slider-value">{value === undefined ? "—" : `${Math.round(value * 100)}% open`}</span>
+            </span>
         </div>
     )
 }
@@ -81,22 +114,22 @@ export function ArmPanel({ app }: { app: ViewerApp }) {
                 {topics.fromMetadata ? "" : " (standard names: Desktop didn't describe what's running)"}
             </p>
 
-            <Heading level={3}>Joints</Heading>
+            <h3 className="dim-label">Joints</h3>
             {!topics.jointCommand && <p className="hint">What's running has no <code>joint_command</code> input: joints are shown, not commanded.</p>}
             {armJoints.length === 0
                 ? <p className="empty">Waiting for a joint state ({topics.jointState ?? "coordinator_joint_state"}).</p>
                 : armJoints.map((joint) => <JointRow key={joint.name} arm={arm} joint={joint} armed={armed} canCommand={!!topics.jointCommand} />)}
             {topics.jointCommand && armJoints.length > 0 && (
                 <>
-                    <Field inline label="Joint speed"><Slider min={0.05} max={1.5} step={0.05} value={settings.jointSpeed} format={(speed) => `${speed.toFixed(2)} rad/s`} onChange={(jointSpeed) => arm.settings.update({ jointSpeed })} /></Field>
+                    <Field label="Joint speed"><Slider min={0.05} max={1.5} step={0.05} value={settings.jointSpeed} format={(speed) => `${speed.toFixed(2)} rad/s`} onChange={(jointSpeed) => arm.settings.update({ jointSpeed })} /></Field>
                     <div className="button-row">
-                        <Button size="sm" disabled={!armed} data-testid="arm-home-zero" title="Send every joint to 0 (joint_command); the coordinator limits the speed" onClick={() => arm.home("zero")}>Home (all 0)</Button>
-                        <Button size="sm" disabled={!armed || !arm.hasStartPose()} data-testid="arm-home-start" title="Back to where the joints were when the Controller first saw them" onClick={() => arm.home("start")}>Start pose</Button>
+                        <button type="button" className="dim-btn sm" disabled={!armed} data-testid="arm-home-zero" title="Send every joint to 0 (joint_command); the coordinator limits the speed" onClick={() => arm.home("zero")}>Home (all 0)</button>
+                        <button type="button" className="dim-btn sm" disabled={!armed || !arm.hasStartPose()} data-testid="arm-home-start" title="Back to where the joints were when the Controller first saw them" onClick={() => arm.home("start")}>Start pose</button>
                     </div>
                 </>
             )}
 
-            <Heading level={3}>End effector</Heading>
+            <h3 className="dim-label">End effector</h3>
             {topics.eeTwist
                 ? (
                     <>
@@ -104,19 +137,19 @@ export function ArmPanel({ app }: { app: ViewerApp }) {
                             {EE_AXES.map((axis) => (
                                 <div className="ee-axis" key={axis}>
                                     <span className="ee-name">{EE_LABELS[axis]}</span>
-                                    <HoldButton size="sm" className="hold-button" title={`Hold to move ${EE_LABELS[axis]} negative`} aria-label={`Hold to move ${EE_LABELS[axis]} negative`} pressed={state.ee[axis] < 0} disabled={!armed} onHold={() => arm.setEe(`button-${axis}`, { [axis]: -1 })} onRelease={() => arm.setEe(`button-${axis}`, {})} data-testid={`ee-${axis}-minus`}>{`−${keyFor(axis, -1) ? ` ${keyFor(axis, -1)}` : ""}`}</HoldButton>
-                                    <HoldButton size="sm" className="hold-button" title={`Hold to move ${EE_LABELS[axis]} positive`} aria-label={`Hold to move ${EE_LABELS[axis]} positive`} pressed={state.ee[axis] > 0} disabled={!armed} onHold={() => arm.setEe(`button-${axis}`, { [axis]: 1 })} onRelease={() => arm.setEe(`button-${axis}`, {})} data-testid={`ee-${axis}-plus`}>{`+${keyFor(axis, 1) ? ` ${keyFor(axis, 1)}` : ""}`}</HoldButton>
+                                    <HoldButton label={`−${keyFor(axis, -1) ? ` ${keyFor(axis, -1)}` : ""}`} title={`Hold to move ${EE_LABELS[axis]} negative`} disabled={!armed} active={state.ee[axis] < 0} onHold={() => arm.setEe(`button-${axis}`, { [axis]: -1 })} onRelease={() => arm.setEe(`button-${axis}`, {})} testId={`ee-${axis}-minus`} />
+                                    <HoldButton label={`+${keyFor(axis, 1) ? ` ${keyFor(axis, 1)}` : ""}`} title={`Hold to move ${EE_LABELS[axis]} positive`} disabled={!armed} active={state.ee[axis] > 0} onHold={() => arm.setEe(`button-${axis}`, { [axis]: 1 })} onRelease={() => arm.setEe(`button-${axis}`, {})} testId={`ee-${axis}-plus`} />
                                 </div>
                             ))}
                         </div>
-                        <Field inline label="Linear"><Slider min={0.005} max={0.25} step={0.005} value={settings.linear} format={(speed) => `${(speed * 100).toFixed(1)} cm/s`} onChange={(linear) => arm.settings.update({ linear })} /></Field>
-                        <Field inline label="Angular"><Slider min={0.05} max={1.5} step={0.05} value={settings.angular} format={(speed) => `${speed.toFixed(2)} rad/s`} onChange={(angular) => arm.settings.update({ angular })} /></Field>
+                        <Field label="Linear"><Slider min={0.005} max={0.25} step={0.005} value={settings.linear} format={(speed) => `${(speed * 100).toFixed(1)} cm/s`} onChange={(linear) => arm.settings.update({ linear })} /></Field>
+                        <Field label="Angular"><Slider min={0.05} max={1.5} step={0.05} value={settings.angular} format={(speed) => `${speed.toFixed(2)} rad/s`} onChange={(angular) => arm.settings.update({ angular })} /></Field>
                     </>
                 )
                 : <p className="hint">What's running has no <code>ee_twist_command</code> input (an arm teleop blueprint has one: keyboard-teleop-*, coordinator-teleop-*).</p>}
             {topics.cartesian && <p className="hint"><code>{topics.cartesian}</code> (absolute pose targets) is running too; the panel jogs by twist and joints only.</p>}
 
-            <Heading level={3}>Gripper</Heading>
+            <h3 className="dim-label">Gripper</h3>
             {topics.grippers.length
                 ? (
                     <>

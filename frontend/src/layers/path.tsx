@@ -2,10 +2,10 @@
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { colorFor, placeInFixedFrame, subscribeDecoded } from "../core/layers/helpers.ts"
-import { FatLines } from "dimos-react/three"
+import { FatLines } from "../core/render/lines.ts"
 import { useStore, type Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
-import { ColorSwatch, Field, Slider } from "dimos-react"
+import { Field, Slider } from "../ui/controls.tsx"
 
 export interface PathSettings {
     color: string
@@ -65,8 +65,8 @@ function PathSettingsEditor({ settings }: { settings: Store<PathSettings>; topic
     const value = useStore(settings)
     return (
         <>
-            <Field inline label="Color"><ColorSwatch value={value.color} onChange={(color: string) => settings.update({ color })} /></Field>
-            <Field inline label="Width"><Slider min={1} max={10} step={0.5} value={value.width} format={(width: number) => `${width}px`} onChange={(width: number) => settings.update({ width })} /></Field>
+            <Field label="Color"><input type="color" value={value.color} onChange={(event) => settings.update({ color: event.target.value })} /></Field>
+            <Field label="Width"><Slider min={1} max={10} step={0.5} value={value.width} format={(width) => `${width}px`} onChange={(width) => settings.update({ width })} /></Field>
         </>
     )
 }
