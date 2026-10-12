@@ -11,7 +11,7 @@ import type { ViewerApp } from "../core/app.ts"
 import type { LayerEntry } from "../core/layers/manager.ts"
 import { type Store, useStore } from "../core/store.ts"
 import { CLOUD_PRESETS, cloudQualities, cloudQualityOf, type CloudQuality, type CloudRate, cloudRates, formatBytes, formatCount, setCloudQuality } from "../core/cloudQuality.ts"
-import { GRADIENTS } from "dimos-react/three"
+import { GRADIENTS, ViewCube } from "dimos-react/three"
 import type { PointLook } from "../core/render/rendering.ts"
 import type { CloudSettings } from "../layers/pointcloud.tsx"
 import { Icon } from "./icons.tsx"
@@ -72,12 +72,32 @@ export function ScenePanel({ host, app, onTf }: { host: RefObject<HTMLDivElement
         >
             <div ref={host} className="scene" />
             {app?.viewer.webglError && !off && <Unavailable what="3D view" reason={app.viewer.webglError} />}
+            {app && !off && !app.viewer.webglError && <SceneViewCube app={app} host={host} />}
             {app && !off && <ViewControls app={app} />}
             {app && !off && <TfFootnote app={app} onOpen={onTf} />}
             {app && menuOpen && !off && <CloudMenu app={app} anchor={cloudButton.current} onClose={() => setMenuOpen(false)} />}
         </Panel>
         </>
     )
+}
+
+/** Settings → View cube: dimos-react's CAD view cube in the top-right corner (click a face, edge or corner to look from there, drag to orbit). */
+function SceneViewCube({ app, host }: { app: ViewerApp; host: RefObject<HTMLDivElement | null> }) {
+    const { viewCube } = useStore(app.settings)
+    useEffect(() => {
+        if (!viewCube || !host.current) {
+            return
+        }
+        let cube: ViewCube
+        try {
+            cube = new ViewCube(app.viewer, host.current, { corner: "top-right" })
+        } catch (error) {
+            console.warn("view cube: WebGL unavailable", error)
+            return
+        }
+        return () => cube.dispose()
+    }, [app, host, viewCube])
+    return null
 }
 
 /** The 3D view's actions in the dock while it's the main view: follow the robot (again). */

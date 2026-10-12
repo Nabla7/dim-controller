@@ -72,7 +72,8 @@ One arrangement, made of panels:
 Every panel has the same header, its buttons in the same place, shown while the panel is hovered (always on a touch
 screen): collapse / expand, make it the main view (swap: the main view's panel takes its place), pop out / dock. There's
 no close: collapse a panel instead, and the others in its rail take its height. A collapsed panel stops its stream (the
-3D view unsubscribes every layer, a camera its video, the map its topics); expanded, it subscribes again. A panel's
+3D view unsubscribes every layer, a camera its video and overlay, the map its topics); expanded, it subscribes again. A
+camera also lets go while the browser tab is hidden; a 3D projection of the same camera keeps its own small stream. A panel's
 own in-panel buttons (a camera's topic tabs and gear, the 3D view's follow and point clouds, the map's cog and follow)
 show while it's hovered (on touch, for a few seconds after a tap on it). The map's choices sit behind its cog and in
 Settings → Map (the same setting): what it shows (the lidar map, or a costmap when one is on the bus; with nothing yet,
@@ -136,7 +137,9 @@ The presets are this viewer's (localStorage).
 The 3D camera follows the robot (`base_link`, or another frame: Settings → Follow frame): orbit and zoom keep
 following, a pan stops it. The 3D view's corner buttons follow (lit while following; click to resume, or while
 following to reframe the robot) and look straight down on the area around the robot (`POST api/camera` does the same
-in every open page; its lookAt stops following). Hovering a frame in the TF panel picks it
+in every open page; its lookAt stops following). **Settings → 3D view → View cube** (or the palette; `lv.view.viewCube`,
+off by default) puts dimos-react's view cube in the top-right corner: click a face, edge or corner to look from there,
+drag it to orbit. Hovering a frame in the TF panel picks it
 out in the view: big axes drawn through everything, with its name.
 
 ## Controller format

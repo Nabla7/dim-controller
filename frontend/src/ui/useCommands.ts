@@ -84,6 +84,7 @@ export function useCommands(app: ViewerApp, api: WorkspaceApi, cameras: CameraAc
         { id: "view.top", label: "3D view: top-down", group: "View", words: "bird overhead", run: () => app.topDown() },
         { id: "view.follow", label: view.follow ? "3D camera: stop following" : "3D camera: follow the robot", group: "View", run: () => app.settings.update({ follow: !view.follow }) },
         { id: "view.model", label: view.robotModel !== false ? "Hide the robot model" : "Show the robot model", group: "View", run: () => app.settings.update({ robotModel: view.robotModel === false }) },
+        { id: "view.cube", label: view.viewCube ? "Hide the view cube" : "Show the view cube", group: "View", words: "orientation top front axes", run: () => app.settings.update({ viewCube: !view.viewCube }) },
         { id: "view.stats", label: view.showStats ? "Hide render stats" : "Show render stats", group: "View", words: "fps latency", run: () => app.settings.update({ showStats: !view.showStats }) },
         { id: "view.fullscreen", label: "Fullscreen window", group: "View", run: () => void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {}) },
         {
