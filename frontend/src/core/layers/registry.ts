@@ -48,6 +48,13 @@ export interface LayerType<Settings extends object = object> {
     label: string
     /** dimos message types it draws, e.g. ["sensor_msgs.PointCloud2"] */
     types: string[]
+    /** only these topic names (e.g. ["/scene_data"]): for a generic type like std_msgs.String */
+    names?: string[]
+    /**
+     * topics listed even when discovery can't see them: one that publishes only when asked (a request/response pair)
+     * never shows up in a discovery probe
+     */
+    topics?: Topic[]
     /** per-topic settings, persisted; the Settings component edits them (a function picks them per topic) */
     defaults: Settings | ((topic: Topic) => Settings)
     /** on when first seen (default true) */
@@ -67,9 +74,13 @@ export function registerLayer<Settings extends object>(type: LayerType<Settings>
     layerTypes.push(type as unknown as LayerType<object>)
 }
 
-export function layerTypeFor(messageType: string): LayerType<object> | undefined {
+export function layerTypeFor(messageType: string, topicName?: string): LayerType<object> | undefined {
     for (let index = layerTypes.length - 1; index >= 0; index--) {
-        if (layerTypes[index].types.includes(messageType)) {
+        const type = layerTypes[index]
+        if (type.names && (topicName === undefined || !type.names.includes(topicName))) {
+            continue
+        }
+        if (type.types.includes(messageType)) {
             return layerTypes[index]
         }
     }

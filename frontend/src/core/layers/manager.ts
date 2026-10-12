@@ -50,11 +50,13 @@ export class LayerManager {
         const list = this.entries.get().list
         const known = new Set(list.map((entry) => entry.topic.key))
         const added: LayerEntry[] = []
-        for (const topic of topics) {
-            const type = layerTypeFor(topic.type)
+        const pinned = allLayerTypes().flatMap((type) => type.topics ?? [])
+        for (const topic of [...topics, ...pinned]) {
+            const type = layerTypeFor(topic.type, topic.name)
             if (!type || known.has(topic.key)) {
                 continue
             }
+            known.add(topic.key)
             const saved = this.#enabled.get()[topic.key]
             const enabled = this.#typeEnabled[type.id] ?? saved ?? (type.enabledByDefault?.(topic) ?? true)
             const defaults = typeof type.defaults === "function" ? type.defaults(topic) : structuredClone(type.defaults)
