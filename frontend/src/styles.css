@@ -258,6 +258,8 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 :root[data-dr-dark] .scene-slot > .panel-content { background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--card) 70%, var(--scene-bg, var(--bg))), var(--scene-bg, var(--bg)) 60%); }
 .scene { position: absolute; inset: 0; touch-action: none; }
 .scene canvas { display: block; }
+/* the view cube sits under the tools row (layers button), which lies over the top of the body */
+.scene .dr-scene-viewcube { top: 42px; right: 8px; }
 /* a view that can't run (no WebGL, or it crashed) says so in place (ui/Unavailable.tsx) */
 .view-unavailable { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 1; display: flex; align-items: center; gap: 8px; padding: 6px 12px;
     max-width: calc(100% - 24px); font: 12px var(--sans); color: var(--muted-fg); box-shadow: var(--shadow-md); }
