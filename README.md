@@ -185,6 +185,15 @@ Drive → Max latency (default 1000 ms), or the link drops, driving **disengages
 the bar says why ("Disengaged: latency 1240 ms > 1000 ms max. Reconnect to drive.") with **Reconnect**: a new gateway
 session, video and control alike. Driving picks up again only on new input.
 
+### Driving: Joy
+
+The raw input also goes out as `sensor_msgs/Joy` on `/joystick` (dimos's stream name for it: the web cockpit's teleop
+and KeyboardTeleop publish the same), for recordings and Joy readers; it drives nothing. The gamepad sends its raw
+axes (3 decimals) then LT's and RT's travel, and its buttons 0/1; the keys send KeyboardTeleop's buttons (w a s d q e
+shift ctrl space, the arrows as w a s d); the phone's thumb sticks send a pad's four axes. Each on a change, at most
+15 a second, and its rest once when let go: nothing while idle. Settings → Drive → Publish Joy turns it off
+([core/joy.ts](frontend/src/core/joy.ts)).
+
 ### Driving: which topics
 
 Settings → Drive's **Topics** is **auto** by default, or a list you type (one per line, `/my_cmd_vel` or

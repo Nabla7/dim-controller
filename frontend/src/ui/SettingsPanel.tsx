@@ -8,6 +8,7 @@ import { armShading } from "./armShading.ts"
 import { ArmPanel } from "./ArmPanel.tsx"
 import { Field, Heading, NumberInput, Segmented, Select, Slider, Toggle } from "dimos-react"
 import { gamepadSettings } from "../core/gamepad.ts"
+import { JOY_HZ, JOY_TOPIC, JOY_TYPE, joySettings } from "../core/joy.ts"
 import { maxLatencyOf } from "../core/linkWatch.ts"
 import { DrivePanel } from "./DrivePanel.tsx"
 import { rendering } from "../core/render/rendering.ts"
@@ -59,6 +60,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                             <MaxLatencyInput app={app} />
                         </Field>
                         <GamepadSettingsFields />
+                        <JoySettingsFields />
                     </section>
                 )}
             <section className="settings-section" data-section="map">
@@ -107,6 +109,21 @@ function GamepadSettingsFields() {
             </Field>
             <Field inline label="Invert Y" title="up on the left stick backs up"><Toggle value={settings.invertY} onChange={(invertY: any) => gamepadSettings.update({ invertY })} /></Field>
             <p className="hint">Left stick drives, right stick turns, RB boosts, LT + RT stops (A to drive again). The full list is under ?.</p>
+        </div>
+    )
+}
+
+/** Settings → Drive → Joy: the raw input (pad, keys, thumb sticks) as sensor_msgs/Joy, on or off */
+function JoySettingsFields() {
+    const settings = useStore(joySettings)
+    return (
+        <div className="field-block joy-settings" data-testid="joy-settings">
+            <Field inline label="Publish Joy" title="the raw gamepad, drive keys and thumb sticks as sensor_msgs/Joy (drives nothing; for recordings and Joy readers)">
+                <Toggle value={settings.enabled} onChange={(enabled: any) => joySettings.update({ enabled })} />
+            </Field>
+            <p className="hint" data-testid="joy-topic">
+                Topic <code>{JOY_TOPIC}</code> ({JOY_TYPE.replace(".", "/")}), on each change, at most {JOY_HZ}/s; nothing while idle.
+            </p>
         </div>
     )
 }
