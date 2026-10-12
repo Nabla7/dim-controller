@@ -64,6 +64,13 @@ Deno.test("a box takes MuJoCo's half-sizes; a cylinder stands along z", () => {
     assertAlmostEquals(cylinder.geometry.boundingBox!.max.y, 0.1, 1e-6)
 })
 
+Deno.test("a geom's rgba is read as sRGB, the way MuJoCo shows it", () => {
+    const { bodies } = buildScene(scene)
+    const box = bodies.get("cart")!.children.find((child) => (child as THREE.Mesh).isMesh) as THREE.Mesh
+    const color = (box.material as THREE.MeshStandardMaterial).color.getRGB(new THREE.Color(), THREE.SRGBColorSpace)
+    assertAlmostEquals(color.g, 0.5, 1e-4)
+})
+
 Deno.test("a height field's raised sample lands at (-x, +y), scaled by its top", () => {
     const { bodies } = buildScene(scene)
     const hill = bodies.get("terrain")!.children[0] as THREE.Mesh
