@@ -4,7 +4,7 @@ import { useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import type { LayerEntry } from "../core/layers/manager.ts"
 import { useStore } from "../core/store.ts"
-import { Toggle } from "./controls.tsx"
+import { Heading, Toggle } from "dimos-react"
 import { Icon } from "./icons.tsx"
 
 function LayerRow({ app, entry }: { app: ViewerApp; entry: LayerEntry }) {
@@ -46,7 +46,7 @@ export function LayersPanel({ app }: { app: ViewerApp }) {
             {!list.length && <p className="empty">Waiting for topics… start a blueprint (or a replay) and they appear here.</p>}
             {[...groups].map(([label, entries]) => (
                 <section key={label} className="layer-group">
-                    <h3 className="dim-label">{label}</h3>
+                    <Heading level={3}>{label}</Heading>
                     {entries.map((entry) => <LayerRow key={entry.topic.key} app={app} entry={entry} />)}
                 </section>
             ))}

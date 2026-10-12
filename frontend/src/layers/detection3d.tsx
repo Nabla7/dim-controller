@@ -3,12 +3,12 @@
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { colorFor, placeInFixedFrame, poseMatrix, subscribeDecoded } from "../core/layers/helpers.ts"
-import { FatLines, pushBox } from "../core/render/lines.ts"
-import { LabelPool } from "../core/render/labels.ts"
+import { FatLines, pushBox } from "dimos-react/three"
+import { LabelPool } from "dimos-react/three"
 import type { LcmValue } from "../core/lcm/lcm.ts"
 import { useStore, type Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
-import { Field, Slider, Toggle } from "../ui/controls.tsx"
+import { Field, Slider, Toggle } from "dimos-react"
 
 export interface BoxSettings {
     width: number
@@ -88,8 +88,8 @@ function BoxSettingsEditor({ settings }: { settings: Store<BoxSettings>; topic: 
     const value = useStore(settings)
     return (
         <>
-            <Field label="Width"><Slider min={1} max={8} step={0.5} value={value.width} format={(width) => `${width}px`} onChange={(width) => settings.update({ width })} /></Field>
-            <Field label="Labels"><Toggle value={value.labels} onChange={(labels) => settings.update({ labels })} /></Field>
+            <Field inline label="Width"><Slider min={1} max={8} step={0.5} value={value.width} format={(width: number) => `${width}px`} onChange={(width: number) => settings.update({ width })} /></Field>
+            <Field inline label="Labels"><Toggle value={value.labels} onChange={(labels: boolean) => settings.update({ labels })} /></Field>
         </>
     )
 }

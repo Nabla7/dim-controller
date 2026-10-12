@@ -370,4 +370,4 @@ nix build .#dimosApp                           # what Desktop builds: bin/dimos-
 
 `server/` is the app's `dimos-app-server` (Desktop's app contract): it serves the built page and every endpoint
 under `/apps/<name>/`, and talks zenoh itself only to record, find topics and drive. The page reaches Desktop's zenoh-gateway at
-`../../zenoh-gateway`; its client is vendored from zenoh-gateway at 48ad46b (`frontend/src/vendor/zenoh_gateway`; gateway 0.5.8: lossy channels retransmit for 1 s, a reliable publisher drops puts queued over 2 s).
+`../../zenoh-gateway`; its client is dimos-react's vendored copy (zenoh-gateway 48ad46b, `dimos-react/dim-app/*`; gateway 0.5.8: lossy channels retransmit for 1 s, a reliable publisher drops puts queued over 2 s). The page is built on dimos-react (`frontend/package.json`): its controls, theme, 3D viewer, TF tree, thumb sticks and dim-app helpers; the workspace, panels and menus are this app's.

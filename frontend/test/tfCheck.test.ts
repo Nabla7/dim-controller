@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1"
-import { TfTree } from "../src/core/tf.ts"
+import { TfTree } from "dimos-react/three"
 import { checkTf, confirmed, type TfIssue } from "../src/core/tfCheck.ts"
 
 const none: [number, number, number, number] = [0, 0, 0, 1]

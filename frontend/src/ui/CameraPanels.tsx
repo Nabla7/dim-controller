@@ -13,6 +13,7 @@ import { cameraTabs, isImage, pickDefault as pickPreferred, retargetPanels } fro
 import { overlayTypeFor } from "../core/layers/registry.ts"
 import { decode } from "../core/lcm/lcm.ts"
 import { DEFAULT_DEPTH_LOOK, DEPTH_COLORMAPS, DepthCanvas, type DepthLook } from "../core/render/depth.ts"
+import { Button, Card, NumberInput, Select } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { popoverPosition } from "./panelDrag.ts"
 import { Panel } from "./Panel.tsx"
@@ -299,23 +300,18 @@ function CameraPanel({ app, panel, topics, onChange }: {
                         {!tabs.length && !panel.key && <span className="camera-tab gone">no camera on the bus yet</span>}
                     </div>
                     {overlays.length > 0 && (
-                        <select className="dim-select" value={panel.overlay} onChange={(event) => onChange({ overlay: event.target.value })} aria-label="Overlay">
-                            <option value="">no overlay</option>
-                            {overlays.map((other) => <option key={other.key} value={other.key}>{other.name}</option>)}
-                        </select>
+                        <Select value={panel.overlay} options={[["", "no overlay"], ...overlays.map((other) => [other.key, other.name] as [string, string])]} onChange={(overlay) => onChange({ overlay })} aria-label="Overlay" />
                     )}
                     {depth && (
                         <>
-                            <select className="dim-select" value={depthLook.colormap} onChange={(event) => onChange({ depth: { ...depthLook, colormap: event.target.value } })} aria-label="Depth colormap">
-                                {DEPTH_COLORMAPS.map((name) => <option key={name} value={name}>{name}</option>)}
-                            </select>
-                            <input className="dim-input number depth-range" type="number" step="0.1" placeholder="near" title="near (m); empty = auto" value={depthLook.near ?? ""} onChange={(event) => onChange({ depth: { ...depthLook, near: event.target.value === "" ? null : Number(event.target.value) } })} />
-                            <input className="dim-input number depth-range" type="number" step="0.1" placeholder="far" title="far (m); empty = auto" value={depthLook.far ?? ""} onChange={(event) => onChange({ depth: { ...depthLook, far: event.target.value === "" ? null : Number(event.target.value) } })} />
+                            <Select value={depthLook.colormap} options={DEPTH_COLORMAPS} onChange={(colormap) => onChange({ depth: { ...depthLook, colormap } })} aria-label="Depth colormap" />
+                            <NumberInput nullable className="number depth-range" step={0.1} placeholder="near" title="near (m); empty = auto" value={depthLook.near} onChange={(near) => onChange({ depth: { ...depthLook, near } })} />
+                            <NumberInput nullable className="number depth-range" step={0.1} placeholder="far" title="far (m); empty = auto" value={depthLook.far} onChange={(far) => onChange({ depth: { ...depthLook, far } })} />
                         </>
                     )}
-                    <button type="button" className="dim-btn icon icon-button camera-fit" aria-pressed={fill} title={fill ? "Fill: the picture fills its space, edges cropped (click to fit the whole picture)" : "Fit: the whole picture, letterboxed (click to fill its space)"} onClick={toggleFill}>
+                    <Button className="dr-btn--icon icon-button camera-fit" pressed={fill} title={fill ? "Fill: the picture fills its space, edges cropped (click to fit the whole picture)" : "Fit: the whole picture, letterboxed (click to fill its space)"} onClick={toggleFill}>
                         <Icon name={fill ? "fill" : "fit"} size={15} />
-                    </button>
+                    </Button>
                 </div>
             }
         >
@@ -325,11 +321,11 @@ function CameraPanel({ app, panel, topics, onChange }: {
             {!topic && <div className="camera-placeholder"><Icon name="camera" size={28} /><span>{tabs.length ? "Pick a camera from this panel's topic tabs (shown on hover) or the palette (/)" : "No camera on the bus yet"}</span></div>}
             {topic && !depth && (
                 <div className={`camera-quality panel-chrome ${qualityOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
-                    <button ref={gear} type="button" className="dim-btn icon quality-gear" title={`Latency ↔ quality: ${presetFor(quality).label}`} aria-label="Latency or quality" aria-haspopup="menu" aria-expanded={qualityOpen} onClick={() => setQualityOpen(!qualityOpen)}>
+                    <Button ref={gear} className="dr-btn--icon quality-gear" title={`Latency ↔ quality: ${presetFor(quality).label}`} aria-label="Latency or quality" aria-haspopup="menu" aria-expanded={qualityOpen} onClick={() => setQualityOpen(!qualityOpen)}>
                         <Icon name="settings" size={14} />
-                    </button>
+                    </Button>
                     {qualityOpen && createPortal(
-                        <div className="dim-panel quality-menu" role="menu" aria-label="Latency or quality" style={popoverPosition(gear.current, 236)} onClick={(event) => event.stopPropagation()}>
+                        <Card padded={false} className="quality-menu" role="menu" aria-label="Latency or quality" style={popoverPosition(gear.current, 236)} onClick={(event) => event.stopPropagation()}>
                             <div className="quality-title">Latency ↔ quality</div>
                             {QUALITY_PRESETS.map((preset) => (
                                 <button
@@ -347,7 +343,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
                                     <span className="quality-about">{preset.about}</span>
                                 </button>
                             ))}
-                        </div>,
+                        </Card>,
                         document.body,
                     )}
                 </div>

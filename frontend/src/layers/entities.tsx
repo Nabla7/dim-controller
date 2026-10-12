@@ -3,7 +3,7 @@
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { colorFor, placeInFixedFrame, subscribeDecoded } from "../core/layers/helpers.ts"
-import { LabelPool } from "../core/render/labels.ts"
+import { LabelPool } from "dimos-react/three"
 import type { Topic } from "../core/transport.ts"
 
 const ENTITY_COLORS: Record<string, string> = { person: "#ff6464", object: "#64ff64", location: "#6464ff" }

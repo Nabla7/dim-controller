@@ -2,11 +2,11 @@
 // (Reading tf into the tree happens in core/tfFeed.ts whether or not this layer is on.)
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
-import { FatLines } from "../core/render/lines.ts"
-import { LabelPool } from "../core/render/labels.ts"
+import { FatLines } from "dimos-react/three"
+import { LabelPool } from "dimos-react/three"
 import { useStore, type Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
-import { Field, Slider, Toggle } from "../ui/controls.tsx"
+import { Field, Slider, Toggle } from "dimos-react"
 
 export interface TfSettings {
     axesSize: number
@@ -21,7 +21,7 @@ class TfFramesLayer {
     readonly root = new THREE.Group()
     #axes: FatLines
     #links: FatLines
-    #labels = new LabelPool("scene-label frame-label")
+    #labels = new LabelPool("dr-scene-label dr-frame-label")
     #version = -1
     #fixedFrame = ""
 
@@ -43,7 +43,7 @@ class TfFramesLayer {
         this.#version = this.context.tf.version
         this.#fixedFrame = frame.fixedFrame
         const settings = this.settings.get()
-        const snapshot = this.context.tf.snapshot(frame.fixedFrame)
+        const snapshot = this.context.tf.snapshot()
         const red = new THREE.Color(0xef4444), green = new THREE.Color(0x22c55e), blue = new THREE.Color(0x3b82f6)
         this.#axes.clear()
         this.#links.clear()
@@ -65,7 +65,7 @@ class TfFramesLayer {
             if (settings.names && (snapshot.frames.length <= NAMES_CAP || name === frame.fixedFrame || name === this.context.profile.baseFrame)) {
                 this.#labels.place(name, origin)
             }
-            const edge = snapshot.edges.find((other) => other.child === name)
+            const edge = snapshot.edges.find((other: { child: string; parent: string }) => other.child === name)
             const parentMatrix = edge && this.context.tf.lookup(edge.parent, frame.fixedFrame)
             if (settings.links && parentMatrix) {
                 parent.setFromMatrixPosition(parentMatrix)
@@ -90,9 +90,9 @@ function TfSettingsEditor({ settings }: { settings: Store<TfSettings>; topic: To
     const value = useStore(settings)
     return (
         <>
-            <Field label="Axes"><Slider min={0.05} max={1} step={0.05} value={value.axesSize} format={(size) => `${size} m`} onChange={(axesSize) => settings.update({ axesSize })} /></Field>
-            <Field label="Names"><Toggle value={value.names} onChange={(names) => settings.update({ names })} /></Field>
-            <Field label="Links"><Toggle value={value.links} onChange={(links) => settings.update({ links })} /></Field>
+            <Field inline label="Axes"><Slider min={0.05} max={1} step={0.05} value={value.axesSize} format={(size: number) => `${size} m`} onChange={(axesSize: number) => settings.update({ axesSize })} /></Field>
+            <Field inline label="Names"><Toggle value={value.names} onChange={(names: boolean) => settings.update({ names })} /></Field>
+            <Field inline label="Links"><Toggle value={value.links} onChange={(links: boolean) => settings.update({ links })} /></Field>
         </>
     )
 }

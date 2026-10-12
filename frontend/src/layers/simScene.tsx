@@ -7,7 +7,7 @@ import { disposeTree } from "../core/layers/helpers.ts"
 import { decode, encode } from "../core/lcm/lcm.ts"
 import { Store, useStore } from "../core/store.ts"
 import { dimosKey, type Publisher, type Topic } from "../core/transport.ts"
-import { Field, Slider, Toggle } from "../ui/controls.tsx"
+import { Field, Slider, Toggle } from "dimos-react"
 import { buildScene, type SceneData } from "../core/sceneData.ts"
 import { bladeCount, isSoftwareRenderer, probeRendererName, windTime } from "../core/grass.ts"
 import { readLocal, writeLocal } from "../core/videoQuality.ts"
@@ -225,24 +225,24 @@ function SimSceneSettingsEditor({ settings }: { settings: Store<SimSceneSettings
     const grass = useStore(grassSettings())
     return (
         <>
-            <Field label="Opacity">
+            <Field inline label="Opacity">
                 <Slider min={0.1} max={1} step={0.05} value={value.opacity} format={(opacity) => `${Math.round(opacity * 100)}%`} onChange={(opacity) => settings.update({ opacity })} />
             </Field>
-            <Field label="Hide above" hint="leaves out ceilings and upper floors">
+            <Field inline label="Hide above" title="leaves out ceilings and upper floors">
                 <Slider min={0.5} max={30} step={0.1} value={value.cutAbove} format={(height) => `${height.toFixed(1)} m`} onChange={(cutAbove) => settings.update({ cutAbove })} />
             </Field>
-            <Field label="The world's lights">
+            <Field inline label="The world's lights">
                 <Toggle value={value.lights} onChange={(lights) => settings.update({ lights })} />
             </Field>
-            <Field label="Grass" hint={isSoftwareRenderer(gpu()) ? `this viewer only; off by default: ${gpu()} is a software GPU` : "this viewer only: blades on the world's grassy hills"}>
+            <Field inline label="Grass" title={isSoftwareRenderer(gpu()) ? `this viewer only; off by default: ${gpu()} is a software GPU` : "this viewer only: blades on the world's grassy hills"}>
                 <Toggle value={grass.on} onChange={(on) => grassSettings().update({ on })} />
             </Field>
             {grass.on && (
                 <>
-                    <Field label="Grass density">
+                    <Field inline label="Grass density">
                         <Slider min={0.1} max={2} step={0.05} value={grass.density} format={(density) => `${Math.round(density * 100)}%`} onChange={(density) => grassSettings().update({ density })} />
                     </Field>
-                    <Field label="Wind" hint="keeps the view redrawing while grass is on screen">
+                    <Field inline label="Wind" title="keeps the view redrawing while grass is on screen">
                         <Toggle value={grass.sway} onChange={(sway) => grassSettings().update({ sway })} />
                     </Field>
                 </>

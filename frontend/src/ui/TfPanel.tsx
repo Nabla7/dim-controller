@@ -2,8 +2,8 @@
 import { useEffect, useRef, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
-import type { TfSnapshot } from "../core/tf.ts"
-import { Field } from "./controls.tsx"
+import type { TfSnapshot } from "dimos-react/three"
+import { Field, Select } from "dimos-react"
 
 function Tree({ app, snapshot, frame, depth, seen, hovered, flagged }: { app: ViewerApp; snapshot: TfSnapshot; frame: string; depth: number; seen: Set<string>; hovered: string | null; flagged: Set<string> }) {
     if (seen.has(frame) || depth > 64) {
@@ -34,9 +34,9 @@ function Tree({ app, snapshot, frame, depth, seen, hovered, flagged }: { app: Vi
 export function TfPanel({ app }: { app: ViewerApp }) {
     const view = useStore(app.settings)
     const frameInfo = useStore(app.frameInfo)
-    const [snapshot, setSnapshot] = useState<TfSnapshot>(() => app.tf.snapshot(frameInfo.fixedFrame))
+    const [snapshot, setSnapshot] = useState<TfSnapshot>(() => app.tf.snapshot())
     useEffect(() => {
-        const timer = setInterval(() => setSnapshot(app.tf.snapshot(app.frameInfo.get().fixedFrame)), 1000)
+        const timer = setInterval(() => setSnapshot(app.tf.snapshot()), 1000)
         return () => clearInterval(timer)
     }, [app])
     const highlight = useStore(app.highlight.state)
@@ -57,11 +57,8 @@ export function TfPanel({ app }: { app: ViewerApp }) {
     })
     return (
         <div className="tf-panel">
-            <Field label="Fixed frame" hint="everything is drawn relative to this frame">
-                <select className="dim-select" value={view.fixedFrame} onChange={(event) => app.settings.update({ fixedFrame: event.target.value })}>
-                    <option value="">auto ({frameInfo.fixedFrame})</option>
-                    {snapshot.frames.map((frame) => <option key={frame} value={frame}>{frame}</option>)}
-                </select>
+            <Field inline label="Fixed frame" title="everything is drawn relative to this frame">
+                <Select value={view.fixedFrame} options={[["", `auto (${frameInfo.fixedFrame})`], ...snapshot.frames.map((frame) => [frame, frame] as [string, string])]} onChange={(fixedFrame) => app.settings.update({ fixedFrame })} />
             </Field>
             <p className="hint">Robot frame: {app.profile.baseFrame} {frameInfo.robotFound ? "(in TF)" : "(not in TF yet)"}</p>
             {issues.map((issue) => <p key={issue.kind + issue.summary} className="problem" title={issue.frames.join(", ")}>{issue.summary}: {issue.detail}</p>)}

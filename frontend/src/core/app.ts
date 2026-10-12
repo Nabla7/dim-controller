@@ -2,11 +2,12 @@
 // The UI reads the stores; window.__lv exposes this for tests.
 import * as THREE from "three"
 import { Connection } from "./transport.ts"
-import { TfTree } from "./tf.ts"
+import { TfTree } from "dimos-react/three"
 import { feedTf } from "./tfFeed.ts"
 import { checkTf, confirmed, type TfIssue } from "./tfCheck.ts"
 import { feedBattery } from "./batteryFeed.ts"
-import { Viewer } from "./render/viewer.ts"
+import { Viewer } from "dimos-react/three"
+import { watchSplatBudget } from "./render/rendering.ts"
 import { FrameHighlight } from "./render/frameHighlight.ts"
 import { LayerManager } from "./layers/manager.ts"
 import { VideoSources } from "./video.ts"
@@ -15,7 +16,7 @@ import { ArmControl } from "./arm.ts"
 import { AgentLink } from "./agent.ts"
 import { LocationLabels } from "./labels.ts"
 import { robotPose } from "./robot.ts"
-import { disposeModel, robotModel } from "./render/robotModel.ts"
+import { disposeTree, robotModel } from "dimos-react/three"
 import { RunWatch } from "./runs.ts"
 import { persistentStore, Store } from "./store.ts"
 import { profileFor } from "../profile/index.ts"
@@ -85,7 +86,8 @@ export class ViewerApp {
         this.#profile = profileFor(first.type)
         this.robot = new Store({ type: first.type, auto: !chosenType(this.settings.get().profile), reason: first.reason })
         this.connection = new Connection(this.profile.drive.deadmanMs)
-        this.viewer = new Viewer(host, () => this.connection.bridgeNow())
+        this.viewer = new Viewer(host, { clock: () => this.connection.bridgeNow() })
+        watchSplatBudget(this.viewer)
         this.highlight = new FrameHighlight(this.viewer, this.tf)
         this.video = new VideoSources(this.connection)
         this.layers = new LayerManager(this.viewer, this.tf, this.connection, this.video, this.profile)
@@ -244,7 +246,7 @@ export class ViewerApp {
     #checkTf() {
         const fixedFrame = this.viewer.fixedFrame
         const next = checkTf({
-            snapshot: this.tf.snapshot(fixedFrame),
+            snapshot: this.tf.snapshot(),
             fixedFrame,
             layers: this.layers.entries.get().list.filter((entry) => entry.enabled && entry.status.frame).map((entry) => ({ name: entry.topic.name, frame: entry.status.frame! })),
             placed: (frame) => this.tf.lookup(frame, fixedFrame) !== null,
@@ -260,9 +262,9 @@ export class ViewerApp {
         if (this.#model?.type !== this.#profile.type) {
             if (this.#model?.group) {
                 this.viewer.scene.remove(this.#model.group)
-                disposeModel(this.#model.group)
+                disposeTree(this.#model.group)
             }
-            this.#model = { type: this.#profile.type, group: robotModel(this.#profile.type) }
+            this.#model = { type: this.#profile.type, group: this.#profile.type === "arm" ? null : robotModel(this.#profile.type) }
             if (this.#model.group) {
                 this.viewer.scene.add(this.#model.group)
             }

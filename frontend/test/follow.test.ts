@@ -1,6 +1,8 @@
 // The followed point: smooth between poses that arrive far slower than frames, and a snap on a teleport.
 import { assert, assertEquals } from "jsr:@std/assert@1"
-import { PanGate, SmoothFollow, type Vec3 } from "../src/core/render/follow.ts"
+import { PanGate, SmoothFollow } from "dimos-react/three"
+
+type Vec3 = [number, number, number]
 
 /** a robot at 0.5 m/s whose pose arrives at ~18 Hz (with arrival jitter), drawn at 105 fps: the per-frame camera path */
 function run(smooth: boolean) {

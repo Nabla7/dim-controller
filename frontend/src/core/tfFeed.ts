@@ -2,8 +2,8 @@
 // A topic named like tf_static is treated as static (exempt from staleness).
 import { decode } from "./lcm/lcm.ts"
 import type { Connection } from "./transport.ts"
-import type { TfTree } from "./tf.ts"
-import type { Viewer } from "./render/viewer.ts"
+import type { TfTree } from "dimos-react/three"
+import type { Viewer } from "dimos-react/three"
 
 export function feedTf(connection: Connection, tf: TfTree, viewer: Viewer) {
     const subscribed = new Set<string>()

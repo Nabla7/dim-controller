@@ -5,12 +5,12 @@ import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { placeInFixedFrame } from "../core/layers/helpers.ts"
 import { headerFrameId } from "../core/lcm/lcm.ts"
-import { applyLook, makePointMaterial, type PointLook } from "../core/render/pointMaterial.ts"
+import { applyLook, makePointMaterial } from "dimos-react/three"
 import type { Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { PointLookEditor } from "../ui/PointLookEditor.tsx"
-import { rendering, resolveStyle, splatFallback } from "../core/render/rendering.ts"
-import { Field, Select } from "../ui/controls.tsx"
+import { materialLook, type PointLook, rendering, splatFallback } from "../core/render/rendering.ts"
+import { Field, Select } from "dimos-react"
 import { useStore } from "../core/store.ts"
 import { CLOUD_PRESETS, cloudQualities, cloudQualityOf, CloudStream, type CloudQuality, formatBytes, formatCount, setCloudQuality, setCloudRate } from "../core/cloudQuality.ts"
 
@@ -110,9 +110,8 @@ class CloudLayer {
     }
 
     /** the look with "default" and the splat fallback resolved */
-    #look(): PointLook {
-        const look = this.#settings.get().look
-        return { ...look, style: resolveStyle(look.style) }
+    #look() {
+        return materialLook(this.#settings.get().look)
     }
 
     /** Glow is fill-bound: over SPLAT_BUDGET points a stable random subset is drawn (see the vertex shader). */
@@ -291,7 +290,7 @@ class CloudLayer {
 /** This viewer's bandwidth preset for a cloud (shared with the 3D panel's cloud menu). */
 export function CloudQualitySelect({ topicKey }: { topicKey: string }) {
     useStore(cloudQualities)
-    return <Select value={cloudQualityOf(topicKey)} options={CLOUD_PRESETS.map((preset) => [preset.id, preset.label])} onChange={(quality) => setCloudQuality(topicKey, quality as CloudQuality)} />
+    return <Select value={cloudQualityOf(topicKey)} options={CLOUD_PRESETS.map((preset) => [preset.id, preset.label])} onChange={(quality: string) => setCloudQuality(topicKey, quality as CloudQuality)} />
 }
 
 function CloudSettingsEditor({ settings, topic }: { settings: Store<CloudSettings>; topic: Topic }) {
@@ -299,15 +298,15 @@ function CloudSettingsEditor({ settings, topic }: { settings: Store<CloudSetting
     return (
         <>
             <PointLookEditor look={value.look} onChange={(look) => settings.update({ look })} />
-            <Field label="Keep">
-                <Select value={value.mode} options={[["latest", "latest scan"], ["accumulate", "accumulate"]]} onChange={(mode) => settings.update({ mode: mode as CloudSettings["mode"] })} />
+            <Field inline label="Keep">
+                <Select value={value.mode} options={[["latest", "latest scan"], ["accumulate", "accumulate"]]} onChange={(mode: string) => settings.update({ mode: mode as CloudSettings["mode"] })} />
             </Field>
             {value.mode === "accumulate" && (
-                <Field label="Window">
-                    <Select value={String(value.windowSeconds)} options={[["5", "5 s"], ["10", "10 s"], ["30", "30 s"], ["120", "2 min"], ["0", "forever"]]} onChange={(seconds) => settings.update({ windowSeconds: Number(seconds) })} />
+                <Field inline label="Window">
+                    <Select value={String(value.windowSeconds)} options={[["5", "5 s"], ["10", "10 s"], ["30", "30 s"], ["120", "2 min"], ["0", "forever"]]} onChange={(seconds: string) => settings.update({ windowSeconds: Number(seconds) })} />
                 </Field>
             )}
-            <Field label="Bandwidth" hint={`this viewer's: ${CLOUD_PRESETS.map((preset) => `${preset.label}: ${preset.about}`).join("; ")}`}>
+            <Field inline label="Bandwidth" title={`this viewer's: ${CLOUD_PRESETS.map((preset) => `${preset.label}: ${preset.about}`).join("; ")}`}>
                 <CloudQualitySelect topicKey={topic.key} />
             </Field>
         </>

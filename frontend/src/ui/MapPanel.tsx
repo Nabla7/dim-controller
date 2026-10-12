@@ -40,6 +40,7 @@ import {
     worldToScreen,
     zoomAt,
 } from "../core/map2d.ts"
+import { Button, Card, Segmented, Select } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { mapLayout, updateMapLayout } from "./mapLayout.ts"
 import { Panel } from "./Panel.tsx"
@@ -107,51 +108,40 @@ export function MapChoiceFields({ app, frames }: { app: ViewerApp; frames: strin
         <>
             <div className="map-setting">
                 <span>Show</span>
-                <span className="dim-tabs segmented map-base" role="radiogroup" aria-label="Map source">
-                    {([["lidar", "Lidar map"], ["costmap", "Costmap"]] as const).map(([source, name]) => {
+                <Segmented
+                    className="map-base"
+                    size="sm"
+                    label="Map source"
+                    value={layout.source}
+                    items={([["lidar", "Lidar map"], ["costmap", "Costmap"]] as const).map(([source, name]) => {
                         const unavailable = source === "costmap" && !grids.length
-                        return (
-                            <button
-                                key={source}
-                                type="button"
-                                role="radio"
-                                aria-checked={layout.source === source}
-                                className={`dim-tab ${layout.source === source ? "on" : ""}`}
-                                disabled={unavailable && layout.source !== source}
-                                title={unavailable ? "No costmap (nav_msgs.OccupancyGrid) on the bus" : source === "costmap" ? "The costmap as the map" : "The lidar map (a point cloud from above)"}
-                                onClick={() => updateMapLayout({ source, topic: "" })}
-                            >
-                                {name}{unavailable ? " (none)" : ""}
-                            </button>
-                        )
+                        return {
+                            value: source,
+                            label: `${name}${unavailable ? " (none)" : ""}`,
+                            disabled: unavailable && layout.source !== source,
+                            title: unavailable ? "No costmap (nav_msgs.OccupancyGrid) on the bus" : source === "costmap" ? "The costmap as the map" : "The lidar map (a point cloud from above)",
+                        }
                     })}
-                </span>
+                    onChange={(source) => updateMapLayout({ source, topic: "" })}
+                />
             </div>
             <label className="map-setting">
                 <span>Topic</span>
                 {candidates.length > 1
                     ? (
-                        <select className="dim-select map-topic" value={layout.topic} onChange={(event) => updateMapLayout({ topic: event.target.value })} aria-label="Map topic">
-                            <option value="">auto ({label})</option>
-                            {candidates.map((other) => <option key={other.key} value={other.key}>{topicName(other)}</option>)}
-                        </select>
+                        <Select className="map-topic" value={layout.topic} options={[["", `auto (${label})`], ...candidates.map((other) => [other.key, topicName(other)] as [string, string])]} onChange={(topic) => updateMapLayout({ topic })} aria-label="Map topic" />
                     )
                     : <span className="map-source">{label}</span>}
             </label>
             {layout.source === "lidar" && grids.length > 0 && (
                 <label className="map-setting">
                     <span>Overlay</span>
-                    <select className="dim-select map-overlay" value={overlay?.key ?? ""} onChange={(event) => updateMapLayout({ overlay: event.target.value })} aria-label="Costmap overlay" title="A costmap drawn over the lidar map">
-                        <option value="">no costmap</option>
-                        {grids.map((grid) => <option key={grid.key} value={grid.key}>{grid.name}</option>)}
-                    </select>
+                    <Select className="map-overlay" value={overlay?.key ?? ""} options={[["", "no costmap"], ...grids.map((grid) => [grid.key, grid.name] as [string, string])]} onChange={(overlay) => updateMapLayout({ overlay })} aria-label="Costmap overlay" title="A costmap drawn over the lidar map" />
                 </label>
             )}
             <label className="map-setting">
                 <span>Follow</span>
-                <select className="dim-select map-frame" value={layout.followFrame} onChange={(event) => updateMapLayout({ followFrame: event.target.value })} aria-label="Frame the map follows" title="The TF frame the map follows">
-                    {followFrameOptions(frames, layout.followFrame).map(({ frame, waiting }) => <option key={frame} value={frame}>{frame}{waiting ? " (waiting)" : ""}</option>)}
-                </select>
+                <Select className="map-frame" value={layout.followFrame} options={followFrameOptions(frames, layout.followFrame).map(({ frame, waiting }) => [frame, `${frame}${waiting ? " (waiting)" : ""}`] as [string, string])} onChange={(followFrame) => updateMapLayout({ followFrame })} aria-label="Frame the map follows" />
             </label>
         </>
     )
@@ -226,24 +216,24 @@ export function MapPanel({ app }: { app: ViewerApp }) {
                     {status.problem && <div className={status.empty ? "map-empty" : "map-problem"} data-testid={status.empty ? "map-empty" : undefined}>{status.problem}</div>}
                     {!status.problem && follow.following && follow.waiting && <div className="map-problem">waiting for TF frame "{layout.followFrame}"</div>}
                     <div className="map-controls panel-chrome">
-                        <button ref={cog} type="button" className={`dim-btn icon map-control map-settings ${settingsOpen ? "on" : ""}`} aria-haspopup="menu" aria-expanded={settingsOpen} title="Map settings: topic, costmap, frame to follow, fit" aria-label="Map settings" onClick={() => setSettingsOpen(!settingsOpen)}>
+                        <Button ref={cog} className="dr-btn--icon map-control map-settings" pressed={settingsOpen} aria-haspopup="menu" aria-expanded={settingsOpen} title="Map settings: topic, costmap, frame to follow, fit" aria-label="Map settings" onClick={() => setSettingsOpen(!settingsOpen)}>
                             <Icon name="settings" size={15} />
-                        </button>
-                        <button type="button" className="dim-btn icon map-control map-follow" aria-pressed={follow.following} title={followTitle} aria-label={follow.following ? "Following" : "Follow"} onClick={recenter}>
+                        </Button>
+                        <Button className="dr-btn--icon map-control map-follow" pressed={follow.following} title={followTitle} aria-label={follow.following ? "Following" : "Follow"} onClick={recenter}>
                             <Icon name="target" size={15} />
-                        </button>
+                        </Button>
                     </div>
                     {!follow.following && (
-                        <button type="button" className="dim-btn map-recenter" title="Follow it again (or double-click the map)" onClick={recenter}>
+                        <Button className="map-recenter" title="Follow it again (or double-click the map)" onClick={recenter}>
                             <Icon name="target" size={13} />Re-center on {layout.followFrame}
-                        </button>
+                        </Button>
                     )}
                     {settingsOpen && (
                         <MapSettings anchor={cog.current} onClose={() => setSettingsOpen(false)}>
                             <MapChoiceFields app={app} frames={frames} />
-                            <button type="button" className="dim-btn sm map-fit" title="Fit the whole map" onClick={fit}>
+                            <Button size="sm" className="map-fit" title="Fit the whole map" onClick={fit}>
                                 <Icon name="fit" size={14} />Fit the whole map
-                            </button>
+                            </Button>
                         </MapSettings>
                     )}
                 </>
@@ -264,10 +254,10 @@ function MapSettings({ anchor, onClose, children }: { anchor: HTMLElement | null
         return () => removeEventListener("pointerdown", close, true)
     }, [onClose])
     return createPortal(
-        <div className="dim-panel map-settings-menu" role="menu" aria-label="Map settings" style={popoverPosition(anchor, 280)}>
+        <Card padded={false} className="map-settings-menu" role="menu" aria-label="Map settings" style={popoverPosition(anchor, 280)}>
             <div className="quality-title">Map</div>
             {children}
-        </div>,
+        </Card>,
         document.body,
     )
 }
@@ -554,8 +544,8 @@ class MapRenderer {
             this.#overlay?.rebuild()
             this.requestDraw()
         }
-        addEventListener("dim-theme", theme)
-        this.#dispose.push(() => removeEventListener("dim-theme", theme))
+        addEventListener("dimos-react-theme", theme)
+        this.#dispose.push(() => removeEventListener("dimos-react-theme", theme))
         const resize = new ResizeObserver(() => this.requestDraw())
         resize.observe(canvas)
         this.#dispose.push(() => resize.disconnect())

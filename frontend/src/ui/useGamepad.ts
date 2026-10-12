@@ -5,7 +5,7 @@ import { useEffect } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { GamepadDriver, type GamepadStatus, gamepadSettings, noPad, type PadLike } from "../core/gamepad.ts"
 import { Store } from "../core/store.ts"
-import { releaseAllSticks } from "./Joystick.tsx"
+import { releaseAllThumbSticks } from "dimos-react"
 
 export const gamepadStatus = new Store<GamepadStatus>(noPad())
 
@@ -39,7 +39,7 @@ export function useGamepad(app: ViewerApp | null) {
             setAxes: (axes) => app.drive.setAxes("gamepad", axes),
             setBoost: (boost) => app.drive.setBoost(boost),
             stop: () => {
-                releaseAllSticks()
+                releaseAllThumbSticks()
                 app.profile.type === "arm" ? app.arm.stop() : app.drive.stop()
             },
             halted: () => !!app.drive.state.get().halt,

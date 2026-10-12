@@ -1,4 +1,5 @@
-// A tiny observable value: the core (no React) writes it, the UI reads it with useStore.
+// A tiny observable value: the core (no React) writes it, the UI reads it with useStore (dimos-react's 3D stores, e.g.
+// viewer.stats, have the same shape).
 import { useSyncExternalStore } from "react"
 
 export class Store<T extends object> {
@@ -12,7 +13,7 @@ export class Store<T extends object> {
     }
     set(value: T) {
         this.#value = value
-        for (const listener of this.#listeners) {
+        for (const listener of [...this.#listeners]) {
             listener()
         }
     }
@@ -25,7 +26,7 @@ export class Store<T extends object> {
     }
 }
 
-export function useStore<T extends object>(store: Store<T>): T {
+export function useStore<T extends object>(store: { subscribe: (listener: () => void) => () => unknown; get: () => T }): T {
     return useSyncExternalStore(store.subscribe, () => store.get())
 }
 

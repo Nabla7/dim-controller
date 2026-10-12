@@ -1,6 +1,6 @@
 // On-screen stick math, kept out of the component so it's tested: a thumb's offset → a shaped -1..1 value
 // (dead zone, then an expo curve for fine control near the center), and the smoothing that eases a value toward
-// where the thumb is. A release never goes through smoothing: it is zero at once (ui/Joystick.tsx).
+// where the thumb is. A release never goes through smoothing: it is zero at once (dimos-react's ThumbStick, ui/DriveHud.tsx).
 
 /** below this share of the radius a resting thumb sends nothing */
 export const DEAD_ZONE = 0.12

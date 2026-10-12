@@ -1,6 +1,6 @@
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
 import { Vector3 } from "three"
-import { TfTree } from "../src/core/tf.ts"
+import { TfTree } from "dimos-react/three"
 
 const yaw90: [number, number, number, number] = [0, 0, Math.SQRT1_2, Math.SQRT1_2]
 const none: [number, number, number, number] = [0, 0, 0, 1]
