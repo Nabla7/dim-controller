@@ -19,6 +19,8 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 code { font-family: var(--mono); font-size: 12.5px; color: var(--cyan); }
 /* a square skin (Portal) squares every corner, as Portal's doc does */
 html[data-dr-square] body *, html[data-dr-square] body *::before, html[data-dr-square] body *::after { border-radius: 0 !important; }
+/* except the thumb sticks: a stick's travel is a circle (core/stick.ts clamps radially), so its ring and knob stay round */
+html[data-dr-square] .dr-thumbstick-base, html[data-dr-square] .dr-thumbstick-knob { border-radius: 50% !important; }
 body, body.dr-body { background: var(--bg); font-family: var(--hud, var(--sans)); font-feature-settings: "cv11", "ss01"; font-size: 13px; line-height: 1.45; overscroll-behavior: none; }
 /* the panels are dense: compact the theme's form controls */
 .dr-input, .dr-select { padding: 4px 8px; font-size: 12px; min-width: 0; }
