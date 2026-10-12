@@ -45,10 +45,10 @@ class SimSceneLayer {
         // scene coordinates are the world frame; the layer root is re-placed in the view's fixed frame every frame
         this.root.matrixAutoUpdate = false
         settings.subscribe(() => this.#applySettings())
-        this.#stop = context.connection.subscribe(topic.key, { delivery: "reliable" }, (message) => {
+        this.#stop = context.connection.subscribe(SCENE_DATA, { delivery: "reliable" }, (message) => {
             let data: SceneData
             try {
-                data = JSON.parse(String(decode(topic.type, message.bytes).data)) as SceneData
+                data = JSON.parse(String(decode("std_msgs.String", message.bytes).data)) as SceneData
             } catch (error) {
                 context.setStatus({ problem: `not a dimos.scene_data.v1 message: ${error}` })
                 return
@@ -58,8 +58,7 @@ class SimSceneLayer {
             }
             this.#show(data)
         })
-        // on a real robot nothing answers: say so quietly, not as a problem
-        context.setStatus({ info: "no simulated world has answered (asks every 3 s)", problem: null })
+        context.setStatus({ info: "asking for the scene", problem: null })
         this.#ask()
         this.#asking = setInterval(() => this.#ask(), ASK_EVERY_MS)
     }
@@ -183,9 +182,8 @@ registerLayer<SimSceneSettings>({
     id: "sim-scene",
     label: "Simulated world",
     types: ["std_msgs.String"],
-    names: ["/scene_data"],
-    // scene_data is published only when asked, so discovery never sees it: always list it
-    topics: [{ key: SCENE_DATA, name: "/scene_data", type: "std_msgs.String" }],
+    // a SceneData module says it's there on /scene_info (1 Hz); /scene_data itself only publishes when asked
+    names: ["/scene_info"],
     defaults: { opacity: 1, cutAbove: 2.5, lights: false },
     create: (context, topic, settings) => new SimSceneLayer(context, topic, settings),
     Settings: SimSceneSettingsEditor,
