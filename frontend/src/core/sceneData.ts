@@ -1,6 +1,7 @@
 // A simulated world's description (dimos.scene_data.v1, what a SceneData module publishes on /scene_data) as three.js
 // objects: a group per body, named by the body so its TF frame can move it, with its geoms and lights inside.
 import * as THREE from "three"
+import { grassFor } from "./grass.ts"
 
 type V3 = [number, number, number]
 type Q = [number, number, number, number]
@@ -15,6 +16,8 @@ export interface SceneGeom {
     mesh?: string
     hfield?: string
     texture?: string
+    /** its MuJoCo material's name, e.g. "grass_0" on a World Builder hill */
+    material?: string
 }
 export interface SceneBody {
     name: string
@@ -51,11 +54,20 @@ const uints = (b64: string) => {
 const Y_TO_Z = new THREE.Matrix4().makeRotationX(Math.PI / 2)
 
 /** The world's three.js objects: a group per body (named by the body, for TF), geoms as meshes inside. */
-export function buildScene(data: SceneData): { root: THREE.Group; bodies: Map<string, THREE.Group>; lights: THREE.Light[] } {
+export interface BuiltScene {
+    root: THREE.Group
+    bodies: Map<string, THREE.Group>
+    lights: THREE.Light[]
+    /** blades on each "grass*" height field, hidden until the layer shows them; `area` sets the count per density */
+    grass: { mesh: THREE.InstancedMesh; area: number }[]
+}
+
+export function buildScene(data: SceneData): BuiltScene {
     const root = new THREE.Group()
     root.name = `scene:${data.id}`
     const bodies = new Map<string, THREE.Group>()
     const lights: THREE.Light[] = []
+    const grass: BuiltScene["grass"] = []
     const meshCache = new Map<string, THREE.BufferGeometry>()
     const textureCache = new Map<string, THREE.Texture>()
 
@@ -181,6 +193,13 @@ export function buildScene(data: SceneData): { root: THREE.Group; bodies: Map<st
             mesh.castShadow = true
             mesh.receiveShadow = true
             group.add(mesh)
+            if (geom.type === "hfield" && geom.hfield && geom.material?.startsWith("grass")) {
+                const field = data.hfields[geom.hfield]
+                const blades = grassFor({ ...field, heights: floats(field.heights) }, new THREE.Color(r, g, b))
+                blades.mesh.visible = false
+                mesh.add(blades.mesh)
+                grass.push(blades)
+            }
         }
         for (const light of body.lights) {
             const color = new THREE.Color(...light.diffuse)
@@ -201,5 +220,5 @@ export function buildScene(data: SceneData): { root: THREE.Group; bodies: Map<st
         root.add(group)
         bodies.set(body.name, group)
     }
-    return { root, bodies, lights }
+    return { root, bodies, lights, grass }
 }

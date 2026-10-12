@@ -76,3 +76,15 @@ Deno.test("a height field's raised sample lands at (-x, +y), scaled by its top",
     }
     assertEquals([position.getX(high), position.getY(high), position.getZ(high)], [-1, 1, 2])
 })
+
+Deno.test("grass grows only on a height field whose material is grass*, hidden until the layer shows it", () => {
+    assertEquals(buildScene(scene).grass.length, 0)
+    const grassy = structuredClone(scene)
+    grassy.bodies[1].geoms[1].material = "grass_0"
+    const { grass, bodies } = buildScene(grassy)
+    assertEquals(grass.length, 1)
+    const hill = bodies.get("terrain")!.children[0] as THREE.Mesh
+    assert(hill.children.includes(grass[0].mesh))
+    assertEquals(grass[0].mesh.visible, false)
+    assertEquals(grass[0].area, 4)
+})

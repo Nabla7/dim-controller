@@ -5,10 +5,12 @@ import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { disposeTree } from "../core/layers/helpers.ts"
 import { decode, encode } from "../core/lcm/lcm.ts"
-import { useStore, type Store } from "../core/store.ts"
+import { Store, useStore } from "../core/store.ts"
 import { dimosKey, type Publisher, type Topic } from "../core/transport.ts"
 import { Field, Slider, Toggle } from "../ui/controls.tsx"
 import { buildScene, type SceneData } from "../core/sceneData.ts"
+import { bladeCount, isSoftwareRenderer, probeRendererName, windTime } from "../core/grass.ts"
+import { readLocal, writeLocal } from "../core/videoQuality.ts"
 
 export const SCENE_DATA = dimosKey("/scene_data", "std_msgs.String")
 export const SCENE_DATA_REQUEST = dimosKey("/scene_data_request", "std_msgs.String")
@@ -21,6 +23,35 @@ export interface SimSceneSettings {
     cutAbove: number
     /** add the world's own lights to the view's */
     lights: boolean
+}
+
+let gpuName: string | null = null
+/** the GPU's name, asked once (a throwaway WebGL context) */
+function gpu(): string {
+    gpuName ??= probeRendererName()
+    return gpuName
+}
+
+/** Grass is per viewer, like the camera and cloud presets: a laptop without a GPU wants it off, a desktop on. */
+export interface GrassSettings {
+    /** blades on the world's grass height fields (off by default on a software GPU) */
+    on: boolean
+    /** 1 = the default look; lower for a weak GPU */
+    density: number
+    /** wind sway: the view keeps redrawing while grass is on screen */
+    sway: boolean
+}
+const GRASS_KEY = "lv.sim.grass"
+let grassStore: Store<GrassSettings> | null = null
+export function grassSettings(): Store<GrassSettings> {
+    if (!grassStore) {
+        // thousands of blades on a CPU renderer would crawl: off there unless this viewer turned it on
+        const defaults: GrassSettings = { on: !isSoftwareRenderer(gpu()), density: 1, sway: true }
+        const store = new Store<GrassSettings>({ ...defaults, ...readLocal<Partial<GrassSettings>>(GRASS_KEY, {}) })
+        store.subscribe(() => writeLocal(GRASS_KEY, store.get()))
+        grassStore = store
+    }
+    return grassStore
 }
 
 /** a geom's lowest point in world coordinates (its body's pose included), to cut ceilings by */
@@ -40,11 +71,13 @@ class SimSceneLayer {
     #stop: () => void
     #asking: ReturnType<typeof setInterval>
     #requests: Publisher | null = null
+    #unsubscribeGrass: () => void
 
     constructor(readonly context: LayerContext, readonly topic: Topic, readonly settings: Store<SimSceneSettings>) {
         // scene coordinates are the world frame; the layer root is re-placed in the view's fixed frame every frame
         this.root.matrixAutoUpdate = false
         settings.subscribe(() => this.#applySettings())
+        this.#unsubscribeGrass = grassSettings().subscribe(() => this.#applySettings())
         this.#stop = context.connection.subscribe(SCENE_DATA, { delivery: "reliable" }, (message) => {
             let data: SceneData
             try {
@@ -90,11 +123,8 @@ class SimSceneLayer {
         this.#applySettings()
         const geoms = data.bodies.reduce((count, body) => count + body.geoms.length, 0)
         const movers = data.bodies.filter((body) => body.mocap).length
-        this.context.setStatus({
-            info: `${data.id} · ${data.bodies.length} bodies · ${geoms} geoms · ${Object.keys(data.meshes).length} meshes${movers ? ` · ${movers} moving` : ""}`,
-            problem: null,
-            frame: data.frame,
-        })
+        this.#info = `${data.id} · ${data.bodies.length} bodies · ${geoms} geoms · ${Object.keys(data.meshes).length} meshes${movers ? ` · ${movers} moving` : ""}`
+        this.#status()
         this.context.viewer.requestRender()
     }
 
@@ -104,9 +134,10 @@ class SimSceneLayer {
             return
         }
         const { opacity, cutAbove, lights } = this.settings.get()
+        const { on: grass, density: grassDensity } = grassSettings().get()
         scene.root.traverse((object) => {
             const mesh = object as THREE.Mesh
-            if (!mesh.isMesh) {
+            if (!mesh.isMesh || mesh.userData.grass) {
                 return
             }
             const material = mesh.material as THREE.MeshStandardMaterial
@@ -119,13 +150,40 @@ class SimSceneLayer {
         for (const light of scene.lights) {
             light.visible = lights
         }
+        for (const blades of scene.grass) {
+            blades.mesh.count = Math.min(blades.mesh.instanceMatrix.count, bladeCount(blades.area, grassDensity))
+            blades.mesh.visible = grass && blades.mesh.count > 0
+        }
+        this.#status()
         this.context.viewer.requestRender()
     }
 
-    update(frame: { fixedFrame: string }) {
+    #info = ""
+    #status() {
+        const scene = this.#scene
+        const grass = grassSettings().get().on
+        let note = ""
+        if (scene?.grass.length) {
+            const blades = scene.grass.reduce((sum, field) => sum + (field.mesh.visible ? field.mesh.count : 0), 0)
+            note = grass
+                ? ` · ${Math.round(blades / 1000)}k grass blades`
+                : isSoftwareRenderer(gpu())
+                ? ` · grass off: software GPU (${gpu()})`
+                : " · grass off"
+        }
+        this.context.setStatus({ info: this.#info + note, problem: null, frame: "world" })
+    }
+
+    update(frame: { fixedFrame: string; now: number }) {
         const scene = this.#scene
         if (!scene) {
             return
+        }
+        // the wind: only while grass is shown and swaying, since it keeps the view redrawing
+        const { on: grass, sway } = grassSettings().get()
+        if (grass && sway && scene.grass.some((field) => field.mesh.visible)) {
+            windTime.value = frame.now / 1000
+            this.context.viewer.requestRender()
         }
         const world = this.context.tf.lookup("world", frame.fixedFrame)
         if (world) {
@@ -153,6 +211,7 @@ class SimSceneLayer {
 
     dispose() {
         clearInterval(this.#asking)
+        this.#unsubscribeGrass()
         this.#stop()
         this.#requests?.close()
         if (this.#scene) {
@@ -163,6 +222,7 @@ class SimSceneLayer {
 
 function SimSceneSettingsEditor({ settings }: { settings: Store<SimSceneSettings>; topic: Topic }) {
     const value = useStore(settings)
+    const grass = useStore(grassSettings())
     return (
         <>
             <Field label="Opacity">
@@ -174,6 +234,19 @@ function SimSceneSettingsEditor({ settings }: { settings: Store<SimSceneSettings
             <Field label="The world's lights">
                 <Toggle value={value.lights} onChange={(lights) => settings.update({ lights })} />
             </Field>
+            <Field label="Grass" hint={isSoftwareRenderer(gpu()) ? `this viewer only; off by default: ${gpu()} is a software GPU` : "this viewer only: blades on the world's grassy hills"}>
+                <Toggle value={grass.on} onChange={(on) => grassSettings().update({ on })} />
+            </Field>
+            {grass.on && (
+                <>
+                    <Field label="Grass density">
+                        <Slider min={0.1} max={2} step={0.05} value={grass.density} format={(density) => `${Math.round(density * 100)}%`} onChange={(density) => grassSettings().update({ density })} />
+                    </Field>
+                    <Field label="Wind" hint="keeps the view redrawing while grass is on screen">
+                        <Toggle value={grass.sway} onChange={(sway) => grassSettings().update({ sway })} />
+                    </Field>
+                </>
+            )}
         </>
     )
 }
