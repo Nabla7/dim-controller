@@ -1,7 +1,7 @@
 // Driving on screen (no arming: keys and sticks always drive). Desktop: the profile's keys lighting up as they're held,
 // in the action dock (ui/ActionDock.tsx). Phone: two thumbs, a left stick that translates (forward/back, plus strafe for profiles
 // that strafe) and a right stick that turns (plus up/down for profiles with a vertical axis), STOP and boost. Both show the agent's commands (POST api/drive), dry runs included.
-import { disengagedText } from "./barStatus.ts"
+import { disengagedShort, disengagedText } from "./barStatus.ts"
 import { profileAxes } from "../core/gamepad.ts"
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
@@ -23,6 +23,25 @@ function DisengagedNotice({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
                 {halt.reconnecting ? "Reconnecting…" : "Reconnect"}
             </Button>
         </div>
+    )
+}
+
+/** The phone's version: one pill over the top of the sticks (it takes no room, so STOP never moves); a tap reconnects. */
+function DisengagedPill({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
+    const text = halt.reconnecting ? "Reconnecting…" : `${disengagedShort(halt)}${halt.reason === "latency" ? " lag" : ""} · Reconnect`
+    return (
+        <button
+            type="button"
+            className="drive-halt-pill"
+            role="alert"
+            data-testid="drive-halt"
+            title={disengagedText(halt)}
+            aria-label={disengagedText(halt)}
+            disabled={halt.reconnecting}
+            onClick={() => app.reconnect()}
+        >
+            {text}
+        </button>
     )
 }
 
@@ -55,8 +74,8 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
                         thumbJoy("left", x, y)
                     }}
                 />
+                {state.halt && <DisengagedPill app={app} halt={state.halt} />}
                 <div className="hud-center">
-                    {state.halt && <DisengagedNotice app={app} halt={state.halt} />}
                     <Badge className="hud-note" data-testid="drive-readout">
                         {command ? `${command.dryRun ? "dry run" : command.source} · ${velocity(command.linear, command.angular)}` : velocity(state.twist.linear, state.twist.angular)}
                     </Badge>

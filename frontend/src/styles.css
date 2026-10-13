@@ -229,8 +229,12 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 .drive-topic-custom .dr-input { flex: 1; min-width: 0; font: 12px var(--mono); }
 .drive-halt { display: flex; align-items: center; gap: 8px; flex-basis: 100%; font: 600 11px var(--sans); color: var(--lv-stop); }
 .drive-halt .reconnect-button { margin-left: auto; font-weight: 700; color: var(--fg); background: var(--lv-stop); border-color: var(--lv-stop); }
-.drive-hud.mobile .drive-halt { flex-direction: column; gap: 6px; text-align: center; background: color-mix(in srgb, var(--card) 88%, transparent); padding: 6px; }
-.drive-hud.mobile .drive-halt .reconnect-button { margin-left: 0; width: 100%; height: 44px; touch-action: manipulation; }
+/* phone: one line across the top of the stick area, out of the grid, so it covers nothing and pushes nothing */
+.drive-halt-pill { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); z-index: 1; max-width: calc(100% - 24px); box-sizing: border-box;
+    min-height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--lv-stop); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font: 700 12px var(--sans); color: var(--primary-fg); background: var(--lv-stop); box-shadow: 0 0 12px color-mix(in srgb, var(--lv-stop) 45%, transparent);
+    pointer-events: auto; touch-action: manipulation; cursor: pointer; }
+.drive-halt-pill:disabled { opacity: 0.75; cursor: default; }
 .dock-drive .drive-halt { flex-basis: auto; }
 
 /* ── overlays (ui/Overlays.tsx): the palette and the shortcut list ── */
