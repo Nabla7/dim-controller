@@ -91,6 +91,9 @@ class Camera3dLayer {
             }
             this.#videoCallback = element.requestVideoFrameCallback(onVideoFrame)
         }
+        // pictures don't write depth and draw in a fixed order (depth over colour), so two in one place pick a winner instead of flickering
+        this.#plane.renderOrder = this.#depth ? 2 : 1
+        this.#plane.material.depthWrite = false
         this.#content.add(this.#plane, this.#frustum.object)
         settings.subscribe(() => this.#reshape(true))
         this.#findInfo()
