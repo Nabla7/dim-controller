@@ -49,8 +49,8 @@ Deno.test("mapping: left stick forward / strafe (formats that strafe), right sti
     // up on the stick (the API's -y) is forward; left (-x) is +strafe and +turn (REP-103)
     const full = padAxes({ lx: -1, ly: -1, rx: -1, ry: 0 }, dog, GAMEPAD_DEFAULTS)
     assert(full.forward! > 0.6 && full.strafe! > 0.6 && full.turn === 1)
-    // a wheeled base doesn't strafe: the left stick's x does nothing
-    assertEquals(padAxes({ lx: -1, ly: 0, rx: 0, ry: 0 }, wheeled, GAMEPAD_DEFAULTS), { forward: 0, strafe: 0, turn: 0, vertical: 0 })
+    // a wheeled base strafes too (the robot decides what linear.y means)
+    assertEquals(padAxes({ lx: -1, ly: 0, rx: 0, ry: 0 }, wheeled, GAMEPAD_DEFAULTS), { forward: 0, strafe: 1, turn: 0, vertical: 0 })
     assertEquals(padAxes({ lx: 0, ly: -1, rx: 0, ry: 0 }, wheeled, GAMEPAD_DEFAULTS).forward, 1)
     // inside the dead zone: nothing (drift)
     assertEquals(padAxes({ lx: 0.1, ly: -0.1, rx: 0.12, ry: 0 }, dog, GAMEPAD_DEFAULTS), { forward: 0, strafe: 0, turn: 0, vertical: 0 })

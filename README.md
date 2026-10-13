@@ -155,7 +155,7 @@ controls or the [arm panel](#arm-control). Changing it applies at once in every 
 | --- | --- | --- |
 | dog | W/S forward, A/D turn, Q/E strafe | 0.5 m/s, 0.8 rad/s |
 | humanoid | W/S forward, A/D turn, Q/E side-step | 0.3 m/s, 0.5 rad/s |
-| wheeled | W/S forward, A/D turn (no strafe) | 0.4 m/s, 0.6 rad/s |
+| wheeled | W/S forward, A/D turn, Q/E strafe | 0.4 m/s, 0.6 rad/s |
 | drone | W/S forward, A/D yaw, Q/E down/up (`linear.z`) | 1 m/s, 1 rad/s, 0.5 m/s vertical |
 | arm | the [arm panel](#arm-control)'s keys | 5 cm/s, 0.5 rad/s, joints 0.4 rad/s |
 
