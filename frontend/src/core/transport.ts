@@ -41,7 +41,7 @@ export interface ConnectionState {
     topics: Topic[]
     droppedPerSecond: number
     rttMs: number | null
-    /** bytes per second reaching this page (the gateway's delivered data plus video sent); null before its first stats */
+    /** bytes per second reaching this page over the wire (the WebRTC transport's received bytes), else the gateway's own count; null before the first sample */
     throughputBytesPerSec: number | null
     error: string | null
 }
@@ -76,6 +76,20 @@ export function throughputOf(stats: Record<string, Record<string, unknown> | nul
     return delivered + (typeof video === "number" ? video : 0)
 }
 
+/** Bytes the page's WebRTC transport has received so far (wire bytes: data, video and overhead); null without a connection. */
+export async function transportBytesReceived(peer: RTCPeerConnection | null | undefined): Promise<number | null> {
+    if (!peer || peer.connectionState === "closed") {
+        return null
+    }
+    let received: number | null = null
+    ;(await peer.getStats()).forEach((stat) => {
+        if (stat.type === "transport" && typeof stat.bytesReceived === "number") {
+            received = Math.max(received ?? 0, stat.bytesReceived)
+        }
+    })
+    return received
+}
+
 export class Connection {
     client: ZenohGateway | null = null
     readonly status = new Store<ConnectionState>({ state: "connecting", topics: [], droppedPerSecond: 0, rttMs: null, throughputBytesPerSec: null, error: null })
@@ -100,9 +114,15 @@ export class Connection {
         for (const subscription of this.#subscriptions) {
             subscription.open(client)
         }
-        setInterval(() => {
+        let lastWire: { bytes: number; at: number } | null = null
+        setInterval(async () => {
             const dropped = Object.values(client.stats).reduce((sum, stats) => sum + (stats.dropped || 0), 0)
-            this.status.update({ droppedPerSecond: dropped - this.#lastDropped, rttMs: client.rttMs ?? null, throughputBytesPerSec: throughputOf(client.gatewayStats) })
+            // the gateway counts payload before it is compressed and framed, so the wire is the true rate
+            const bytes = await transportBytesReceived((client as unknown as { _peer?: RTCPeerConnection | null })._peer).catch(() => null)
+            const now = performance.now()
+            const wire = bytes !== null && lastWire !== null && bytes >= lastWire.bytes ? ((bytes - lastWire.bytes) * 1000) / (now - lastWire.at) : null
+            lastWire = bytes === null ? null : { bytes, at: now }
+            this.status.update({ droppedPerSecond: dropped - this.#lastDropped, rttMs: client.rttMs ?? null, throughputBytesPerSec: wire ?? throughputOf(client.gatewayStats) })
             this.#lastDropped = dropped
         }, 1000)
         this.#lastRtt = { value: client.rttMs ?? null, at: performance.now() }
