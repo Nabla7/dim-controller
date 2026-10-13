@@ -183,7 +183,8 @@ class Camera3dLayer {
         }
         this.#frustum.commit()
         this.#frustum.object.visible = settings.frustum
-        const optical = settings.convention === "optical" || (settings.convention === "auto" && /optical/i.test(this.#frame ?? ""))
+        // an image's frame_id is optical by ROS convention, so auto means optical unless the frame says it's a body frame
+        const optical = settings.convention === "optical" || (settings.convention === "auto" && !/(^|_)body(_|$)/i.test(this.#frame ?? ""))
         this.#content.matrix.copy(optical ? new THREE.Matrix4() : OPTICAL_TO_BODY)
         this.#content.matrixWorldNeedsUpdate = true
         this.context.setStatus({ info: `${intrinsics.width}×${intrinsics.height}${this.#intrinsics ? "" : " (no CameraInfo: 70° guess)"} · ${optical ? "optical" : "body"} frame ${this.#frame || "?"}` })
@@ -249,7 +250,7 @@ function Camera3dSettingsEditor({ settings, topic }: { settings: Store<Camera3dS
                 </>
             )}
             <Field inline label="Frame">
-                <Select value={value.convention} options={[["auto", "auto (by name)"], ["optical", "optical (z forward)"], ["body", "body (x forward)"]]} onChange={(convention: string) => settings.update({ convention: convention as Camera3dSettings["convention"] })} />
+                <Select value={value.convention} options={[["auto", "auto (optical unless named body)"], ["optical", "optical (z forward)"], ["body", "body (x forward)"]]} onChange={(convention: string) => settings.update({ convention: convention as Camera3dSettings["convention"] })} />
             </Field>
         </>
     )
