@@ -1,9 +1,19 @@
 // The one bar's problem chips (ui/barStatus.ts): the link only when it's a problem, "Disengaged" when the link watch
 // stops driving, and the gamepad's state.
 import { assert, assertEquals } from "jsr:@std/assert@1"
-import { disengagedShort, disengagedText, gamepadChip, linkProblem, SLOW_RTT_MS } from "../src/ui/barStatus.ts"
+import { disengagedShort, disengagedText, gamepadChip, linkChip, linkProblem, rateText, SLOW_RTT_MS } from "../src/ui/barStatus.ts"
 
-const link = (state: "connecting" | "connected" | "degraded" | "lost", rttMs: number | null = 20) => ({ state, rttMs, droppedPerSecond: 0, error: null })
+const link = (state: "connecting" | "connected" | "degraded" | "lost", rttMs: number | null = 20, throughputBytesPerSec: number | null = 240000) => ({ state, rttMs, droppedPerSecond: 0, error: null, throughputBytesPerSec })
+
+Deno.test("the link chip always shows live throughput and latency, coloured by the problem; lost or connecting say so", () => {
+    assertEquals(linkChip(link("connected"), 89), { text: "240 KB/s · 89 ms", tone: "ok", detail: "Link healthy. Throughput reaching this page and the control link's round trip" })
+    assertEquals(linkChip(link("connected", 20, null), null).text, "— B/s · — ms")
+    assertEquals(linkChip(link("degraded"), 120).tone, "warn")
+    assertEquals(linkChip(link("connected", SLOW_RTT_MS + 50), SLOW_RTT_MS + 50).tone, "warn")
+    assertEquals(linkChip(link("connecting"), null).text, "Connecting")
+    assertEquals(linkChip(link("lost"), null).tone, "bad")
+    assertEquals([rateText(940), rateText(240_000), rateText(3_140_000)], ["940 B/s", "240 KB/s", "3.1 MB/s"])
+})
 
 Deno.test("the link chip shows only a problem: lost, connecting, degraded, slow", () => {
     assertEquals(linkProblem(link("connected")), null, "healthy: nothing (the Status panel has the numbers)")

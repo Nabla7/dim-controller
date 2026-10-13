@@ -41,6 +41,8 @@ export interface ConnectionState {
     topics: Topic[]
     droppedPerSecond: number
     rttMs: number | null
+    /** bytes per second reaching this page (the gateway's delivered data plus video sent); null before its first stats */
+    throughputBytesPerSec: number | null
     error: string | null
 }
 
@@ -63,9 +65,20 @@ export function rememberTopics(lastSeen: Map<string, { topic: Topic; at: number 
     return [...lastSeen.values()].map((seen) => seen.topic).sort((a, b) => a.name.localeCompare(b.name) || a.type.localeCompare(b.type))
 }
 
+/** Bytes per second the gateway got through to this page: its delivered data plus the video it sent (null without stats). */
+export function throughputOf(stats: Record<string, Record<string, unknown> | null> | null): number | null {
+    const bandwidth = stats?.bandwidth
+    const delivered = bandwidth?.deliveredBytesPerSec
+    if (typeof delivered !== "number") {
+        return null
+    }
+    const video = bandwidth?.videoSentBytesPerSec
+    return delivered + (typeof video === "number" ? video : 0)
+}
+
 export class Connection {
     client: ZenohGateway | null = null
-    readonly status = new Store<ConnectionState>({ state: "connecting", topics: [], droppedPerSecond: 0, rttMs: null, error: null })
+    readonly status = new Store<ConnectionState>({ state: "connecting", topics: [], droppedPerSecond: 0, rttMs: null, throughputBytesPerSec: null, error: null })
     #subscriptions = new Set<LiveSubscription>()
     #lastDropped = 0
     #shared: ReturnType<typeof getZenoh>
@@ -89,7 +102,7 @@ export class Connection {
         }
         setInterval(() => {
             const dropped = Object.values(client.stats).reduce((sum, stats) => sum + (stats.dropped || 0), 0)
-            this.status.update({ droppedPerSecond: dropped - this.#lastDropped, rttMs: client.rttMs ?? null })
+            this.status.update({ droppedPerSecond: dropped - this.#lastDropped, rttMs: client.rttMs ?? null, throughputBytesPerSec: throughputOf(client.gatewayStats) })
             this.#lastDropped = dropped
         }, 1000)
         this.#lastRtt = { value: client.rttMs ?? null, at: performance.now() }
@@ -141,7 +154,7 @@ export class Connection {
             return Promise.resolve()
         }
         this.#reconnecting ??= (async () => {
-            this.status.update({ state: "connecting", rttMs: null })
+            this.status.update({ state: "connecting", rttMs: null, throughputBytesPerSec: null })
             // the old peer's close events come after _open bumps the client's generation, so they're ignored
             client._peer?.close()
             try {
