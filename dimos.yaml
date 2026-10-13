@@ -91,7 +91,8 @@ provides:
                 robotModel}; lv.arm {linear, angular, jointSpeed} (arm jog speeds); lv.rendering.v2 {pointStyle,
                 cubeShade}; lv.layers.enabled {<topic key>: on/off}; lv.layer.<type>.<topic key> (that layer's style:
                 colors, sizes, ...); lv.drive.<robot type> {linear, angular, vertical, topics: [] = auto, else the
-                output topics, one per entry, "/name" or "/name TwistStamped"}; lv.record.topics {<topic key>: record or
+                output topics, one per entry, "/name" or "/name TwistStamped"}; lv.joy {enabled} (the raw gamepad, drive keys
+                and thumb sticks as sensor_msgs/Joy on /joystick, default on); lv.record.topics {<topic key>: record or
                 not (default on)}; lv.record.options {recordNew, compression, image_format, directory ("" = default),
                 logs, rates {<topic key>: max messages/s}}; lv.cameras (the camera panels).
         -

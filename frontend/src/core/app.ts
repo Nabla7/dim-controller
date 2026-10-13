@@ -12,6 +12,7 @@ import { FrameHighlight } from "./render/frameHighlight.ts"
 import { LayerManager } from "./layers/manager.ts"
 import { VideoSources } from "./video.ts"
 import { Drive } from "./drive.ts"
+import { JoyPublisher } from "./joy.ts"
 import { ArmControl } from "./arm.ts"
 import { AgentLink } from "./agent.ts"
 import { LocationLabels } from "./labels.ts"
@@ -41,6 +42,8 @@ export interface ViewSettings {
     maxLatencyMs: number
     /** every camera drawn in the 3D view (its picture and frustum at its CameraInfo frame; layers/camera3d.tsx) */
     camerasIn3d: boolean
+    /** the CAD view cube in the 3D view's top-right corner (click a face to look from there) */
+    viewCube: boolean
 }
 
 export class ViewerApp {
@@ -51,11 +54,13 @@ export class ViewerApp {
     readonly highlight: FrameHighlight
     readonly video: VideoSources
     readonly layers: LayerManager
-    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: "", fixedFrame: "", follow: true, followFrame: "", showStats: false, robotModel: true, maxLatencyMs: DEFAULT_MAX_LATENCY_MS, camerasIn3d: false })
+    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: "", fixedFrame: "", follow: true, followFrame: "", showStats: false, robotModel: true, maxLatencyMs: DEFAULT_MAX_LATENCY_MS, camerasIn3d: false, viewCube: false })
     #profile: RobotProfile
     /** the robot type in use, whether it was picked or auto, and why */
     readonly robot: Store<{ type: RobotType; auto: boolean; reason: string }>
     readonly drive: Drive
+    /** the raw input as Joy on /joystick (core/joy.ts) */
+    readonly joy: JoyPublisher
     /** the arm panel's commands (used when the robot type is arm; core/arm.ts) */
     readonly arm: ArmControl
     /** live annotations and the agent's captures (server/src/annotations.rs) */
@@ -92,6 +97,7 @@ export class ViewerApp {
         this.video = new VideoSources(this.connection)
         this.layers = new LayerManager(this.viewer, this.tf, this.connection, this.video, this.profile)
         this.drive = new Drive(this.connection, this.profile)
+        this.joy = new JoyPublisher(this.connection)
         this.arm = new ArmControl(this.connection, this.drive, profileFor("arm").arm!)
         feedTf(this.connection, this.tf, this.viewer)
         feedBattery(this.connection, () => this.profile.name)

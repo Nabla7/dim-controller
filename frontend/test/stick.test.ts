@@ -36,3 +36,23 @@ Deno.test("smoothing eases toward the thumb, reaches it, and a release is zero a
     assertEquals(smoothToward(0.9, 0, 1), 0)
     assertEquals(smoothToward(-0.4, 0, 0), 0)
 })
+
+Deno.test("radial clamp: a corner of the square maxes out at radius 1 (0.707 per axis), never (1, 1)", () => {
+    for (const [dx, dy] of [[60, -60], [-60, -60], [60, 60], [-60, 60], [500, -500]]) {
+        const value = shapeStick(dx, dy, 60)
+        assertAlmostEquals(Math.hypot(value.x, value.y), 1, 0.002)
+        assertAlmostEquals(Math.abs(value.x), Math.SQRT1_2, 0.002)
+        assertAlmostEquals(Math.abs(value.y), Math.SQRT1_2, 0.002)
+        assertEquals(Math.sign(value.x), Math.sign(dx))
+        assertEquals(Math.sign(value.y), -Math.sign(dy))
+    }
+    // inside the square but past the ring (|d| = 1.18 r): already full deflection
+    assertAlmostEquals(Math.hypot(...Object.values(shapeStick(50, -50, 60))), 1, 0.002)
+    // inside the ring: the same magnitude in every direction (shaped by the length, not per axis)
+    const straight = shapeStick(0, -40, 60).y
+    const diagonal = shapeStick(40 * Math.SQRT1_2, -40 * Math.SQRT1_2, 60)
+    assertAlmostEquals(Math.hypot(diagonal.x, diagonal.y), straight, 0.002)
+    // a gamepad's raw (1, 1) corner, radius 1
+    const pad = shapeStick(1, -1, 1, "xy", 0.15)
+    assertAlmostEquals(Math.hypot(pad.x, pad.y), 1, 0.002)
+})

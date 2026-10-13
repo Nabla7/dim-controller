@@ -2,21 +2,25 @@
 // stops), Shift boosts, Space stops always, `/` opens the palette, `?` the shortcut list, Escape closes what's open and
 // stops, `[` `]` `\` show and hide the rails. Keys drive whenever the page has the focus (no arming), never while
 // typing in a field or with an overlay open; leaving the window or hiding the page releases everything and stops.
-// Listening in the capture phase, so Escape reaches the page before Desktop's shell.
+// Listening in the capture phase, so Escape reaches the page before Desktop's shell. The held drive keys, Shift and Space
+// also go out as Joy (core/joy.ts: KeyboardTeleop's layout), on each change.
 import { useEffect, useRef } from "react"
 import type { Drive } from "../core/drive.ts"
+import { type JoyPublisher, keyboardJoy } from "../core/joy.ts"
 import type { Axes, RobotProfile } from "../profile/types.ts"
 import { isTypingTarget, routeKeyDown } from "./keymap.ts"
 import { closeOverlay, openOverlay, overlay } from "./overlay.ts"
 import { type Side, workspaceView } from "./workspace.ts"
 
-export function useKeyboard(drive: Drive | null, profile: RobotProfile | null, panels: { toggleRail: (side: Side) => void; toggleFocus: () => void }) {
+export function useKeyboard(drive: Drive | null, profile: RobotProfile | null, panels: { toggleRail: (side: Side) => void; toggleFocus: () => void }, joy: JoyPublisher | null = null) {
     // the latest callbacks, without re-binding (a re-bind mid-hold would forget the held keys)
     const latest = useRef(panels)
     latest.current = panels
     useEffect(() => {
         const held = new Set<string>()
+        const joyKeys = { shift: false, space: false }
         const apply = () => {
+            joy?.sample("keyboard", keyboardJoy(held, { ...joyKeys, ctrl: false }))
             if (!drive || !profile) {
                 return
             }
@@ -32,6 +36,8 @@ export function useKeyboard(drive: Drive | null, profile: RobotProfile | null, p
         /** let go of every key (an overlay opened): nothing keeps moving, the agent's command isn't touched */
         const release = () => {
             held.clear()
+            joyKeys.shift = false
+            joyKeys.space = false
             apply()
             drive?.setBoost(false)
         }
@@ -48,6 +54,8 @@ export function useKeyboard(drive: Drive | null, profile: RobotProfile | null, p
                         event.preventDefault()
                     }
                     held.clear()
+                    joyKeys.space ||= event.code === "Space"
+                    apply()
                     drive?.stop()
                     return
                 case "close":
@@ -70,6 +78,10 @@ export function useKeyboard(drive: Drive | null, profile: RobotProfile | null, p
                     return
                 case "boost":
                     drive?.setBoost(true)
+                    if (!joyKeys.shift) {
+                        joyKeys.shift = true
+                        apply()
+                    }
                     return
                 case "rail":
                     event.preventDefault()
@@ -105,6 +117,13 @@ export function useKeyboard(drive: Drive | null, profile: RobotProfile | null, p
         const up = (event: KeyboardEvent) => {
             if (event.code === "ShiftLeft" || event.code === "ShiftRight") {
                 drive?.setBoost(event.shiftKey)
+                joyKeys.shift = event.shiftKey
+                apply()
+                return
+            }
+            if (event.code === "Space" && joyKeys.space) {
+                joyKeys.space = false
+                apply()
                 return
             }
             if (held.delete(event.code)) {
@@ -113,6 +132,9 @@ export function useKeyboard(drive: Drive | null, profile: RobotProfile | null, p
         }
         const reset = () => {
             held.clear()
+            joyKeys.shift = false
+            joyKeys.space = false
+            joy?.release("keyboard")
             drive?.setBoost(false)
             drive?.stop()
         }
@@ -131,5 +153,5 @@ export function useKeyboard(drive: Drive | null, profile: RobotProfile | null, p
             removeEventListener("blur", reset)
             document.removeEventListener("visibilitychange", reset)
         }
-    }, [drive, profile])
+    }, [drive, profile, joy])
 }

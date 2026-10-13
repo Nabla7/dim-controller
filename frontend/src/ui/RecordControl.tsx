@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { persistentStore, useStore } from "../core/store.ts"
 import { recorder, type Compression, type ImageFormat, type StreamRate } from "../core/recorder.ts"
-import { biggestStreams, formatBytes, formatClock, formatRate, inRecordingsFolder, isRecorded, isRpcTopic, TOP_STREAMS } from "../core/recordFormat.ts"
+import { biggestStreams, formatBytes, formatClock, formatRate, inRecordingsFolder, isRecorded, isRpcTopic, recordToggleState, TOP_STREAMS } from "../core/recordFormat.ts"
 import type { Topic } from "../core/transport.ts"
 import { Alert, Badge, Button, Card, Field, Heading, Label, NumberInput, Select, Text, TextInput, Toggle } from "dimos-react"
 import { Icon } from "./icons.tsx"
@@ -69,7 +69,7 @@ export function RecordControl({ app }: { app: ViewerApp }) {
                         title={status.unavailable ?? (error ? `${label}: ${error}` : label)}
                         aria-label={label}
                         // with new streams joining, a recording can start before anything is on the bus: they join as they appear
-                        disabled={busy || !!status.unavailable || (!active && !status.options.recordNew && !selected.length)}
+                        disabled={recordToggleState({ active, pending: pending.action, unavailable: status.unavailable, recordNew: status.options.recordNew, selected: selected.length, seconds: status.recording.seconds }).disabled}
                         onClick={toggle}
                     >
                         <span className="record-dot" />

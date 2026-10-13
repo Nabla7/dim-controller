@@ -8,6 +8,7 @@ import { armShading } from "./armShading.ts"
 import { ArmPanel } from "./ArmPanel.tsx"
 import { Field, Heading, NumberInput, Segmented, Select, Slider, Toggle } from "dimos-react"
 import { gamepadSettings } from "../core/gamepad.ts"
+import { JOY_HZ, JOY_TOPIC, JOY_TYPE, joySettings } from "../core/joy.ts"
 import { maxLatencyOf } from "../core/linkWatch.ts"
 import { DrivePanel } from "./DrivePanel.tsx"
 import { rendering } from "../core/render/rendering.ts"
@@ -59,6 +60,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                             <MaxLatencyInput app={app} />
                         </Field>
                         <GamepadSettingsFields />
+                        <JoySettingsFields />
                     </section>
                 )}
             <section className="settings-section" data-section="map">
@@ -89,6 +91,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                 />
             </Field>
             <Field inline label="Robot model" title="a stand-in for the robot type at the robot's pose (an arm is drawn by its TF frames)"><Toggle value={view.robotModel !== false} onChange={(robotModel: any) => app.settings.update({ robotModel })} /></Field>
+            <Field inline label="View cube" title="a cube in the 3D view's top-right corner: click a face, edge or corner to look from there, drag it to orbit"><Toggle value={view.viewCube === true} onChange={(viewCube: any) => app.settings.update({ viewCube })} /></Field>
             <Field inline label="Stats"><Toggle value={view.showStats} onChange={(showStats: any) => app.settings.update({ showStats })} /></Field>
             <p className="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom. Follow is on the 3D view and in the dock. The panel arrangement: drag headers, or the palette's "Reset the layout".</p>
         </div>
@@ -106,6 +109,21 @@ function GamepadSettingsFields() {
             </Field>
             <Field inline label="Invert Y" title="up on the left stick backs up"><Toggle value={settings.invertY} onChange={(invertY: any) => gamepadSettings.update({ invertY })} /></Field>
             <p className="hint">Left stick drives, right stick turns, RB boosts, LT + RT stops (A to drive again). The full list is under ?.</p>
+        </div>
+    )
+}
+
+/** Settings → Drive → Joy: the raw input (pad, keys, thumb sticks) as sensor_msgs/Joy, on or off */
+function JoySettingsFields() {
+    const settings = useStore(joySettings)
+    return (
+        <div className="field-block joy-settings" data-testid="joy-settings">
+            <Field inline label="Publish Joy" title="the raw gamepad, drive keys and thumb sticks as sensor_msgs/Joy (drives nothing; for recordings and Joy readers)">
+                <Toggle value={settings.enabled} onChange={(enabled: any) => joySettings.update({ enabled })} />
+            </Field>
+            <p className="hint" data-testid="joy-topic">
+                Topic <code>{JOY_TOPIC}</code> ({JOY_TYPE.replace(".", "/")}), on each change, at most {JOY_HZ}/s; nothing while idle.
+            </p>
         </div>
     )
 }

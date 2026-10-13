@@ -61,7 +61,7 @@ export function App() {
     const robot = useStore(app?.robot ?? placeholderRobot)
     // the profile changes with the robot type: keys follow it
     const profile = app && robot ? app.profile : null
-    useKeyboard(profile?.type === "arm" ? null : app?.drive ?? null, profile?.type === "arm" ? null : profile, api)
+    useKeyboard(profile?.type === "arm" ? null : app?.drive ?? null, profile?.type === "arm" ? null : profile, api, app?.joy ?? null)
     useArmKeys(app?.arm ?? null, profile?.type === "arm" ? profile : null)
     useGamepad(app)
 

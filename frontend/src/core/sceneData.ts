@@ -188,7 +188,8 @@ export function buildScene(data: SceneData): BuiltScene {
             }
             const [r, g, b, alpha] = geom.rgba
             const material = new THREE.MeshStandardMaterial({
-                color: new THREE.Color(r, g, b),
+                // MuJoCo rgba is display (sRGB) color, not linear
+                color: new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace),
                 map: geom.texture && data.textures[geom.texture] ? texture(geom.texture) : null,
                 roughness: 0.85,
                 metalness: 0,
@@ -210,7 +211,7 @@ export function buildScene(data: SceneData): BuiltScene {
                 const field = data.hfields[geom.hfield]
                 // a textured hill (World Builder's speckled grass) carries its green in the texture, not its rgba
                 const source = geom.texture ? data.textures[geom.texture] : undefined
-                const green = source ? averageColor(bytes(source.pixels), source.channels) : new THREE.Color(r, g, b)
+                const green = source ? averageColor(bytes(source.pixels), source.channels) : new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace)
                 const blades = grassFor({ ...field, heights: floats(field.heights) }, green)
                 blades.mesh.visible = false
                 mesh.add(blades.mesh)

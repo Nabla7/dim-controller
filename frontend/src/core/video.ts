@@ -23,6 +23,21 @@ export interface DepthImage {
 export const isDepthTopic = (topic: Topic) => /depth/i.test(topic.name)
 
 /**
+ * Whether a camera panel holds its stream: only while it's on screen. Collapsed (minimized), off screen (a shut
+ * drawer, a rail hidden by focus) or in a hidden browser tab it lets go, so the gateway stops sending it (a 3D
+ * projection of the same topic keeps its own preview subscription).
+ */
+export function panelStreams(slot: { hidden: boolean; collapsed: boolean } | undefined, pageHidden: boolean): boolean {
+    return !!slot && !slot.hidden && !slot.collapsed && !pageHidden
+}
+
+/** whether the browser tab is hidden (another tab, minimized window), kept current */
+export const pageVisibility = new Store<{ hidden: boolean }>({ hidden: typeof document !== "undefined" && document.hidden })
+if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", () => pageVisibility.set({ hidden: document.hidden }))
+}
+
+/**
  * Who uses a stream: a camera panel that's on screen ("view": the viewer's quality preset) or only the 3D view's
  * projection ("preview": small and slow, PREVIEW_OPTIONS). One subscription per topic either way: a 3D projection of a
  * camera whose panel is open rides the panel's stream.

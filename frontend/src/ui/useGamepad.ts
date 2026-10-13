@@ -1,10 +1,12 @@
 // The gamepad in the page (core/gamepad.ts has the mapping and the safety rules): polled while one is connected, zeroed
 // when the window loses focus (to another window or app; Desktop's shell around the page counts as the page) or the tab
-// is hidden. `gamepadStatus` is what the bar's gamepad chip shows.
+// is hidden. `gamepadStatus` is what the bar's gamepad chip shows. The pad's raw state also goes out as Joy (core/joy.ts)
+// while the page has the focus, its rest once when it loses it.
 import { useEffect } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { GamepadDriver, type GamepadStatus, gamepadSettings, noPad, type PadLike } from "../core/gamepad.ts"
 import { Store } from "../core/store.ts"
+import { padJoy } from "../core/joy.ts"
 import { releaseAllThumbSticks } from "dimos-react"
 
 export const gamepadStatus = new Store<GamepadStatus>(noPad())
@@ -57,8 +59,12 @@ export function useGamepad(app: ViewerApp | null) {
             // not this window's (another app, a hidden tab): zero, and the sticks must come back to rest after
             if (document.hidden || !pageHasFocus()) {
                 driver.release()
+                app.joy.release("gamepad")
             } else {
                 driver.poll(pads())
+                // the same pad the driver reads: the first connected one
+                const pad = pads().find((other) => other?.connected)
+                pad ? app.joy.sample("gamepad", padJoy(pad)) : app.joy.release("gamepad")
             }
             if (!pads().some((pad) => pad?.connected) && timer !== null) {
                 clearInterval(timer)
@@ -71,8 +77,11 @@ export function useGamepad(app: ViewerApp | null) {
             }
             poll()
         }
-        const release = () => driver.release()
-        const hidden = () => document.hidden && driver.release()
+        const release = () => {
+            driver.release()
+            app.joy.release("gamepad")
+        }
+        const hidden = () => document.hidden && release()
         addEventListener("gamepadconnected", start)
         addEventListener("gamepaddisconnected", poll)
         addEventListener("blur", release)
@@ -91,7 +100,7 @@ export function useGamepad(app: ViewerApp | null) {
                 clearInterval(timer)
             }
             clearInterval(look)
-            driver.release()
+            release()
         }
     }, [app])
 }

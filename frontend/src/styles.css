@@ -19,6 +19,8 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 code { font-family: var(--mono); font-size: 12.5px; color: var(--cyan); }
 /* a square skin (Portal) squares every corner, as Portal's doc does */
 html[data-dr-square] body *, html[data-dr-square] body *::before, html[data-dr-square] body *::after { border-radius: 0 !important; }
+/* except the thumb sticks: a stick's travel is a circle (core/stick.ts clamps radially), so its ring and knob stay round; and Record's dot (squared, it reads as a stop glyph) */
+html[data-dr-square] .dr-thumbstick-base, html[data-dr-square] .dr-thumbstick-knob, html[data-dr-square] .record-toggle:not(.recording) .record-dot { border-radius: 50% !important; }
 body, body.dr-body { background: var(--bg); font-family: var(--hud, var(--sans)); font-feature-settings: "cv11", "ss01"; font-size: 13px; line-height: 1.45; overscroll-behavior: none; }
 /* the panels are dense: compact the theme's form controls */
 .dr-input, .dr-select { padding: 4px 8px; font-size: 12px; min-width: 0; }
@@ -182,6 +184,10 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 @keyframes drawer-left { from { transform: translateX(-24px); opacity: 0; } }
 @keyframes drawer-right { from { transform: translateX(24px); opacity: 0; } }
 .mobile .lv-panel:not(.zone-stage) { z-index: 21; }
+/* the workspace makes no layer of its own on a phone: the thumb sticks (z 7) lie over the main view and the drawer's
+   backdrop but under the drawer, which reaches over them on a phone on its side */
+.app.mobile .workspace { z-index: auto; }
+.mobile .ws-scrim { z-index: 6; }
 
 /* ── action dock (ui/ActionDock.tsx): drive keys and readout, actions, STOP ── */
 .action-dock { position: absolute; left: 0; right: 0; bottom: var(--dim-inset-bottom); z-index: 30; display: flex; align-items: center; gap: 12px; height: var(--lv-bar-h); box-sizing: border-box;
@@ -258,6 +264,8 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 :root[data-dr-dark] .scene-slot > .panel-content { background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--card) 70%, var(--scene-bg, var(--bg))), var(--scene-bg, var(--bg)) 60%); }
 .scene { position: absolute; inset: 0; touch-action: none; }
 .scene canvas { display: block; }
+/* the view cube sits under the tools row (layers button), which lies over the top of the body */
+.scene .dr-scene-viewcube { top: 42px; right: 8px; }
 /* a view that can't run (no WebGL, or it crashed) says so in place (ui/Unavailable.tsx) */
 .view-unavailable { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 1; display: flex; align-items: center; gap: 8px; padding: 6px 12px;
     max-width: calc(100% - 24px); font: 12px var(--sans); color: var(--muted-fg); box-shadow: var(--shadow-md); }
@@ -453,19 +461,20 @@ h3.dr-h3.first { margin-top: 4px; }
 /* the live velocity: above the sticks on a portrait phone (the center column is narrow), under FAST in landscape */
 .hud-note { font: 10px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .drive-hud.mobile .hud-note { position: static; max-width: 100%; white-space: normal; text-align: center; background: none; border: 0; color: var(--muted-fg); }
-.app .drive-hud.mobile .stop-button { width: 100%; height: 72px; padding: 0; font: 800 20px var(--sans); letter-spacing: 0.08em;
+.app .drive-hud.mobile .stop-button { width: 100%; height: 52px; padding: 0; font: 800 17px var(--sans); letter-spacing: 0.08em;
     color: var(--primary-fg); background: var(--lv-stop); border: 2px solid color-mix(in srgb, var(--fg) 85%, transparent); box-shadow: 0 0 14px color-mix(in srgb, var(--lv-stop) 55%, transparent); touch-action: manipulation; }
 .app .drive-hud.mobile .stop-button:active, .app .drive-hud.mobile .stop-button:hover { background: var(--lv-stop-hover); box-shadow: 0 0 20px var(--lv-over-video); }
 .app .drive-hud.mobile .boost-button { width: 100%; height: 40px; padding: 0; font-weight: 700; touch-action: manipulation; background: color-mix(in srgb, var(--card) 80%, transparent); }
 .drive-hud.mobile .boost-button[aria-pressed="true"] { border-color: var(--fg); box-shadow: 0 0 10px var(--lv-over-video); }
-/* landscape phone: the sticks sit in the lower corners, the center column stays narrow */
+/* landscape phone (useMobile.ts PHONE_LANDSCAPE): the main view fills the screen and the sticks lie over its lower
+   corners, the center column stays narrow */
 @media (orientation: landscape) and (max-height: 520px) {
     .drive-hud.mobile { height: min(62vh, 260px); --stick: clamp(104px, 38vh, 150px); grid-template-columns: 1fr min(30vw, 260px) 1fr; }
     .dr-thumbstick-base { top: 58%; }
     .hud-center { padding-bottom: 8px; gap: 6px; }
-    .app .drive-hud.mobile .stop-button { height: 58px; width: min(100%, 150px); }
+    .app .drive-hud.mobile .stop-button { height: 44px; width: min(100%, 150px); }
     .app .drive-hud.mobile .boost-button { height: 32px; width: min(100%, 150px); }
-    .drive-hud.mobile .hud-note { position: static; transform: none; order: 3; max-width: 100%; }
+    .drive-hud.mobile .hud-note { position: static; transform: none; order: 3; max-width: 100%; color: var(--fg); text-shadow: 0 1px 3px var(--bg); }
 }
 .drive-hud.mobile { position: absolute; z-index: 7; }
 html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll-behavior: none; }
@@ -552,6 +561,14 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .corner-chips .bar-value { max-width: 110px; }
 /* a phone's main camera: the picture at the top, the space below it for the thumbs */
 .mobile .zone-stage .camera-media, .mobile .zone-stage .camera-overlay { object-position: top; }
+/* on its side, centred between the sticks over it */
+@media (orientation: landscape) and (max-height: 520px) { .mobile .zone-stage .camera-media, .mobile .zone-stage .camera-overlay { object-position: center; } }
+/* a phone's main view has no header (ui/Panel.tsx): its tools row sits at its top */
+.lv-panel.headless > .panel-tools { top: 0; }
+.headless > .panel-tools > .panel-info { flex: 1 1 auto; }
+/* the view switch (ui/PhoneCorners.tsx): what the main view shows */
+.view-switch.dr-btn--icon { width: auto; gap: 2px; padding: 0 6px 0 9px; }
+.view-menu .quality-about { font-family: var(--mono); overflow-wrap: anywhere; }
 
 /* ── Steam Deck banner (ui/SteamDeckBanner.tsx): over the top of the main view ── */
 .steam-banner { position: absolute; top: calc(env(safe-area-inset-top) + 8px); left: 50%; transform: translateX(-50%); z-index: 35;

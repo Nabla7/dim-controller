@@ -72,7 +72,8 @@ One arrangement, made of panels:
 Every panel has the same header, its buttons in the same place, shown while the panel is hovered (always on a touch
 screen): collapse / expand, make it the main view (swap: the main view's panel takes its place), pop out / dock. There's
 no close: collapse a panel instead, and the others in its rail take its height. A collapsed panel stops its stream (the
-3D view unsubscribes every layer, a camera its video, the map its topics); expanded, it subscribes again. A panel's
+3D view unsubscribes every layer, a camera its video and overlay, the map its topics); expanded, it subscribes again. A
+camera also lets go while the browser tab is hidden; a 3D projection of the same camera keeps its own small stream. A panel's
 own in-panel buttons (a camera's topic tabs and gear, the 3D view's follow and point clouds, the map's cog and follow)
 show while it's hovered (on touch, for a few seconds after a tap on it). The map's choices sit behind its cog and in
 Settings → Map (the same setting): what it shows (the lidar map, or a costmap when one is on the bus; with nothing yet,
@@ -87,8 +88,9 @@ layout" restores it.
 Keys: WASD / arrows drive while held (Q/E strafe), release stops, Shift boosts, **Space stops, always**, `/` opens the
 palette (every action: panels, layout, cameras, view, recording, controller format, the profile's buttons), `?` lists every
 key, Escape closes, `[` `]` `\` hide and show the rails. Keys never drive while you type in a field or with an overlay
-open, and leaving the window lets go of everything. On a phone the rails are drawers (buttons over the main view's top corners, with Record, the palette and the chips) and driving
-is two thumb sticks with STOP between them.
+open, and leaving the window lets go of everything. On a phone the rails are drawers (buttons over the main view's top corners, with Record, the palette, the chips and a
+view switch that picks the main view: any camera, the 3D view or the map) and driving is two thumb sticks with STOP between them;
+on its side the main view fills the screen and the sticks lie over it.
 
 **Gamepad** (Xbox, PlayStation, Steam Deck; the Gamepad API's standard mapping, other pads read with the common
 layout): the left stick drives forward / back (and strafes, for formats that strafe), the right stick turns (and goes
@@ -136,7 +138,9 @@ The presets are this viewer's (localStorage).
 The 3D camera follows the robot (`base_link`, or another frame: Settings → Follow frame): orbit and zoom keep
 following, a pan stops it. The 3D view's corner buttons follow (lit while following; click to resume, or while
 following to reframe the robot) and look straight down on the area around the robot (`POST api/camera` does the same
-in every open page; its lookAt stops following). Hovering a frame in the TF panel picks it
+in every open page; its lookAt stops following). **Settings → 3D view → View cube** (or the palette; `lv.view.viewCube`,
+off by default) puts dimos-react's view cube in the top-right corner: click a face, edge or corner to look from there,
+drag it to orbit. Hovering a frame in the TF panel picks it
 out in the view: big axes drawn through everything, with its name.
 
 ## Controller format
@@ -181,6 +185,15 @@ If the control link's latency (the gateway heartbeat's round trip, or how long i
 Drive → Max latency (default 1000 ms), or the link drops, driving **disengages**: it stops (the usual zeros, once) and
 the bar says why ("Disengaged: latency 1240 ms > 1000 ms max. Reconnect to drive.") with **Reconnect**: a new gateway
 session, video and control alike. Driving picks up again only on new input.
+
+### Driving: Joy
+
+The raw input also goes out as `sensor_msgs/Joy` on `/joystick` (dimos's stream name for it: the web cockpit's teleop
+and KeyboardTeleop publish the same), for recordings and Joy readers; it drives nothing. The gamepad sends its raw
+axes (3 decimals) then LT's and RT's travel, and its buttons 0/1; the keys send KeyboardTeleop's buttons (w a s d q e
+shift ctrl space, the arrows as w a s d); the phone's thumb sticks send a pad's four axes. Each on a change, at most
+15 a second, and its rest once when let go: nothing while idle. Settings → Drive → Publish Joy turns it off
+([core/joy.ts](frontend/src/core/joy.ts)).
 
 ### Driving: which topics
 

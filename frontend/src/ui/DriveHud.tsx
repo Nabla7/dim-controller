@@ -8,6 +8,7 @@ import { useStore } from "../core/store.ts"
 import type { Axis } from "../profile/types.ts"
 import { Badge, Button, Card, releaseAllThumbSticks, TextInput, ThumbStick } from "dimos-react"
 import { shapeStick, smoothToward } from "../core/stick.ts"
+import { sticksJoy } from "../core/joy.ts"
 import type { DriveHalt } from "../core/drive.ts"
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
@@ -31,6 +32,13 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     const { strafe: usesStrafe, vertical: usesVertical } = profileAxes(app.profile)
     const command = state.command
     const velocity = (linear: number[], angular: number[]) => velocityText(linear, angular, usesStrafe, usesVertical)
+    // both thumbs as one Joy (core/joy.ts: a pad's four axes); a let-go stick reports 0, 0, so the rest goes out too
+    const thumbs = useRef({ left: { x: 0, y: 0 }, right: { x: 0, y: 0 } })
+    const thumbJoy = (side: "left" | "right", x: number, y: number) => {
+        thumbs.current[side] = { x, y }
+        app.joy.sample("touch", sticksJoy(thumbs.current.left, thumbs.current.right))
+    }
+    useEffect(() => () => app.joy.release("touch"), [app])
 
     if (mobile) {
         const moving = state.publishing && [...state.twist.linear, ...state.twist.angular].some((value) => value !== 0)
@@ -42,7 +50,10 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
                     axes={usesStrafe ? "xy" : "y"}
                     shape={shapeStick}
                     smooth={smoothToward}
-                    onMove={(x: number, y: number) => drive.setAxes("left-stick", { forward: y, strafe: usesStrafe ? -x : 0 })}
+                    onMove={(x: number, y: number) => {
+                        drive.setAxes("left-stick", { forward: y, strafe: usesStrafe ? -x : 0 })
+                        thumbJoy("left", x, y)
+                    }}
                 />
                 <div className="hud-center">
                     {state.halt && <DisengagedNotice app={app} halt={state.halt} />}
@@ -72,7 +83,10 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
                     axes={usesVertical ? "xy" : "x"}
                     shape={shapeStick}
                     smooth={smoothToward}
-                    onMove={(x: number, y: number) => drive.setAxes("right-stick", { turn: -x, vertical: usesVertical ? y : 0 })}
+                    onMove={(x: number, y: number) => {
+                        drive.setAxes("right-stick", { turn: -x, vertical: usesVertical ? y : 0 })
+                        thumbJoy("right", x, y)
+                    }}
                 />
             </div>
         )
