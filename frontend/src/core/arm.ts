@@ -6,7 +6,9 @@
 //   joint stops within that; a release sends "stay where you are" (target = measured position);
 // - a held end-effector jog sends a TwistStamped at 20 Hz with the bridge's deadman set to a zero twist (zero = hold);
 //   a release sends zeros for a moment, then nothing;
-// - disarming does both stops once, then nothing more is sent.
+// - disarming does both stops once, then nothing more is sent;
+// - driving's stop (STOP, Space, Escape, leaving the page) and its halt (the link watch) stop it too, and while driving
+//   is disengaged no command starts.
 import { decode, encode, type LcmValue } from "./lcm/lcm.ts"
 import { persistentStore, Store } from "./store.ts"
 import { type Connection, Priority, type Publisher } from "./transport.ts"
@@ -102,6 +104,7 @@ export class ArmControl {
     #lastSentAt = 0
     #blueprints: Record<string, Module[] | null> = {}
     #bridge: string[] = []
+    #unsubscribeStop: () => void
 
     constructor(readonly connection: Connection, readonly drive: Drive, public profile: ArmProfile) {
         this.settings = persistentStore<ArmSettings>("lv.arm", { linear: profile.linear, angular: profile.angular, jointSpeed: profile.jointSpeed })
@@ -114,6 +117,7 @@ export class ArmControl {
             }
             armed = now
         })
+        this.#unsubscribeStop = drive.onStop(() => this.stop())
     }
 
     get armed(): boolean {
@@ -177,6 +181,11 @@ export class ArmControl {
             }
         }
         this.state.update({ joints, stateAt: performance.now(), response })
+    }
+
+    /** Where joint targets go: the drive settings' joint topic (the joint control's), else the coordinator's joint_command. */
+    jointCommandTopic(): string | null {
+        return this.drive.settings.get().jointTopic || this.state.get().topics.jointCommand
     }
 
     position(name: string): number | null {
@@ -284,8 +293,12 @@ export class ArmControl {
             this.state.update({ error: "arm to send commands" })
             return false
         }
+        if (this.drive.state.get().halt) {
+            this.state.update({ error: "driving is disengaged: Reconnect first" })
+            return false
+        }
         const topics = this.state.get().topics
-        const missing = kind === "grippers" ? !topics.grippers.length : !topics[kind]
+        const missing = kind === "grippers" ? !topics.grippers.length : kind === "jointCommand" ? !this.jointCommandTopic() : !topics[kind]
         if (missing) {
             const what = { jointCommand: "joint_command", eeTwist: "ee_twist_command", grippers: "gripper_command" }[kind]
             this.state.update({ error: `what's running has no ${what} input` })
@@ -304,7 +317,7 @@ export class ArmControl {
             if (topics.eeTwist && this.#publishers.has(zenohKey(topics.eeTwist, TWIST_STAMPED))) {
                 this.#put(zenohKey(topics.eeTwist, TWIST_STAMPED), TWIST_STAMPED, eeTwist(zeroEe(), 0, 0), Priority.REAL_TIME)
             }
-            if (jogging && topics.jointCommand) {
+            if (jogging && this.jointCommandTopic()) {
                 this.#holdJoints([jogging.joint], true)
             }
         }
@@ -332,7 +345,7 @@ export class ArmControl {
     }
 
     #sendJoints(targets: Record<string, number>, force = false) {
-        const topic = this.state.get().topics.jointCommand
+        const topic = this.jointCommandTopic()
         if (!topic || (!this.armed && !force)) {
             return
         }
@@ -438,6 +451,7 @@ export class ArmControl {
 
     dispose() {
         clearInterval(this.#timer)
+        this.#unsubscribeStop()
         this.#unsubscribeState?.()
         for (const publisher of this.#publishers.values()) {
             publisher.close()

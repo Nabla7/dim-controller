@@ -236,6 +236,25 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
     pointer-events: auto; touch-action: manipulation; cursor: pointer; }
 .drive-halt-pill:disabled { opacity: 0.75; cursor: default; }
 .dock-drive .drive-halt { flex-basis: auto; }
+/* the joint control (ui/JointControl.tsx): a chip with the native select over it (a tap opens the OS picker), ▲ / ▼ held */
+.joint-chip { position: relative; display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; box-sizing: border-box; padding: 0 6px; height: 26px;
+    font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--fg); border: 1px solid var(--border); background: var(--card); }
+.joint-chip:focus-within, .joint-chip:hover { border-color: var(--border-strong); background: var(--accent); }
+.joint-chip.empty { color: var(--muted-fg); }
+.joint-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.joint-chip .dr-select.joint-select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.dock-joint { display: flex; align-items: center; gap: 6px; padding: 1px 6px; border: 1px solid transparent; border-radius: var(--radius); }
+.dock-joint.moving { border-color: var(--primary); box-shadow: var(--glow-accent); }
+.dock-joint .joint-chip { width: 150px; }
+.joint-pick-row { display: flex; align-items: center; gap: 6px; }
+.joint-pick-row .joint-chip { flex: 1; min-width: 104px; }
+.joint-pick-row .joint-jog-button { width: 30px; }
+.joint-section { padding: 6px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin: 6px 0; }
+/* phone, between the sticks above STOP: the chip, then ▲ ▼ side by side (on its side: ▲ chip ▼ in one row) */
+.joint-hud { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; }
+.joint-hud .joint-chip { grid-column: 1 / -1; height: 30px; justify-content: center; background: color-mix(in srgb, var(--card) 80%, transparent); }
+.app .joint-hud .joint-jog-button { height: 44px; padding: 0; font-size: 18px; touch-action: none; background: color-mix(in srgb, var(--card) 80%, transparent); }
+.joint-hud .joint-jog-button[aria-pressed="true"] { color: var(--primary-fg); background: var(--primary); border-color: var(--fg); box-shadow: 0 0 10px var(--lv-over-video); }
 
 /* ── overlays (ui/Overlays.tsx): the palette and the shortcut list ── */
 .lv-overlay { position: fixed; inset: 0; z-index: 60; display: flex; justify-content: center; align-items: flex-start; padding: calc(10vh + env(safe-area-inset-top)) 12px 12px;
@@ -479,6 +498,11 @@ h3.dr-h3.first { margin-top: 4px; }
     .app .drive-hud.mobile .stop-button { height: 44px; width: min(100%, 150px); }
     .app .drive-hud.mobile .boost-button { height: 32px; width: min(100%, 150px); }
     .drive-hud.mobile .hud-note { position: static; transform: none; order: 3; max-width: 100%; color: var(--fg); text-shadow: 0 1px 3px var(--bg); }
+    .joint-hud { grid-template-columns: 44px 1fr 44px; width: min(100%, 220px); }
+    .joint-hud .joint-chip { grid-column: 2; grid-row: 1; height: 38px; }
+    .app .joint-hud .joint-jog-button { height: 38px; }
+    .joint-hud .joint-jog-button[data-testid="joint-up"] { grid-column: 3; grid-row: 1; }
+    .joint-hud .joint-jog-button[data-testid="joint-down"] { grid-column: 1; grid-row: 1; }
 }
 .drive-hud.mobile { position: absolute; z-index: 7; }
 html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll-behavior: none; }
