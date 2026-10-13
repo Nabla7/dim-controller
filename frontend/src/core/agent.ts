@@ -3,15 +3,15 @@
 // locating an object in 3D from a box around it in that frame (lidar points inside the box, else the floor). The
 // backend's events arrive on zenoh (dim-app's appEvents: the frontend topic `events`); this page GETs what they change
 // on load and whenever the connection comes back, and reports itself (POST api/pages/<id>) so captures come to it.
-import { themeColors } from "../dim-app/source/theme.js"
+import { themeColors } from "dimos-react"
 import * as THREE from "three"
 import { decode, headerFrameId } from "./lcm/lcm.ts"
-import { LabelPool } from "./render/labels.ts"
+import { LabelPool } from "dimos-react/three"
 import type { Topic } from "./transport.ts"
 import type { ViewerApp } from "./app.ts"
 import { cameraInfoFor } from "./video.ts"
 import { frontObject, groundLevel } from "./locate.ts"
-import { appEvents } from "../dim-app/source/events.js"
+import { appEvents } from "dimos-react/dim-app/events.js"
 import type { LocationLabel } from "./labels.ts"
 import { applyRemoteSetting, loadSettings } from "./store.ts"
 import type { DriveEvent } from "./drive.ts"
@@ -55,7 +55,7 @@ const REPORT_MS = 5000
 
 export class AgentLink {
     readonly group = new THREE.Group()
-    #labels = new LabelPool("scene-label annotation-label")
+    #labels = new LabelPool("dr-scene-label dr-note")
     #annotations: Annotation[] = []
     #objects = new Map<string, { root: THREE.Group; key: string }>()
     #camera: { topic: Topic; element: HTMLVideoElement } | null = null
@@ -349,7 +349,7 @@ export class AgentLink {
         canvas.width = Math.round(gl.width * scale)
         canvas.height = Math.round(gl.height * scale)
         const context = canvas.getContext("2d")!
-        context.fillStyle = themeColors().sceneBg || (document.body.classList.contains("dark") ? "#05070d" : "#f5f4ef")
+        context.fillStyle = themeColors().sceneBg || themeColors().bg || "black"
         context.fillRect(0, 0, canvas.width, canvas.height)
         context.drawImage(gl, 0, 0, canvas.width, canvas.height)
         context.font = "bold 14px sans-serif"

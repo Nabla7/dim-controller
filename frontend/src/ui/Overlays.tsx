@@ -10,6 +10,7 @@ import { keyBindings } from "./keymap.ts"
 import { closeOverlay, overlay } from "./overlay.ts"
 import { type CameraActions, useCommands } from "./useCommands.ts"
 import type { WorkspaceApi } from "./Workspace.tsx"
+import { Button, Card, Heading, Kbd } from "dimos-react"
 import { Icon } from "./icons.tsx"
 
 export function Overlays({ app, api, cameras }: { app: ViewerApp; api: WorkspaceApi; cameras: CameraActions }) {
@@ -46,7 +47,7 @@ function Palette({ app, api, cameras }: { app: ViewerApp; api: WorkspaceApi; cam
     }
     return (
         <div className="lv-overlay" onPointerDown={(event) => event.target === event.currentTarget && closeOverlay()}>
-            <div className="dim-panel palette" role="dialog" aria-label="Command palette" data-testid="palette">
+            <Card padded={false} className="palette" role="dialog" aria-label="Command palette" data-testid="palette">
                 <div className="palette-search">
                     <Icon name="search" size={16} />
                     <input
@@ -70,7 +71,7 @@ function Palette({ app, api, cameras }: { app: ViewerApp; api: WorkspaceApi; cam
                             }
                         }}
                     />
-                    <kbd className="lv-kbd">Esc</kbd>
+                    <Kbd className="lv-kbd">Esc</Kbd>
                 </div>
                 <div className="palette-list" ref={list} role="listbox" aria-label="Commands">
                     {!shown.length && <p className="palette-empty">Nothing matches "{query}".</p>}
@@ -89,17 +90,17 @@ function Palette({ app, api, cameras }: { app: ViewerApp; api: WorkspaceApi; cam
                             <span className="palette-group">{command.group}</span>
                             <span className="palette-label">{command.label}</span>
                             {(command.blocked ?? command.hint) && <span className="palette-hint">{command.blocked ?? command.hint}</span>}
-                            {command.keys?.map((key) => <kbd key={key} className="lv-kbd">{key}</kbd>)}
+                            {command.keys?.map((key) => <Kbd key={key} className="lv-kbd">{key}</Kbd>)}
                         </button>
                     ))}
                 </div>
                 <div className="palette-foot">
-                    <span><kbd className="lv-kbd">↑</kbd><kbd className="lv-kbd">↓</kbd> pick</span>
-                    <span><kbd className="lv-kbd">Enter</kbd> run</span>
-                    <span><kbd className="lv-kbd">Space</kbd> stops, always</span>
-                    <span><kbd className="lv-kbd">?</kbd> all shortcuts</span>
+                    <span><Kbd className="lv-kbd">↑</Kbd><Kbd className="lv-kbd">↓</Kbd> pick</span>
+                    <span><Kbd className="lv-kbd">Enter</Kbd> run</span>
+                    <span><Kbd className="lv-kbd">Space</Kbd> stops, always</span>
+                    <span><Kbd className="lv-kbd">?</Kbd> all shortcuts</span>
                 </div>
-            </div>
+            </Card>
         </div>
     )
 }
@@ -110,20 +111,20 @@ function ShortcutHelp({ app }: { app: ViewerApp }) {
     const groups = [...new Set(bindings.map((binding) => binding.group))]
     return (
         <div className="lv-overlay" onPointerDown={(event) => event.target === event.currentTarget && closeOverlay()}>
-            <div className="dim-panel shortcut-help" role="dialog" aria-label="Keyboard shortcuts" data-testid="shortcut-help">
+            <Card padded={false} className="shortcut-help" role="dialog" aria-label="Keyboard shortcuts" data-testid="shortcut-help">
                 <div className="help-head">
-                    <h2 className="dim-card-title">Keyboard</h2>
+                    <Heading level={3} className="help-title">Keyboard</Heading>
                     <span className="hint">{app.profile.name} keys · keys drive whenever the page has focus, never while typing</span>
-                    <button type="button" className="dim-btn icon icon-button" aria-label="Close" title="Close (Esc)" onClick={closeOverlay}><Icon name="close" size={15} /></button>
+                    <Button className="dr-btn--icon icon-button" aria-label="Close" title="Close (Esc)" onClick={closeOverlay}><Icon name="close" size={15} /></Button>
                 </div>
                 <div className="help-groups">
                     {groups.map((group) => (
                         <section key={group} className="help-group">
-                            <h3 className="dim-label">{group}</h3>
+                            <Heading level={3}>{group}</Heading>
                             <dl>
                                 {bindings.filter((binding) => binding.group === group).map((binding) => (
                                     <div key={binding.action} className="help-row">
-                                        <dt>{binding.keys.map((key) => <kbd key={key} className="lv-kbd">{key}</kbd>)}</dt>
+                                        <dt>{binding.keys.map((key) => <Kbd key={key} className="lv-kbd">{key}</Kbd>)}</dt>
                                         <dd>{binding.action}</dd>
                                     </div>
                                 ))}
@@ -131,11 +132,11 @@ function ShortcutHelp({ app }: { app: ViewerApp }) {
                         </section>
                     ))}
                     <section className="help-group" data-testid="gamepad-help">
-                        <h3 className="dim-label">Gamepad</h3>
+                        <Heading level={3}>Gamepad</Heading>
                         <dl>
                             {gamepadBindings(app.profile).map((binding) => (
                                 <div key={binding.buttons} className="help-row">
-                                    <dt><kbd className="lv-kbd">{binding.buttons}</kbd></dt>
+                                    <dt><Kbd className="lv-kbd">{binding.buttons}</Kbd></dt>
                                     <dd>{binding.action}</dd>
                                 </div>
                             ))}
@@ -143,11 +144,11 @@ function ShortcutHelp({ app }: { app: ViewerApp }) {
                         <p className="hint">Nothing is sent until both sticks are at rest after the pad connects (or after a stop, a blur or a hidden tab).</p>
                     </section>
                     <section className="help-group">
-                        <h3 className="dim-label">Panels</h3>
+                        <Heading level={3}>Panels</Heading>
                         <p className="hint">Every panel's header has the same buttons, shown on hover: collapse / expand (collapsed, it stops its stream), make it the main view, pop out / dock. Drag a header into a rail, onto the main view's middle (swap), or anywhere to float; it snaps to edges. Double-click a header to collapse it. The arrangement is saved on this device.</p>
                     </section>
                 </div>
-            </div>
+            </Card>
         </div>
     )
 }

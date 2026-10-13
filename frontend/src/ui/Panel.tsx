@@ -6,6 +6,7 @@
 // on the header collapses it (on the main view: focus), and a floating panel resizes from its corner. Hidden (a shut
 // drawer, a rail hidden by focus) it stays mounted, so its element is never rebuilt.
 import { type ReactNode, useEffect, useRef, useState } from "react"
+import { Button } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { panelActions, type PanelAction } from "./commands.ts"
 import { useWorkspaceApi } from "./Workspace.tsx"
@@ -78,17 +79,16 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
                 {info !== undefined && <span className="panel-info">{info}</span>}
                 <span className="panel-actions" role="toolbar" aria-label={`${title} panel`}>
                     {states.map((state) => (
-                        <button
+                        <Button
                             key={state.action}
-                            type="button"
-                            className={`dim-btn icon icon-button panel-action action-${state.action}`}
+                            className={`dr-btn--icon icon-button panel-action action-${state.action}`}
                             data-action={state.action}
                             title={state.label}
                             aria-label={`${title}: ${state.label}`}
                             onClick={() => api.act(id, state.action)}
                         >
                             <Icon name={ACTION_ICONS[state.action]({ collapsed: slot.collapsed, floating })} size={14} />
-                        </button>
+                        </Button>
                     ))}
                 </span>
             </header>

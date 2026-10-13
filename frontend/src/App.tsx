@@ -44,15 +44,14 @@ export function App() {
         const created = new ViewerApp(host.current!)
         window.__lv = created
         setApp(created)
-        // theme.js picks Portal (dark) / Research (light), sets body.dark and fires `dim-theme`
+        // DimThemeProvider applies Desktop's skin and fires `dimos-react-theme` on every change
         const theme = () => {
-            const dark = document.body.classList.contains("dark")
             document.querySelector('meta[name="theme-color"]')?.setAttribute("content", getComputedStyle(document.body).getPropertyValue("--bg").trim())
-            created.viewer.setTheme(dark)
+            created.viewer.setTheme()
         }
         theme()
-        addEventListener("dim-theme", theme)
-        return () => removeEventListener("dim-theme", theme)
+        addEventListener("dimos-react-theme", theme)
+        return () => removeEventListener("dimos-react-theme", theme)
     }, [])
 
     const cameras = useStore(cameraLayout)

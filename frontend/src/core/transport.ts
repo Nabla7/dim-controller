@@ -1,8 +1,8 @@
 // The page's one connection to Desktop's zenoh-gateway (dim-app's getZenoh(): the backend's events ride it too), and
 // topic discovery. dimos names a channel
 // `dimos/<topic>/<msg type>`, so the key itself says what a topic carries.
-import { connect, type Message, Priority, type Publisher, type SubscribeOptions, type Subscription, type SubscriptionUpdate, type ZenohGateway } from "../vendor/zenoh_gateway/zenoh_gateway.ts"
-import { getZenoh } from "../dim-app/source/zenoh.js"
+import { connect, type Message, Priority, type Publisher, type SubscribeOptions, type Subscription, type SubscriptionUpdate, type ZenohGateway } from "dimos-react/dim-app/vendor/zenoh-gateway/zenoh_gateway.js"
+import { getZenoh } from "dimos-react/dim-app/zenoh.js"
 import { Store } from "./store.ts"
 
 export { Priority }

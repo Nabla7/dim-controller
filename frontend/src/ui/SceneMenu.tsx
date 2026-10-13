@@ -8,6 +8,7 @@ import type { LocationLabel } from "../core/labels.ts"
 import { recorder } from "../core/recorder.ts"
 import { clickedPoint } from "../core/clickedPoint.ts"
 import { createRightClickTip, narrate, RIGHT_CLICK_TIP_TEXT } from "../core/rightClickTip.ts"
+import { Button, Card, TextInput } from "dimos-react"
 
 interface Menu {
     x: number
@@ -147,9 +148,9 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
     return (
         <>
             {menu && (
-                <div ref={box} className="dim-panel scene-menu" style={{ left, top }} role="menu" onContextMenu={(event) => event.preventDefault()}>
+                <Card ref={box} padded={false} className="scene-menu" style={{ left, top }} role="menu" onContextMenu={(event) => event.preventDefault()}>
                     {menu.point && (
-                        <div className="scene-menu-where dim-mono">
+                        <div className="scene-menu-where dr-mono">
                             {fmt(menu.point.x)}, {fmt(menu.point.y)}, {fmt(menu.point.z)} · {app.viewer.fixedFrame}
                             {menu.on === "ground" ? " · ground" : ""}
                         </div>
@@ -162,8 +163,8 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
                                 save()
                             }}
                         >
-                            <input className="dim-input" autoFocus placeholder="What happened here?" value={text} onChange={(event) => setText(event.target.value)} />
-                            <button type="submit" className="dim-btn primary" disabled={!text.trim()}>Add</button>
+                            <TextInput autoFocus placeholder="What happened here?" value={text} onChange={setText} />
+                            <Button type="submit" variant="primary" disabled={!text.trim()}>Add</Button>
                         </form>
                     ) : (
                         <>
@@ -180,9 +181,9 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
                             )}
                         </>
                     )}
-                </div>
+                </Card>
             )}
-            {note && <div className="dim-panel scene-note">{note}</div>}
+            {note && <Card padded={false} className="scene-note">{note}</Card>}
         </>
     )
 }
