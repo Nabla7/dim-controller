@@ -155,7 +155,7 @@ controls or the [arm panel](#arm-control). Changing it applies at once in every 
 | --- | --- | --- |
 | dog | W/S forward, A/D turn, Q/E strafe | 0.5 m/s, 0.8 rad/s |
 | humanoid | W/S forward, A/D turn, Q/E side-step | 0.3 m/s, 0.5 rad/s |
-| wheeled | W/S forward, A/D turn (no strafe) | 0.4 m/s, 0.6 rad/s |
+| wheeled | W/S forward, A/D turn, Q/E strafe | 0.4 m/s, 0.6 rad/s |
 | drone | W/S forward, A/D yaw, Q/E down/up (`linear.z`) | 1 m/s, 1 rad/s, 0.5 m/s vertical |
 | arm | the [arm panel](#arm-control)'s keys | 5 cm/s, 0.5 rad/s, joints 0.4 rad/s |
 
@@ -264,6 +264,17 @@ the session, show in every open viewer, and are removed from the same menu. Whil
 remove (and the labels already made when it starts) is written to `/labels` as `dimos.LocationLabel` (JSON:
 `timestamp`, `frame_id`, `id`, `label`, `action` add/delete, `pose` with position and orientation) and to
 `/labels/scene` as a `foxglove.SceneUpdate` so Foxglove's 3D panel shows them.
+
+## Joint control (wheeled base)
+
+The wheeled format has a joint control for the R1's torso (how low it stands): pick one joint of the joint state
+(grippers, wheels, steering and a twist base's virtual joints are left out; a torso joint by default; remembered per robot
+type in `lv.drive.<type>`) and hold **▲** / **▼** (phone: between the sticks above STOP; desktop: **R** / **F**, the dock
+shows the pick and its position; Settings → Drive has the pick, the speed and the topic). It is the arm's joint jog
+(below), so it stops the same way, and also on STOP, Space, Escape and a disengaged link. Targets go to
+`/r1pro/joint_command` (r1pro_coordinator remaps joint_command there; empty the field for the coordinator's own); with no
+JointState the control says so. One joint at a time: on the R1 torso_joint1..3 are pitch joints in a chain, so a single
+one leans the torso rather than lowering it straight down.
 
 ## Arm control
 

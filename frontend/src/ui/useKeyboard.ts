@@ -3,8 +3,11 @@
 // stops, `[` `]` `\` show and hide the rails. Keys drive whenever the page has the focus (no arming), never while
 // typing in a field or with an overlay open; leaving the window or hiding the page releases everything and stops.
 // Listening in the capture phase, so Escape reaches the page before Desktop's shell. The held drive keys, Shift and Space
-// also go out as Joy (core/joy.ts: KeyboardTeleop's layout), on each change.
+// also go out as Joy (core/joy.ts: KeyboardTeleop's layout), on each change. A profile's joint keys (R/F on a wheeled
+// base) hold-jog the joint control's pick through `arm` (core/baseJoint.ts); their release holds it.
 import { useEffect, useRef } from "react"
+import type { ArmControl } from "../core/arm.ts"
+import { jogPicked } from "../core/baseJoint.ts"
 import type { Drive } from "../core/drive.ts"
 import { type JoyPublisher, keyboardJoy } from "../core/joy.ts"
 import type { Axes, RobotProfile } from "../profile/types.ts"
@@ -12,26 +15,39 @@ import { isTypingTarget, routeKeyDown } from "./keymap.ts"
 import { closeOverlay, openOverlay, overlay } from "./overlay.ts"
 import { type Side, workspaceView } from "./workspace.ts"
 
-export function useKeyboard(drive: Drive | null, profile: RobotProfile | null, panels: { toggleRail: (side: Side) => void; toggleFocus: () => void }, joy: JoyPublisher | null = null) {
+export function useKeyboard(drive: Drive | null, profile: RobotProfile | null, panels: { toggleRail: (side: Side) => void; toggleFocus: () => void }, joy: JoyPublisher | null = null, arm: ArmControl | null = null) {
     // the latest callbacks, without re-binding (a re-bind mid-hold would forget the held keys)
     const latest = useRef(panels)
     latest.current = panels
     useEffect(() => {
         const held = new Set<string>()
         const joyKeys = { shift: false, space: false }
+        /** the joint keys' jog now (-1, 0, 1) */
+        let jointSign = 0
         const apply = () => {
             joy?.sample("keyboard", keyboardJoy(held, { ...joyKeys, ctrl: false }))
             if (!drive || !profile) {
                 return
             }
             const axes: Partial<Axes> = {}
+            let joint = 0
             for (const code of held) {
                 const action = profile.drive.keys[code]
                 if (action && "axis" in action) {
                     axes[action.axis] = (axes[action.axis] ?? 0) + action.value
+                } else if (action && "joint" in action) {
+                    joint += action.joint
                 }
             }
             drive.setAxes("keys", axes)
+            if (arm && Math.sign(joint) !== jointSign) {
+                jointSign = Math.sign(joint)
+                if (jointSign) {
+                    jogPicked(arm, drive, jointSign)
+                } else {
+                    arm.releaseJoint()
+                }
+            }
         }
         /** let go of every key (an overlay opened): nothing keeps moving, the agent's command isn't touched */
         const release = () => {
@@ -132,6 +148,7 @@ export function useKeyboard(drive: Drive | null, profile: RobotProfile | null, p
         }
         const reset = () => {
             held.clear()
+            jointSign = 0
             joyKeys.shift = false
             joyKeys.space = false
             joy?.release("keyboard")
@@ -153,5 +170,5 @@ export function useKeyboard(drive: Drive | null, profile: RobotProfile | null, p
             removeEventListener("blur", reset)
             document.removeEventListener("visibilitychange", reset)
         }
-    }, [drive, profile, joy])
+    }, [drive, profile, joy, arm])
 }

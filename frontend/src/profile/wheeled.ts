@@ -1,6 +1,7 @@
-// A wheeled base (Galaxea R1 Pro, Alfred): W/S drive, A/D turn, no strafe (Q/E do nothing).
+// A wheeled base (Galaxea R1 Pro, Alfred): W/S drive, A/D turn, Q/E strafe (a base that can't ignores linear.y); R/F jog the joint picked
+// in the joint control (the R1's torso: how low it stands).
 import type { RobotProfile } from "./types.ts"
-import { turnKeys } from "./keys.ts"
+import { groundKeys } from "./keys.ts"
 
 const wheeled: RobotProfile = {
     type: "wheeled",
@@ -13,9 +14,11 @@ const wheeled: RobotProfile = {
         boost: { linear: 2, angular: 0.5 },
         publishHz: 20,
         deadmanMs: 400,
-        keys: turnKeys,
+        keys: { ...groundKeys, KeyR: { joint: 1 }, KeyF: { joint: -1 } },
     },
     controls: [],
+    // r1pro_coordinator.py remaps the coordinator's joint_command to /r1pro/joint_command
+    joint: { commandTopic: "/r1pro/joint_command" },
     cameras: { preferred: ["/head_left/image", "/head_camera/color", "/color_image"], cameraInfo: {} },
 }
 

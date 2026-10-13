@@ -20,9 +20,10 @@ export interface Twist {
     angular: [number, number, number]
 }
 
-/** What a key does: hold to push an axis, or step / press one of the profile's controls. */
+/** What a key does: hold to push an axis, hold to jog the picked joint (+1 / -1), or step / press one of the profile's controls. */
 export type KeyAction =
     | { axis: Axis; value: number }
+    | { joint: number }
     | { control: string; step?: number }
 
 /** An extra control in the drive panel. It only publishes while drive is armed. */
@@ -103,6 +104,11 @@ export interface RobotProfile {
     controls: Control[]
     /** an arm's jog speeds and keys (the arm panel replaces the drive controls) */
     arm?: ArmProfile
+    /** a joint control next to driving (pick one joint of the joint state, hold to jog it; core/baseJoint.ts) */
+    joint?: {
+        /** the JointState topic its targets go to by default ("" = the running coordinator's joint_command) */
+        commandTopic: string
+    }
     /** how far the camera starts from the robot, m */
     viewDistance?: number
     cameras: {

@@ -103,6 +103,8 @@ export function keyBindings(profile: Pick<RobotProfile, "drive" | "controls"> | 
     for (const [code, action] of Object.entries(profile?.drive.keys ?? {})) {
         const label = "axis" in action
             ? `${AXIS_WORDS[action.axis]?.[action.value > 0 ? 0 : 1] ?? action.axis} (hold)`
+            : "joint" in action
+            ? `Picked joint ${action.joint > 0 ? "▲ +" : "▼ −"} (hold)`
             : `${profile?.controls.find((control) => control.id === action.control)?.label ?? action.control} ${(action.step ?? 1) > 0 ? "+" : "−"}`
         drive.set(label, [...(drive.get(label) ?? []), keyName(code)])
     }

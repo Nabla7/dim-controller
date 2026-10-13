@@ -21,6 +21,10 @@ export interface DriveSettings {
     topics: string[]
     /** before 2026-10-05: one topic ("" = auto); read once into `topics` */
     topic?: string
+    /** the joint control's pick (core/baseJoint.ts; unset = a torso or lift joint, else the first) */
+    joint?: string
+    /** where its targets go ("" = the running coordinator's joint_command); the profile's `joint.commandTopic` by default */
+    jointTopic: string
 }
 
 export interface DriveState {
@@ -85,6 +89,8 @@ export class Drive {
     #commandTimer: ReturnType<typeof setTimeout> | undefined
     #controlPublishers = new Map<string, Publisher>()
     #unsubscribeSettings = () => {}
+    /** called on every stop and halt (the joint jog stops with driving) */
+    #stopListeners = new Set<() => void>()
     /** the running blueprints' modules (null = unknown), from Desktop's /dimos/ API */
     #blueprints: Record<string, Module[] | null> = {}
     /** Twist topics seen on the bridge (someone publishes them; maybe nobody reads them) */
@@ -101,7 +107,7 @@ export class Drive {
         const key = `lv.drive.${profile.type}`
         const legacy = LEGACY_DRIVE_KEYS[profile.type]
         const { speeds } = profile.drive
-        const defaults: DriveSettings = { linear: speeds.linear, angular: speeds.angular, vertical: speeds.vertical, topics: [] }
+        const defaults: DriveSettings = { linear: speeds.linear, angular: speeds.angular, vertical: speeds.vertical, topics: [], jointTopic: profile.joint?.commandTopic ?? "" }
         const earlier = !loadedSetting(key) && legacy ? loadedSetting(legacy) : undefined
         const settings = persistentStore<DriveSettings>(key, { ...defaults, ...(earlier ?? {}) })
         const old = settings.get().topic
@@ -187,6 +193,7 @@ export class Drive {
         this.state.update({ halt: { ...halt, reconnecting: current?.reconnecting ?? false } })
         this.#sources.clear()
         this.#recompute()
+        this.#stopListeners.forEach((listener) => listener())
     }
 
     /** The reconnect is under way (the HUD says so). */
@@ -219,11 +226,18 @@ export class Drive {
     stop() {
         this.#sources.clear()
         this.#recompute()
+        this.#stopListeners.forEach((listener) => listener())
         const command = this.state.get().command
         if (command && !command.dryRun && typeof location !== "undefined") {
             this.state.update({ command: null })
             fetch(new URL("api/drive/stop", location.href), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).catch(() => {})
         }
+    }
+
+    /** `listener` runs on every stop() and halt(); returns the unsubscribe. */
+    onStop(listener: () => void): () => void {
+        this.#stopListeners.add(listener)
+        return () => this.#stopListeners.delete(listener)
     }
 
     #recompute() {

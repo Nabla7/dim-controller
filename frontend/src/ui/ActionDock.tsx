@@ -9,6 +9,7 @@ import { useStore } from "../core/store.ts"
 import { dockActions, dockActionsFor } from "./dockActions.ts"
 import { ArmHud } from "./ArmHud.tsx"
 import { DriveKeys } from "./DriveHud.tsx"
+import { JointDock } from "./JointControl.tsx"
 import { Icon } from "./icons.tsx"
 import { openOverlay } from "./overlay.ts"
 import type { WorkspaceApi } from "./Workspace.tsx"
@@ -31,7 +32,7 @@ export function ActionDock({ app, api, onboarding }: { app: ViewerApp; api: Work
                     ? <NothingToDrive onboarding={onboarding} />
                     : arm
                     ? <ArmHud app={app} mobile={false} />
-                    : <DriveKeys app={app} />}
+                    : <><DriveKeys app={app} />{app.profile.joint && <JointDock app={app} />}</>}
                 <RecordControl app={app} />
             </div>
             <div className="dock-group dock-actions" role="toolbar" aria-label="Actions">

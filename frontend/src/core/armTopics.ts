@@ -51,10 +51,11 @@ export const STANDARD_ARM: ArmTopics = {
 const isType = (stream: Stream, short: string) => new RegExp(`(^|\\.)${short}(\\.${short})?$`).test(stream.type ?? "")
 const topicOf = (stream: Stream) => "/" + stream.name.replace(/^\/+/, "")
 
-/** Joint-state outputs in preference order: the coordinator's (every joint) first, then per-robot `<hw>_joints`. */
-const stateRank = (name: string) => (name === "coordinator_joint_state" ? 0 : /joint_states?$/.test(name) ? 1 : /_joints$/.test(name) ? 2 : 3)
+/** Joint-state outputs in preference order: the coordinator's (every joint; the R1 remaps it to coordinator/joint_state) first, then per-robot `<hw>_joints`. */
+const stateRank = (name: string) => (/^coordinator[_/]joint_state$/.test(name) ? 0 : /joint_states?$/.test(name) ? 1 : /_joints$/.test(name) ? 2 : 3)
 
-/** The arm topics of the running blueprints; `bridge` (JointState topic names on the bridge) fills in a missing state. */
+/** The arm topics of the running blueprints; `bridge` (JointState topic names on the bridge) fills in a missing state, or
+ * replaces one the bridge doesn't have (a blueprint's transport can rename a port: metadata only has port names). */
 export function armTopics(blueprints: Record<string, Module[] | null>, bridge: string[] = []): ArmTopics {
     const streams = Object.values(blueprints).flatMap((modules) => (modules ?? []).flatMap((module) => module.streams ?? []))
     const known = Object.values(blueprints).some((modules) => modules !== null)
@@ -71,7 +72,7 @@ export function armTopics(blueprints: Record<string, Module[] | null>, bridge: s
     const cartesian = input(/^cartesian_command$/, "PoseStamped")
     const grippers = [...new Set(inputs.filter((stream) => /^(left_|right_)?gripper_command$/.test(stream.name) && isType(stream, "Float32")).map(topicOf))]
     return {
-        jointState: states[0] ? topicOf(states[0]) : bridgeState,
+        jointState: states[0] && (!bridgeState || bridge.includes(topicOf(states[0]))) ? topicOf(states[0]) : bridgeState,
         jointCommand: jointCommand ? topicOf(jointCommand) : null,
         eeTwist: eeTwist ? topicOf(eeTwist) : null,
         grippers,

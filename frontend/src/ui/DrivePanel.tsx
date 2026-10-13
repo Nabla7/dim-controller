@@ -1,8 +1,9 @@
-// Drive settings: which Twist topics (auto or a list), speeds, and the profile's extra controls.
+// Drive settings: which Twist topics (auto or a list), speeds, a profile's joint control, and its extra controls.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { Button, Checkbox, Field, Heading, Kbd, Slider, TextArea } from "dimos-react"
 import { useEffect, useState } from "react"
+import { JointSection } from "./JointControl.tsx"
 
 export function DrivePanel({ app }: { app: ViewerApp }) {
     const drive = app.drive
@@ -36,6 +37,7 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
             <p className="hint">
                 Shift: ×{app.profile.drive.boost.linear} linear, ×{app.profile.drive.boost.angular} turning · Space: stop · <Kbd>?</Kbd> lists every key
             </p>
+            {app.profile.joint && <JointSection app={app} />}
             {app.profile.controls.length > 0 && (
                 <section className="controls">
                     <Heading level={3}>{app.profile.name}</Heading>
