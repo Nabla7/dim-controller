@@ -106,34 +106,6 @@ export function RecordControl({ app }: { app: ViewerApp }) {
     )
 }
 
-/** The phone HUD's Record toggle (by FAST): the same recording as the corner's Record (toggleRecording), red outline; filled with a blinking dot and the time while recording. */
-export function HudRecordButton({ app }: { app: ViewerApp }) {
-    const status = useStore(recorder.status)
-    const pending = useStore(recorder.pending)
-    const { topics } = useStore(app.connection.status)
-    const chosen = useStore(recordedTopics)
-    const [error, setError] = useState<string | null>(null)
-    const selected = topics.filter((topic) => isRecorded(topic.key, chosen)).length
-    const state = recordToggleState({ active: status.recording.active, pending: pending.action, unavailable: status.unavailable, recordNew: status.options.recordNew, selected, seconds: status.recording.seconds })
-    return (
-        <Button
-            className={`hud-record-button ${state.recording ? "recording" : ""} ${error ? "failed" : ""}`}
-            data-testid="hud-record-button"
-            pressed={state.recording}
-            disabled={state.disabled}
-            title={status.unavailable ?? error ?? (state.recording ? "Stop recording" : "Record")}
-            aria-label={state.recording ? `Stop recording (${state.text})` : "Record"}
-            onClick={() => {
-                setError(null)
-                toggleRecording(app).catch((problem) => setError(String(problem.message ?? problem)))
-            }}
-        >
-            <span className="record-dot" />
-            <span className="hud-record-text">{state.text}</span>
-        </Button>
-    )
-}
-
 function RecordOptions({ app, error, onClose }: { app: ViewerApp; error: string | null; onClose: () => void }) {
     const status = useStore(recorder.status)
     const streams = useStore(recorder.streams)
