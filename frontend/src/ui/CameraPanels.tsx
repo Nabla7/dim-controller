@@ -1,6 +1,6 @@
 // Camera panels (ui/workspace.ts ids camera:<n>): one from the start (the profile's preferred camera once one is on
 // the bus; until then it says there's none), more from the palette. Each is a workspace panel like any other (the
-// main view by default). Its tools: a tab per image topic, a 2D detection overlay, the depth colormap and range; a gear
+// main view by default). Its tools: a tab per image topic (a phone's main view: the top bar's view switch instead), a 2D detection overlay, the depth colormap and range; a gear
 // over the picture picks latency vs quality. Depth is drawn as a colormap. Collapsed (or off screen: a shut drawer, a
 // rail hidden by focus, a hidden browser tab) it holds no stream and no overlay subscription. As the main view it offers the dock fit / fill, the next camera and quality.
 import { useEffect, useRef, useState } from "react"
@@ -150,7 +150,10 @@ function CameraPanel({ app, panel, topics, onChange }: {
     }
     const [size, setSize] = useState({ width: 0, height: 0, fps: 0 })
     const depth = topic ? isDepthTopic(topic) : false
-    const slot = useWorkspaceApi().layout.slots[cameraId(panel.id)]
+    const api = useWorkspaceApi()
+    const slot = api.layout.slots[cameraId(panel.id)]
+    // a phone's main view picks its camera from the top bar's view switch (ui/PhoneCorners.tsx)
+    const switched = api.mobile && slot?.zone === "stage"
     const { hidden: pageHidden } = useStore(pageVisibility)
     const open = panelStreams(slot, pageHidden)
 
@@ -281,7 +284,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
             bodyClassName={fill ? "camera-body fill" : "camera-body"}
             tools={
                 <div className="camera-tools" ref={tools}>
-                    <div className="camera-tabs" role="tablist" aria-label="Cameras" onWheel={(event) => (event.currentTarget.scrollLeft += event.deltaY)}>
+                    {!switched && <div className="camera-tabs" role="tablist" aria-label="Cameras" onWheel={(event) => (event.currentTarget.scrollLeft += event.deltaY)}>
                         {!topic && panel.key && (
                             <span className="camera-tab gone" title={parseKey(panel.key)?.name ?? panel.key}>{(everSeen.current ? "(gone) " : "") + (parseKey(panel.key)?.name ?? panel.key)}</span>
                         )}
@@ -299,7 +302,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
                             </button>
                         ))}
                         {!tabs.length && !panel.key && <span className="camera-tab gone">no camera on the bus yet</span>}
-                    </div>
+                    </div>}
                     {overlays.length > 0 && (
                         <Select value={panel.overlay} options={[["", "no overlay"], ...overlays.map((other) => [other.key, other.name] as [string, string])]} onChange={(overlay) => onChange({ overlay })} aria-label="Overlay" />
                     )}
@@ -319,7 +322,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
             {depth && depthError && <Unavailable what="Depth view" reason={depthError} />}
             {depth ? <div ref={depthHost} className="camera-media depth-host" /> : <video ref={video} className="camera-media" muted playsInline autoPlay disablePictureInPicture disableRemotePlayback />}
             <canvas ref={overlayCanvas} className="camera-overlay" />
-            {!topic && <div className="camera-placeholder"><Icon name="camera" size={28} /><span>{tabs.length ? "Pick a camera from this panel's topic tabs (shown on hover) or the palette (/)" : "No camera on the bus yet"}</span></div>}
+            {!topic && <div className="camera-placeholder"><Icon name="camera" size={28} /><span>{!tabs.length ? "No camera on the bus yet" : switched ? "Pick a camera from the view switch (top bar)" : "Pick a camera from this panel's topic tabs (shown on hover) or the palette (/)"}</span></div>}
             {topic && !depth && (
                 <div className={`camera-quality panel-chrome ${qualityOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
                     <Button ref={gear} className="dr-btn--icon quality-gear" title={`Latency ↔ quality: ${presetFor(quality).label}`} aria-label="Latency or quality" aria-haspopup="menu" aria-expanded={qualityOpen} onClick={() => setQualityOpen(!qualityOpen)}>

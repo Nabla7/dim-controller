@@ -184,6 +184,10 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 @keyframes drawer-left { from { transform: translateX(-24px); opacity: 0; } }
 @keyframes drawer-right { from { transform: translateX(24px); opacity: 0; } }
 .mobile .lv-panel:not(.zone-stage) { z-index: 21; }
+/* the workspace makes no layer of its own on a phone: the thumb sticks (z 7) lie over the main view and the drawer's
+   backdrop but under the drawer, which reaches over them on a phone on its side */
+.app.mobile .workspace { z-index: auto; }
+.mobile .ws-scrim { z-index: 6; }
 
 /* ── action dock (ui/ActionDock.tsx): drive keys and readout, actions, STOP ── */
 .action-dock { position: absolute; left: 0; right: 0; bottom: var(--dim-inset-bottom); z-index: 30; display: flex; align-items: center; gap: 12px; height: var(--lv-bar-h); box-sizing: border-box;
@@ -468,7 +472,8 @@ h3.dr-h3.first { margin-top: 4px; }
 .app .drive-hud.mobile .hud-record-button.recording { color: #fff; background: var(--record); border-color: var(--record); box-shadow: 0 0 12px color-mix(in srgb, var(--record) 60%, transparent); }
 .app .drive-hud.mobile .hud-record-button.recording .record-dot { background: #fff; border-radius: 50% !important; animation: blink 1s infinite; }
 .app .drive-hud.mobile .hud-record-button.failed { border-style: dashed; }
-/* landscape phone: the sticks sit in the lower corners, the center column stays narrow */
+/* landscape phone (useMobile.ts PHONE_LANDSCAPE): the main view fills the screen and the sticks lie over its lower
+   corners, the center column stays narrow */
 @media (orientation: landscape) and (max-height: 520px) {
     .drive-hud.mobile { height: min(62vh, 260px); --stick: clamp(104px, 38vh, 150px); grid-template-columns: 1fr min(30vw, 260px) 1fr; }
     .dr-thumbstick-base { top: 58%; }
@@ -476,7 +481,7 @@ h3.dr-h3.first { margin-top: 4px; }
     .app .drive-hud.mobile .stop-button { height: 44px; width: min(100%, 150px); }
     .app .drive-hud.mobile .boost-button { height: 32px; width: min(100%, 150px); }
     .app .drive-hud.mobile .hud-record-button { height: 32px; width: min(100%, 150px); }
-    .drive-hud.mobile .hud-note { position: static; transform: none; order: 3; max-width: 100%; }
+    .drive-hud.mobile .hud-note { position: static; transform: none; order: 3; max-width: 100%; color: var(--fg); text-shadow: 0 1px 3px var(--bg); }
 }
 .drive-hud.mobile { position: absolute; z-index: 7; }
 html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll-behavior: none; }
@@ -563,6 +568,14 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .corner-chips .bar-value { max-width: 110px; }
 /* a phone's main camera: the picture at the top, the space below it for the thumbs */
 .mobile .zone-stage .camera-media, .mobile .zone-stage .camera-overlay { object-position: top; }
+/* on its side, centred between the sticks over it */
+@media (orientation: landscape) and (max-height: 520px) { .mobile .zone-stage .camera-media, .mobile .zone-stage .camera-overlay { object-position: center; } }
+/* a phone's main view has no header (ui/Panel.tsx): its tools row sits at its top */
+.lv-panel.headless > .panel-tools { top: 0; }
+.headless > .panel-tools > .panel-info { flex: 1 1 auto; }
+/* the view switch (ui/PhoneCorners.tsx): what the main view shows */
+.view-switch.dr-btn--icon { width: auto; gap: 2px; padding: 0 6px 0 9px; }
+.view-menu .quality-about { font-family: var(--mono); overflow-wrap: anywhere; }
 
 /* ── Steam Deck banner (ui/SteamDeckBanner.tsx): over the top of the main view ── */
 .steam-banner { position: absolute; top: calc(env(safe-area-inset-top) + 8px); left: 50%; transform: translateX(-50%); z-index: 35;

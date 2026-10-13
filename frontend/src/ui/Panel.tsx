@@ -4,7 +4,8 @@
 // buttons, .panel-chrome: shown while the panel is hovered, on touch for a few seconds after a tap), and its body. The workspace (ui/Workspace.tsx)
 // gives it its box; dragging the header moves it (rails, main view, floating; ui/workspace.ts snaps it), a double-click
 // on the header collapses it (on the main view: focus), and a floating panel resizes from its corner. Hidden (a shut
-// drawer, a rail hidden by focus) it stays mounted, so its element is never rebuilt.
+// drawer, a rail hidden by focus) it stays mounted, so its element is never rebuilt. A phone's main view has no header
+// (the top bar's view switch picks it): its live note sits in the tools row.
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { Button } from "dimos-react"
 import { Icon } from "./icons.tsx"
@@ -55,9 +56,10 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
     }
     const onStage = slot.zone === "stage"
     const floating = slot.zone === "float"
+    const headless = api.mobile && onStage
     const states = panelActions(api.arrangement, id, { mobile: api.mobile })
     const fromControl = (target: EventTarget) => !!(target as HTMLElement).closest("button, select, input, label, textarea, [role=tab]")
-    const classes = ["lv-panel", `zone-${slot.zone}`, slot.collapsed ? "collapsed" : "", slot.hidden ? "hidden" : "", touched ? "touched" : "", className]
+    const classes = ["lv-panel", `zone-${slot.zone}`, slot.collapsed ? "collapsed" : "", slot.hidden ? "hidden" : "", touched ? "touched" : "", headless ? "headless" : "", className]
     return (
         <section
             ref={element}
@@ -69,7 +71,7 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
             aria-label={title}
             onPointerDownCapture={onTouch}
         >
-            <header
+            {!headless && <header
                 className="panel-head"
                 onPointerDown={(event) => !fromControl(event.target) && element.current && api.startDrag(id, event, element.current)}
                 onDoubleClick={(event) => !fromControl(event.target) && (onStage ? api.toggleFocus() : api.act(id, "collapse"))}
@@ -91,8 +93,10 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
                         </Button>
                     ))}
                 </span>
-            </header>
-            {tools && !slot.collapsed && <div className="panel-tools panel-chrome">{tools}</div>}
+            </header>}
+            {(tools || headless && info) && !slot.collapsed && (
+                <div className="panel-tools panel-chrome">{tools}{headless && info !== undefined && <span className="panel-info">{info}</span>}</div>
+            )}
             <div className={`panel-content ${bodyClassName}`} onClick={onBodyClick}>{children}</div>
             {floating && !slot.collapsed && !api.mobile && (
                 <div

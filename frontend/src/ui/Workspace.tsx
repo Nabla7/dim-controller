@@ -5,6 +5,7 @@
 import { createContext, type PointerEvent as ReactPointerEvent, type ReactNode, useContext, useEffect, useMemo, useState } from "react"
 import { Store, useStore } from "../core/store.ts"
 import { type PanelAction } from "./commands.ts"
+import { PHONE_LANDSCAPE } from "./useMobile.ts"
 import { startHeaderDrag, startPointerDrag } from "./panelDrag.ts"
 import {
     arrange,
@@ -178,8 +179,10 @@ function useFrame(mobile: boolean): Frame {
         return Number.isFinite(value) ? value : fallback
     }
     const height = innerHeight
-    // desktop: above the action dock; a phone: above the thumb sticks, so the main view is never under a thumb
-    const dock = document.querySelector(mobile ? ".drive-hud.mobile" : ".action-dock")?.getBoundingClientRect().top
+    // desktop: above the action dock; a phone: above the thumb sticks, so the main view is never under a thumb, except
+    // on its side, where the sticks lie over a full-screen main view (a game pad's look)
+    const underSticks = mobile && matchMedia(PHONE_LANDSCAPE).matches
+    const dock = underSticks ? undefined : document.querySelector(mobile ? ".drive-hud.mobile" : ".action-dock")?.getBoundingClientRect().top
     return {
         width: innerWidth,
         height,

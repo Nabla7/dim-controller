@@ -2,6 +2,8 @@
 import { useEffect, useState } from "react"
 
 const QUERY = "(max-width: 720px), (pointer: coarse) and (max-width: 1024px)"
+/** a phone on its side: the main view fills the screen under the thumb sticks (styles.css repeats this query) */
+export const PHONE_LANDSCAPE = "(orientation: landscape) and (max-height: 520px)"
 
 export function useMobile(): boolean {
     const [mobile, setMobile] = useState(() => matchMedia(QUERY).matches)

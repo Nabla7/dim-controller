@@ -88,8 +88,9 @@ layout" restores it.
 Keys: WASD / arrows drive while held (Q/E strafe), release stops, Shift boosts, **Space stops, always**, `/` opens the
 palette (every action: panels, layout, cameras, view, recording, controller format, the profile's buttons), `?` lists every
 key, Escape closes, `[` `]` `\` hide and show the rails. Keys never drive while you type in a field or with an overlay
-open, and leaving the window lets go of everything. On a phone the rails are drawers (buttons over the main view's top corners, with Record, the palette and the chips) and driving
-is two thumb sticks with STOP between them.
+open, and leaving the window lets go of everything. On a phone the rails are drawers (buttons over the main view's top corners, with Record, the palette, the chips and a
+view switch that picks the main view: any camera, the 3D view or the map) and driving is two thumb sticks with STOP between them;
+on its side the main view fills the screen and the sticks lie over it.
 
 **Gamepad** (Xbox, PlayStation, Steam Deck; the Gamepad API's standard mapping, other pads read with the common
 layout): the left stick drives forward / back (and strafes, for formats that strafe), the right stick turns (and goes
