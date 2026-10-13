@@ -493,7 +493,9 @@ h3.dr-h3.first { margin-top: 4px; }
    corners, the center column stays narrow */
 @media (orientation: landscape) and (max-height: 520px) {
     .drive-hud.mobile { height: min(62vh, 260px); --stick: clamp(104px, 38vh, 150px); grid-template-columns: 1fr min(30vw, 260px) 1fr; }
-    .dr-thumbstick-base { top: 58%; }
+    /* the touch zone hugs the stick, so a drag in the main view above it orbits instead of driving */
+    .drive-hud.mobile > .stick-zone { align-self: end; height: calc(var(--stick) + 16px); margin-bottom: 25px; }
+    .dr-thumbstick-base { top: 50%; }
     .hud-center { padding-bottom: 8px; gap: 6px; }
     .app .drive-hud.mobile .stop-button { height: 44px; width: min(100%, 150px); }
     .app .drive-hud.mobile .boost-button { height: 32px; width: min(100%, 150px); }
