@@ -201,7 +201,7 @@ Settings → Drive's **Topics** is **auto** by default, or a list you type (one 
 `/my_cmd_vel TwistStamped`; saved like the other settings). Auto ([core/cmdvel.ts](frontend/src/core/cmdvel.ts)):
 
 - A **velocity input** is a module input whose name contains `cmd_vel` (`cmd_vel`, `tele_cmd_vel`, `cmd_vel_in`, …) and
-  whose type is Twist or TwistStamped. The running blueprints' modules come from Desktop's `/dimos/blueprints/<name>`.
+  whose type is Twist or TwistStamped. The running blueprints' modules come from Desktop's `/dimos-gateway/blueprints/<name>`.
 - Every module with velocity inputs gets **one** topic, its entry point, so two topics never feed the same module:
   - an input that a velocity-consuming module of the same blueprint outputs is internal and skipped (a teleop mux such
     as MovementManager outputs `cmd_vel` to the robot; publishing there too would bypass it);
@@ -251,7 +251,7 @@ are saved in the backend (`lv.record.options`, `lv.record.topics`; `PUT api/reco
 written as ROS 2 CDR so Foxglove opens the file; anything else is kept as raw LCM bytes with its type name.
 
 The running dimos's own logs go into the same file. When recording starts the backend asks Desktop where they are
-(`GET /dimos/runs`: each run's `log_dir`; on newer Desktops `GET /dimos/paths` as a fallback) and the backend tails
+(`GET /dimos-gateway/runs`: each run's `log_dir`; on newer Desktops `GET /dimos-gateway/paths` as a fallback) and the backend tails
 every `*.jsonl` there, new lines only (plus new files, runs that start mid-recording, truncation). Each line becomes a
 `foxglove.Log` (JSON) on `/dimos/logs/<file stem>` (e.g. `/dimos/logs/main`), stamped with the line's own time, so
 Foxglove's Log panel shows it; the original record is kept whole in its `fields` key (and the file in `source`).
