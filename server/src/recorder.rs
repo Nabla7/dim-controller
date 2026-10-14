@@ -147,6 +147,9 @@ struct Meter {
     started: Instant,
 }
 
+/// The loopback interface dimos's sessions scout on (dimos/protocol/service/zenohservice.py's LOOPBACK_INTERFACE).
+const LOOPBACK_INTERFACE: &str = if cfg!(target_os = "macos") { "lo0" } else { "lo" };
+
 /// A meter nobody asked for in this long stops listening.
 const METER_IDLE: Duration = Duration::from_secs(15);
 
@@ -242,19 +245,27 @@ impl State {
             return Ok(open.clone());
         }
         let mut config = zenoh::Config::default();
-        if !self.zenoh_connect.is_empty() {
+        let settings: Vec<(&str, String)> = if !self.zenoh_connect.is_empty() {
             // an explicit endpoint is the whole story: no multicast scouting of the LAN
-            for (key, value) in [
-                (
-                    "connect/endpoints",
-                    serde_json::to_string(&[&self.zenoh_connect])?,
-                ),
+            vec![
+                ("connect/endpoints", serde_json::to_string(&[&self.zenoh_connect])?),
                 ("scouting/multicast/enabled", "false".into()),
-            ] {
-                config
-                    .insert_json5(key, &value)
-                    .map_err(|error| anyhow::anyhow!("zenoh config {key}: {error}"))?;
-            }
+            ]
+        } else {
+            // the local dimos, the way its own sessions find each other: scouting and links on loopback only. zenoh's
+            // default scouts every interface and meshes with any peer on the LAN or tailnet, whose queryables and
+            // link resets then take this session's RPC queries (dimos/rpc/...) with them
+            // (a local peer that meshes wider would otherwise gossip its remote peers here to be dialed)
+            vec![
+                ("listen/endpoints", r#"["tcp/127.0.0.1:0"]"#.into()),
+                ("scouting/multicast/interface", serde_json::to_string(LOOPBACK_INTERFACE)?),
+                ("scouting/gossip/autoconnect", r#"{ router: [], peer: [] }"#.into()),
+            ]
+        };
+        for (key, value) in settings {
+            config
+                .insert_json5(key, &value)
+                .map_err(|error| anyhow::anyhow!("zenoh config {key}: {error}"))?;
         }
         let open = zenoh::open(config)
             .await
