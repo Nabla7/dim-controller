@@ -27,18 +27,19 @@ export function linkProblem(connection: Pick<ConnectionState, "state" | "rttMs" 
     return null
 }
 
-/** A rate, short: "940 B/s", "240 KB/s", "3.1 MB/s". */
+/** A rate in megabits, like a speed test: "0.01 Mbps", "1.9 Mbps", "25 Mbps". */
 export function rateText(bytesPerSecond: number): string {
-    return bytesPerSecond < 1000 ? `${Math.round(bytesPerSecond)} B/s` : bytesPerSecond < 1e6 ? `${Math.round(bytesPerSecond / 1000)} KB/s` : `${(bytesPerSecond / 1e6).toFixed(1)} MB/s`
+    const megabits = (bytesPerSecond * 8) / 1e6
+    return `${megabits < 1 ? megabits.toFixed(2) : megabits < 10 ? megabits.toFixed(1) : Math.round(megabits)} Mbps`
 }
 
-/** The link chip, always shown: live throughput and latency ("240 KB/s · 89 ms"), coloured by linkProblem; lost or connecting says so instead. */
+/** The link chip, always shown: live throughput and latency ("1.9 Mbps · 89 ms"), coloured by linkProblem; lost or connecting says so instead. */
 export function linkChip(connection: Pick<ConnectionState, "state" | "rttMs" | "droppedPerSecond" | "error" | "throughputBytesPerSec">, latencyMs: number | null): { text: string; tone: Tone; detail: string } {
     const problem = linkProblem(connection)
     if (connection.state === "lost" || connection.state === "connecting") {
         return problem!
     }
-    const rate = connection.throughputBytesPerSec === null ? "— B/s" : rateText(connection.throughputBytesPerSec)
+    const rate = connection.throughputBytesPerSec === null ? "— Mbps" : rateText(connection.throughputBytesPerSec)
     const latency = latencyMs === null ? "— ms" : `${Math.round(latencyMs)} ms`
     return { text: `${rate} · ${latency}`, tone: problem?.tone ?? "ok", detail: `${problem?.detail ?? "Link healthy"}. Throughput reaching this page and the control link's round trip` }
 }
