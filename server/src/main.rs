@@ -119,6 +119,8 @@ async fn revalidate_html(mut response: axum::response::Response) -> axum::respon
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // zenoh's own log: errors by default, RUST_LOG=zenoh=debug to see its links come and go
+    zenoh::init_log_from_env_or("error");
     let args = Args::parse();
     if args.agent_json {
         println!(
