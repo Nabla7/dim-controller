@@ -135,8 +135,8 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 .zone-stage > .panel-head .panel-title svg { color: var(--primary); }
 .panel-info { flex: 1 1 auto; min-width: 0; text-align: right; font: 10.5px var(--mono); color: var(--muted-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* the header's buttons: while the panel is hovered (or a button in it has focus); always on a touch screen */
-.panel-actions { display: inline-flex; gap: 2px; margin-left: auto; flex: none; opacity: 0; transition: opacity 0.12s; }
-.lv-panel:hover > .panel-head .panel-actions, .panel-actions:focus-within, .mobile .panel-actions { opacity: 1; }
+/* the header's buttons always show (the in-panel ones, .panel-chrome and the tools, show on hover) */
+.panel-actions { display: inline-flex; gap: 2px; margin-left: auto; flex: none; }
 @media (hover: none) { .panel-actions { opacity: 1; } }
 .panel-info + .panel-actions { margin-left: 0; }
 .panel-action.dr-btn--icon.icon-button { width: 26px; height: 26px; border-color: transparent; background: transparent; color: var(--muted-fg); }
