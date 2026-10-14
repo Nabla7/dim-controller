@@ -6,6 +6,7 @@ import { profiles } from "../profile/index.ts"
 import { RobotIcon } from "./RobotIcon.tsx"
 import { armShading } from "./armShading.ts"
 import { ArmPanel } from "./ArmPanel.tsx"
+import { ManipPanel } from "./ManipPanel.tsx"
 import { Field, Heading, NumberInput, Segmented, Select, Slider, Toggle } from "dimos-react"
 import { gamepadSettings } from "../core/gamepad.ts"
 import { JOY_HZ, JOY_TOPIC, JOY_TYPE, joySettings } from "../core/joy.ts"
@@ -47,10 +48,16 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
             </div>
             {robot.type === "arm"
                 ? (
-                    <section className="settings-section" data-section="arm">
-                        <Heading level={3}>Arm</Heading>
-                        <ArmPanel app={app} />
-                    </section>
+                    <>
+                        <section className="settings-section" data-section="manipulation">
+                            <Heading level={3}>Plan and move</Heading>
+                            <ManipPanel app={app} />
+                        </section>
+                        <section className="settings-section" data-section="arm">
+                            <Heading level={3}>Arm</Heading>
+                            <ArmPanel app={app} />
+                        </section>
+                    </>
                 )
                 : (
                     <section className="settings-section" data-section="drive">

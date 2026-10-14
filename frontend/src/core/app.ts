@@ -14,6 +14,8 @@ import { VideoSources } from "./video.ts"
 import { Drive } from "./drive.ts"
 import { JoyPublisher } from "./joy.ts"
 import { ArmControl } from "./arm.ts"
+import { ArmManipView } from "./armManipView.ts"
+import { Manipulation } from "./manipulation.ts"
 import { AgentLink } from "./agent.ts"
 import { LocationLabels } from "./labels.ts"
 import { robotPose } from "./robot.ts"
@@ -63,6 +65,9 @@ export class ViewerApp {
     readonly joy: JoyPublisher
     /** the arm panel's commands (used when the robot type is arm; core/arm.ts) */
     readonly arm: ArmControl
+    /** viser's planning workflow in the arm mode (core/manipulation.ts) and its 3D arm, ghost and gizmo */
+    readonly manipulation = new Manipulation()
+    readonly manipView: ArmManipView
     /** live annotations and the agent's captures (server/src/annotations.rs) */
     readonly agent: AgentLink
     /** right-click location labels (server/src/labels.rs) */
@@ -99,6 +104,7 @@ export class ViewerApp {
         this.drive = new Drive(this.connection, this.profile)
         this.joy = new JoyPublisher(this.connection)
         this.arm = new ArmControl(this.connection, this.drive, profileFor("arm").arm!)
+        this.manipView = new ArmManipView(this.viewer, this.tf, this.connection, this.arm, this.manipulation, () => this.robot.get().type === "arm")
         feedTf(this.connection, this.tf, this.viewer)
         feedBattery(this.connection, () => this.profile.name)
         this.connection.status.subscribe(() => this.#updateDriveCandidates())

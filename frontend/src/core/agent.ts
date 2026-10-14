@@ -93,6 +93,8 @@ export class AgentLink {
                 applyRemoteSetting(event.key, event.value)
             } else if (event.type === "drive") {
                 this.app.drive.applyEvent(event as unknown as DriveEvent)
+            } else if (event.type === "manipulation") {
+                this.app.manipulation.applyEvent(event as unknown as Record<string, unknown>)
             } else if (event.type === "camera" && event.action) {
                 this.app.applyCamera({ action: event.action, target: event.target, distance: event.distance })
             } else if (event.type === "capture" && event.request && event.page === pageId) {
