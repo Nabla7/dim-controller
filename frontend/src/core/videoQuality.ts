@@ -37,10 +37,10 @@ export const QUALITY_PRESETS: QualityPreset[] = [
     {
         id: "quality",
         label: "High quality",
-        about: "full size, never shrunk, up to 6 Mbit/s (at least 30% of it); drops frames before detail when the link is squeezed, and the browser buffers 100-400 ms to play frames out evenly",
+        about: "full size, never shrunk, up to 20 Mbit/s (1080p30 at the gateway's 0.3 bits per pixel is ~18; at least 30% of it); drops frames before detail when the link is squeezed, and the browser buffers 100-400 ms to play frames out evenly",
         // the buffer is here, not in Low latency or Balanced (what driving uses): it trades a fraction of a second for even
         // motion, which is worth it when watching but not when steering; big full-size frames arrive the most unevenly
-        options: { minResolutionScale: 1, maxBitrate: 6_000_000, minQuality: 0.3, qualityToHzTradeoff: 0, playoutDelay: [100, 400] },
+        options: { minResolutionScale: 1, maxBitrate: 20_000_000, minQuality: 0.3, qualityToHzTradeoff: 0, playoutDelay: [100, 400] },
     },
 ]
 

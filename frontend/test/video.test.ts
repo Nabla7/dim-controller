@@ -73,7 +73,7 @@ Deno.test("a color camera subscribes with the viewer's preset; changing it updat
     // the next viewer session starts on the saved preset
     const again = new VideoSources(connection)
     again.acquire(camera)
-    assertEquals(subscriptions.at(-1)!.options.maxBitrate, 6_000_000)
+    assertEquals(subscriptions.at(-1)!.options.maxBitrate, 20_000_000)
     assertEquals(subscriptions.every((entry) => entry.options.maxHz === undefined), true)
 })
 
