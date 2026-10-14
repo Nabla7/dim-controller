@@ -3,7 +3,8 @@
 // topics and why). The same safety as driving: nothing is sent unless drive is ARMED (one switch: the backend's), and
 // letting go stops:
 // - a held joint jog sends a target that runs at most LEAD_S ahead of where the joint is, so if this page goes quiet the
-//   joint stops within that; a release sends "stay where you are" (target = measured position);
+//   joint stops within that, but never steps back against the jog (a late joint state doesn't pull it back); a release
+//   holds the last target it sent (a late measured position would undo the move);
 // - a held end-effector jog sends a TwistStamped at 20 Hz with the bridge's deadman set to a zero twist (zero = hold);
 //   a release sends zeros for a moment, then nothing;
 // - disarming does both stops once, then nothing more is sent;
@@ -93,6 +94,8 @@ export class ArmControl {
     #eeSources = new Map<string, Partial<Record<EeAxis, number>>>()
     /** the moving jog target of the held joint */
     #jogTarget: number | null = null
+    /** the last jog target sent per joint: a release holds it and the next jog starts from it */
+    #jogged = new Map<string, number>()
     #timer: ReturnType<typeof setInterval>
     #stateKey: string | null = null
     #unsubscribeState: (() => void) | null = null
@@ -202,7 +205,7 @@ export class ArmControl {
             this.state.update({ error: `no position for ${name} yet` })
             return
         }
-        this.#jogTarget = position
+        this.#jogTarget = this.#jogged.get(name) ?? position
         this.state.update({ jogging: { joint: name, sign: Math.sign(sign) }, error: null })
         this.#tick()
     }
@@ -215,7 +218,7 @@ export class ArmControl {
         this.#jogTarget = null
         this.state.update({ jogging: null })
         if (this.armed) {
-            this.#holdJoints([jogging.joint])
+            this.#holdJogged(jogging.joint)
         }
     }
 
@@ -226,6 +229,7 @@ export class ArmControl {
         }
         const joint = this.state.get().joints.find((each) => each.name === name)
         const clamped = joint ? Math.max(joint.min, Math.min(joint.max, value)) : value
+        this.#jogged.delete(name)
         this.#sendJoints({ [name]: clamped })
     }
 
@@ -240,6 +244,7 @@ export class ArmControl {
             return
         }
         const targets = Object.fromEntries(arm.map((joint) => [joint.name, pose === "zero" ? 0 : this.#startPose?.[joint.name] ?? joint.position]))
+        this.#jogged.clear()
         this.#sendJoints(targets)
     }
 
@@ -284,7 +289,7 @@ export class ArmControl {
         this.#jogTarget = null
         this.state.update({ jogging: null })
         if (this.armed && jogging) {
-            this.#holdJoints([jogging.joint])
+            this.#holdJogged(jogging.joint)
         }
     }
 
@@ -318,7 +323,7 @@ export class ArmControl {
                 this.#put(zenohKey(topics.eeTwist, TWIST_STAMPED), TWIST_STAMPED, eeTwist(zeroEe(), 0, 0), Priority.REAL_TIME)
             }
             if (jogging && this.jointCommandTopic()) {
-                this.#holdJoints([jogging.joint], true)
+                this.#holdJogged(jogging.joint, true)
             }
         }
         for (const publisher of this.#publishers.values()) {
@@ -328,6 +333,16 @@ export class ArmControl {
         this.#publishers.clear()
         this.#eeDeadman = false
         this.#eeFlush = 0
+    }
+
+    /** A jogged joint stops at the last target sent (where it was heading), else where it is. */
+    #holdJogged(name: string, force = false) {
+        const target = this.#jogged.get(name)
+        if (target === undefined) {
+            this.#holdJoints([name], force)
+        } else {
+            this.#sendJoints({ [name]: target }, force)
+        }
     }
 
     /** Targets = where the joints are now: they stop. */
@@ -402,9 +417,14 @@ export class ArmControl {
             if (measured !== null) {
                 const speed = this.settings.get().jointSpeed
                 const lead = speed * LEAD_S
-                const next = this.#jogTarget + state.jogging.sign * (speed / TICK_HZ)
+                const step = speed / TICK_HZ
                 const joint = state.joints.find((each) => each.name === state.jogging!.joint)!
-                this.#jogTarget = Math.max(joint.min, Math.min(joint.max, Math.max(measured - lead, Math.min(measured + lead, next))))
+                // one step the jog's way, held back to LEAD_S past the measured joint, but never moved against the jog
+                const forward = state.jogging.sign > 0
+                    ? Math.max(this.#jogTarget, Math.min(this.#jogTarget + step, measured + lead))
+                    : Math.min(this.#jogTarget, Math.max(this.#jogTarget - step, measured - lead))
+                this.#jogTarget = Math.max(joint.min, Math.min(joint.max, forward))
+                this.#jogged.set(state.jogging.joint, this.#jogTarget)
                 this.#sendJoints({ [state.jogging.joint]: this.#jogTarget })
             }
         }

@@ -89,23 +89,34 @@ Deno.test("messages are dimos's LCM types, and round-trip", () => {
     assertEquals(twist.header.frame_id, "")
 })
 
-Deno.test("a held joint jog: the target creeps ahead but never more than LEAD_S of motion; a release holds where it is", async () => {
+Deno.test("a held joint jog: the target creeps ahead but never more than LEAD_S of motion, never steps back; a release holds the last target", async () => {
     const { arm, puts, sendState, dispose } = setup()
+    const lead = armProfile.arm!.jointSpeed * LEAD_S
+    const jointTargets = () => puts.filter((put) => put.key === "dimos/joint_command/sensor_msgs.JointState").map((put) => decode("sensor_msgs.JointState", put.bytes))
     arm.jogJoint("arm/joint2", 1)
     await wait(400)
-    const targets = puts.filter((put) => put.key === "dimos/joint_command/sensor_msgs.JointState").map((put) => decode("sensor_msgs.JointState", put.bytes))
+    const targets = jointTargets()
     assert(targets.length >= 5)
     assertEquals(targets.at(-1)!.name, ["arm/joint2"])
     // the joint (as measured) hasn't moved, so the target is capped at measured + lead
-    assertAlmostEquals(targets.at(-1)!.position[0], 0.5 + armProfile.arm!.jointSpeed * LEAD_S, 1e-9)
-    sendState(JOINTS, [0, 0.58, -0.25])
+    assertAlmostEquals(targets.at(-1)!.position[0], 0.5 + lead, 1e-9)
+    // a late joint state from before the jog doesn't pull the target back
+    sendState(JOINTS, [0, 0.2, -0.25])
+    await wait(100)
+    assertAlmostEquals(jointTargets().at(-1)!.position[0], 0.5 + lead, 1e-9)
+    // a release holds the last target sent, not the (stale) measured position
     arm.releaseJoint()
     const hold = decode("sensor_msgs.JointState", puts.at(-1)!.bytes)
     assertEquals(hold.name, ["arm/joint2"])
-    assertAlmostEquals(hold.position[0], 0.58)
+    assertAlmostEquals(hold.position[0], 0.5 + lead, 1e-9)
     const count = puts.length
     await wait(150)
     assertEquals(puts.length, count, "nothing after the hold")
+    // the next jog starts from there
+    arm.jogJoint("arm/joint2", -1)
+    await wait(80)
+    arm.releaseJoint()
+    assert(jointTargets().at(-1)!.position[0] <= 0.5 + lead && jointTargets().at(-1)!.position[0] > 0.4)
     dispose()
 })
 

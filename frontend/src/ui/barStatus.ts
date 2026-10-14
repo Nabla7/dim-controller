@@ -27,6 +27,23 @@ export function linkProblem(connection: Pick<ConnectionState, "state" | "rttMs" 
     return null
 }
 
+/** A rate in megabits, like a speed test: "0.01 Mbps", "1.9 Mbps", "25 Mbps". */
+export function rateText(bytesPerSecond: number): string {
+    const megabits = (bytesPerSecond * 8) / 1e6
+    return `${megabits < 1 ? megabits.toFixed(2) : megabits < 10 ? megabits.toFixed(1) : Math.round(megabits)} Mbps`
+}
+
+/** The link chip, always shown: live throughput and latency ("1.9 Mbps · 89 ms"), coloured by linkProblem; lost or connecting says so instead. */
+export function linkChip(connection: Pick<ConnectionState, "state" | "rttMs" | "droppedPerSecond" | "error" | "throughputBytesPerSec">, latencyMs: number | null): { text: string; tone: Tone; detail: string } {
+    const problem = linkProblem(connection)
+    if (connection.state === "lost" || connection.state === "connecting") {
+        return problem!
+    }
+    const rate = connection.throughputBytesPerSec === null ? "— Mbps" : rateText(connection.throughputBytesPerSec)
+    const latency = latencyMs === null ? "— ms" : `${Math.round(latencyMs)} ms`
+    return { text: `${rate} · ${latency}`, tone: problem?.tone ?? "ok", detail: `${problem?.detail ?? "Link healthy"}. Throughput reaching this page and the control link's round trip` }
+}
+
 /** Driving stopped by the link watch, in full ("Disengaged: latency 1240 ms > 1000 ms max. Reconnect to drive."). */
 export function disengagedText(halt: Pick<DriveHalt, "reason" | "latencyMs" | "maxMs">): string {
     return halt.reason === "lost"
