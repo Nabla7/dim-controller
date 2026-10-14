@@ -13,6 +13,7 @@ mod frontend;
 mod image;
 mod labels;
 mod logs;
+mod manipulation;
 mod msgs;
 mod pickle;
 mod record;
@@ -156,6 +157,7 @@ async fn main() -> Result<()> {
         annotations: annotations.clone(),
         settings,
         drive: Arc::default(),
+        manipulation: Arc::new(manipulation::Manipulation::new(state.clone())),
         desktop_url: Arc::new(dimos_app::field(|app| app.desktop_url.as_ref()).unwrap_or_default()),
     };
     let app = api::routes()

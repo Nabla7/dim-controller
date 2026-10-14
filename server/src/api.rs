@@ -16,6 +16,7 @@ use serde_json::{json, Value};
 use crate::annotations::{self, Annotations};
 use crate::drive::{self, Drive};
 use crate::labels;
+use crate::manipulation::Manipulation;
 use crate::recorder;
 use crate::routes::Routes;
 use crate::settings::{self, Settings};
@@ -31,6 +32,8 @@ pub struct Api {
     pub annotations: Arc<Annotations>,
     pub settings: Arc<Settings>,
     pub drive: Arc<Drive>,
+    /// the arm's planner (dimos's ManipulationModule, over its pickled zenoh RPCs)
+    pub manipulation: Arc<Manipulation>,
     /// Desktop's own HTTP API (DIMOS_APP's `desktopUrl`): the running dimos's log dirs
     pub desktop_url: Arc<String>,
 }
@@ -134,6 +137,16 @@ pub fn routes() -> Routes<Api> {
         .endpoint("POST", "api/drive/arm", "No-op, kept for older callers: driving needs no arming (always armed). Use api/drive/stop to stop.", json!({ "armed": b("ignored"), "source": s("ignored") }), arm)
         .endpoint("POST", "api/drive", "Drive the robot: publish a Twist (linear [x, y, z] m/s, angular [x, y, z] rad/s, each within ±5) at 10 Hz for seconds (default 1, at most 10), then a second of zeros. No arming needed. topic: default the drive panel's, else the cmd_vel on the bus. dryRun=true only says what it would send. A new command or a stop replaces a running one; every open page shows it.", json!({ "linear": vec3("m/s, robot frame (x forward, y left)"), "angular": vec3("rad/s (z = turn left)"), "seconds": n("default 1, at most 10"), "topic": s("e.g. /cmd_vel"), "dryRun": b("send nothing, say what would be sent"), "source": s("who is driving, shown on the page (default agent)") }), drive_robot)
         .endpoint("POST", "api/drive/stop", "Stop driving: cancels a running drive command and sends a second of zeros.", json!({ "topic": s("default as for api/drive"), "dryRun": b("") }), stop_robot)
+        // the arm's planner: viser's workflow through dimos's ManipulationModule
+        .endpoint("GET", "api/manipulation", "The arm's planner (dimos's ManipulationModule): available (false with error when none answers), state (operation_status, execution_status, has_pending_plan, groups: {<group>: {joints {name, position}, end_effector_pose (world), gripper_position, joint_presets {home, init}}}), planning groups (id, joint_names, base_frame, tip_frame, has_gripper), the target shown as the ghost arm, and the plan last made (id, duration, jointNames, times, positions).", json!({}), manipulation_status)
+        .endpoint("POST", "api/manipulation/target", "Set the target every open page shows as the ghost arm (it moves nothing): mode joint with joints {name: radians}, or mode cartesian with pose {position [x, y, z], orientation [x, y, z, w], frame (default world)}; or preset current | init | home (that preset's joints). clear=true removes the target.", json!({ "mode": s("joint | cartesian"), "group": s("planning group (default manipulator)"), "joints": json!({ "type": "object", "description": "joint name -> radians" }), "pose": json!({ "type": "object", "description": "{position [x, y, z], orientation [x, y, z, w], frame}" }), "preset": s("current | init | home"), "clear": b("remove the target") }), manipulation_target)
+        .endpoint("POST", "api/manipulation/plan", "Plan from where the arm is to the target (the body's, else the current one): collision-checked by the ManipulationModule; on success the plan is kept for Preview and Execute and every page draws its path. speed: the plan's speed scale 0.05-1 (default lv.manip.speed).", json!({ "mode": s("joint | cartesian"), "group": s(""), "joints": json!({ "type": "object" }), "pose": json!({ "type": "object" }), "speed": n("0.05-1") }), manipulation_plan)
+        .endpoint("POST", "api/manipulation/preview", "Play the kept plan on the ghost arm in every open page (the real arm doesn't move).", json!({}), manipulation_preview)
+        .endpoint("POST", "api/manipulation/execute", "Run the kept plan on the arm.", json!({}), manipulation_execute)
+        .endpoint("POST", "api/manipulation/cancel", "Stop planning or the running trajectory.", json!({}), manipulation_cancel)
+        .endpoint("POST", "api/manipulation/clear", "Discard the kept plan.", json!({}), manipulation_clear)
+        .endpoint("GET", "api/manipulation/obstacles", "The planning scene's obstacles: name -> pose.", json!({}), manipulation_obstacles)
+        .endpoint("PATCH", "api/manipulation/options", "The arm 3D view's planner options (lv.manip), applied in every open page: mode (joint | cartesian: what the gizmo and sliders set), speed (next plan's speed scale 0.05-1), display (visual | collision | both: the arm's geometry), obstacles (draw the planning scene's obstacles), interact (the 3D arm and gizmo are shown).", json!({ "mode": s("joint | cartesian"), "speed": n("0.05-1"), "display": s("visual | collision | both"), "obstacles": b(""), "interact": b("") }), manipulation_options)
         // the page's plumbing: its event socket, its reports, its answers to the backend's capture requests
         .plumbing("POST", "api/pages/{page}", annotations::report_page)
         .plumbing("POST", "api/pages/{page}/close", annotations::close_page)
@@ -301,6 +314,140 @@ async fn stop_robot(Extract(api): Extract<Api>, Body(body): Body) -> Response {
     }
 }
 
+async fn manipulation_status(Extract(api): Extract<Api>) -> Response {
+    Json(api.manipulation.status().await).into_response()
+}
+
+fn planner_error(error: anyhow::Error) -> Response {
+    error_response(StatusCode::BAD_GATEWAY, error)
+}
+
+/// A target from a body: its own mode/joints/pose, or a preset's joints from the planner's state.
+async fn target_from(api: &Api, body: &Value) -> Result<Value, Response> {
+    let group = body["group"].as_str().unwrap_or("manipulator");
+    if let Some(preset) = body["preset"].as_str() {
+        let state = api.manipulation.call("get_state", vec![], vec![], std::time::Duration::from_secs(5)).await.map_err(planner_error)?;
+        let group_state = &state["groups"][group];
+        let joints = match preset {
+            "current" => &group_state["joints"],
+            "init" | "home" => &group_state["joint_presets"][preset],
+            _ => return Err(error_response(StatusCode::BAD_REQUEST, "preset is current, init or home")),
+        };
+        let (Some(names), Some(positions)) = (joints["name"].as_array(), joints["position"].as_array()) else {
+            return Err(error_response(StatusCode::NOT_FOUND, format!("the planner has no {preset} preset for {group}")));
+        };
+        let joints: serde_json::Map<String, Value> = names.iter().zip(positions).filter_map(|(name, position)| Some((name.as_str()?.to_string(), position.clone()))).collect();
+        return Ok(json!({ "mode": "joint", "group": group, "joints": joints, "preset": preset }));
+    }
+    match body["mode"].as_str() {
+        Some("joint") if body["joints"].is_object() => Ok(json!({ "mode": "joint", "group": group, "joints": body["joints"] })),
+        Some("cartesian") if body["pose"].is_object() => Ok(json!({ "mode": "cartesian", "group": group, "pose": body["pose"] })),
+        _ => Err(error_response(StatusCode::BAD_REQUEST, "a target is mode joint with joints, mode cartesian with pose, or a preset")),
+    }
+}
+
+async fn manipulation_target(Extract(api): Extract<Api>, Body(body): Body) -> Response {
+    if body["clear"] == true {
+        api.manipulation.set_target(None);
+        api.annotations.broadcast(json!({ "type": "manipulation", "target": null, "from": body["from"] }));
+        return Json(json!({ "ok": true, "target": null })).into_response();
+    }
+    let target = match target_from(&api, &body).await {
+        Ok(target) => target,
+        Err(response) => return response,
+    };
+    api.manipulation.set_target(Some(target.clone()));
+    api.annotations.broadcast(json!({ "type": "manipulation", "target": target, "from": body["from"] }));
+    Json(json!({ "ok": true, "target": target })).into_response()
+}
+
+async fn manipulation_plan(Extract(api): Extract<Api>, Body(body): Body) -> Response {
+    let target = if body["mode"].is_string() || body["preset"].is_string() {
+        match target_from(&api, &body).await {
+            Ok(target) => target,
+            Err(response) => return response,
+        }
+    } else {
+        match api.manipulation.target() {
+            Some(target) => target,
+            None => return error_response(StatusCode::BAD_REQUEST, "no target: set one (api/manipulation/target) or pass it"),
+        }
+    };
+    let speed = body["speed"].as_f64().or_else(|| api.settings.get("lv.manip")["speed"].as_f64());
+    match api.manipulation.plan_to(&target, speed).await {
+        Ok(result) => {
+            api.manipulation.set_target(Some(target.clone()));
+            api.annotations.broadcast(json!({ "type": "manipulation", "target": target, "plan": result["plan"], "planned": result }));
+            Json(result).into_response()
+        }
+        Err(error) => planner_error(error),
+    }
+}
+
+async fn manipulation_preview(Extract(api): Extract<Api>) -> Response {
+    let Some(plan) = api.manipulation.plan() else {
+        return error_response(StatusCode::CONFLICT, "no plan to preview: Plan first");
+    };
+    let pages = api.annotations.page_count();
+    api.annotations.broadcast(json!({ "type": "manipulation", "preview": plan["id"] }));
+    Json(json!({ "ok": true, "pages": pages, "duration": plan["duration"] })).into_response()
+}
+
+async fn manipulation_execute(Extract(api): Extract<Api>) -> Response {
+    match api.manipulation.execute().await {
+        Ok(result) => {
+            api.annotations.broadcast(json!({ "type": "manipulation", "executed": result }));
+            Json(result).into_response()
+        }
+        Err(error) => error_response(StatusCode::CONFLICT, error),
+    }
+}
+
+async fn manipulation_cancel(Extract(api): Extract<Api>) -> Response {
+    api.annotations.broadcast(json!({ "type": "manipulation", "cancel": true }));
+    match api.manipulation.cancel().await {
+        Ok(result) => Json(result).into_response(),
+        Err(error) => planner_error(error),
+    }
+}
+
+async fn manipulation_clear(Extract(api): Extract<Api>) -> Response {
+    let result = api.manipulation.clear().await;
+    api.annotations.broadcast(json!({ "type": "manipulation", "plan": null }));
+    match result {
+        Ok(result) => Json(result).into_response(),
+        Err(error) => planner_error(error),
+    }
+}
+
+async fn manipulation_obstacles(Extract(api): Extract<Api>) -> Response {
+    match api.manipulation.obstacles().await {
+        Ok(obstacles) => Json(obstacles).into_response(),
+        Err(error) => planner_error(error),
+    }
+}
+
+async fn manipulation_options(Extract(api): Extract<Api>, Body(body): Body) -> Response {
+    let mut patch = serde_json::Map::new();
+    for (key, valid) in [
+        ("mode", body["mode"].as_str().is_some_and(|mode| ["joint", "cartesian"].contains(&mode))),
+        ("speed", body["speed"].as_f64().is_some_and(|speed| (0.05..=1.0).contains(&speed))),
+        ("display", body["display"].as_str().is_some_and(|display| ["visual", "collision", "both"].contains(&display))),
+        ("obstacles", body["obstacles"].is_boolean()),
+        ("interact", body["interact"].is_boolean()),
+    ] {
+        if !body[key].is_null() {
+            if !valid {
+                return error_response(StatusCode::BAD_REQUEST, format!("{key}: see the endpoint's description for its values"));
+            }
+            patch.insert(key.into(), body[key].clone());
+        }
+    }
+    let value = api.settings.merge("lv.manip", &patch);
+    api.annotations.broadcast(json!({ "type": "settings", "key": "lv.manip", "value": value, "from": body["from"] }));
+    Json(json!({ "key": "lv.manip", "value": value })).into_response()
+}
+
 #[cfg(test)]
 impl Api {
     pub fn for_tests(annotations: Arc<Annotations>) -> Api {
@@ -312,6 +459,10 @@ impl Api {
             annotations,
             settings: Arc::new(Settings::load(None)),
             drive: Arc::default(),
+            manipulation: Arc::new(Manipulation::new(Arc::new(recorder::State::new(
+                std::env::temp_dir().join("lv_api_test"),
+                "tcp/127.0.0.1:9".into(),
+            )))),
             desktop_url: Arc::new(String::new()),
         }
     }
@@ -372,7 +523,8 @@ mod tests {
     }
 
     /// every listed endpoint is routed (a readable JSON answer, never the router's bare 404 / 405), and agent.json is the table
-    #[tokio::test]
+    // the planner endpoints open a zenoh session, which needs the multi-thread runtime
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn every_endpoint_is_routed() {
         let (_api, router) = router();
         let manifest = routes().manifest(DESCRIPTION);

@@ -65,8 +65,9 @@ provides:
             method: POST
             path: api/camera
             description: >-
-                Move the 3D camera in every open page: action=recenter (on the robot), topDown (straight down over the
-                robot), or lookAt (target [x, y, z], optional distance).
+                Move the 3D camera in every open page: action=recenter (follow the robot again, or reframe it if already
+                following), topDown (straight down over the robot), or lookAt (target [x, y, z], optional distance;
+                stops following).
             params:
                 action:
                     description: recenter | topDown | lookAt
@@ -87,14 +88,15 @@ provides:
             path: api/settings
             description: >-
                 Every page setting by key: lv.view {profile (the robot type picked: dog, humanoid, wheeled, arm, drone;
-                "" = auto), robot (the type in use, written by the page), fixedFrame ("" = auto), follow, showStats,
-                robotModel}; lv.arm {linear, angular, jointSpeed} (arm jog speeds); lv.rendering.v2 {pointStyle,
-                cubeShade}; lv.layers.enabled {<topic key>: on/off}; lv.layer.<type>.<topic key> (that layer's style:
-                colors, sizes, ...); lv.drive.<robot type> {linear, angular, vertical, topics: [] = auto, else the
-                output topics, one per entry, "/name" or "/name TwistStamped"}; lv.joy {enabled} (the raw gamepad, drive keys
-                and thumb sticks as sensor_msgs/Joy on /joystick, default on); lv.record.topics {<topic key>: record or
-                not (default on)}; lv.record.options {recordNew, compression, image_format, directory ("" = default),
-                logs, rates {<topic key>: max messages/s}}; lv.cameras (the camera panels).
+                "" = auto), robot (the type in use, written by the page), fixedFrame ("" = auto), follow, followFrame
+                (the TF frame the camera follows; "" = the robot's), showStats, robotModel, camerasIn3d (every camera
+                drawn in the 3D view), viewCube (the 3D view's view cube)}; lv.arm {linear, angular, jointSpeed} (arm
+                jog speeds); lv.gamepad {deadZone, invertY}; lv.rendering.v2 {pointStyle, cubeShade}; lv.layers.enabled
+                {<topic key>: on/off}; lv.layer.<type>.<topic key> (that layer's style: colors, sizes, ...);
+                lv.drive.<robot type> {linear, angular, vertical, topics: [] = auto, else the output topics, one per
+                entry, "/name" or "/name TwistStamped"}; lv.record.topics {<topic key>: record or not (default on)};
+                lv.record.options {recordNew, compression, image_format, directory ("" = default), logs, rates {<topic
+                key>: max messages/s}}; lv.cameras (the camera panels).
         -
             method: PATCH
             path: api/settings
@@ -422,6 +424,106 @@ provides:
                 topic:
                     description: default as for api/drive
                     type: string
+        -
+            method: GET
+            path: api/manipulation
+            description: >-
+                The arm's planner (dimos's ManipulationModule): available (false with error when none answers), state
+                (operation_status, execution_status, has_pending_plan, groups: {<group>: {joints {name, position},
+                end_effector_pose (world), gripper_position, joint_presets {home, init}}}), planning groups (id,
+                joint_names, base_frame, tip_frame, has_gripper), the target shown as the ghost arm, and the plan last
+                made (id, duration, jointNames, times, positions).
+        -
+            method: POST
+            path: api/manipulation/target
+            description: >-
+                Set the target every open page shows as the ghost arm (it moves nothing): mode joint with joints {name:
+                radians}, or mode cartesian with pose {position [x, y, z], orientation [x, y, z, w], frame (default
+                world)}; or preset current | init | home (that preset's joints). clear=true removes the target.
+            params:
+                clear:
+                    description: remove the target
+                    type: boolean
+                group:
+                    description: planning group (default manipulator)
+                    type: string
+                joints:
+                    description: joint name -> radians
+                    type: object
+                mode:
+                    description: joint | cartesian
+                    type: string
+                pose:
+                    description: '{position [x, y, z], orientation [x, y, z, w], frame}'
+                    type: object
+                preset:
+                    description: current | init | home
+                    type: string
+        -
+            method: POST
+            path: api/manipulation/plan
+            description: >-
+                Plan from where the arm is to the target (the body's, else the current one): collision-checked by the
+                ManipulationModule; on success the plan is kept for Preview and Execute and every page draws its path.
+                speed: the plan's speed scale 0.05-1 (default lv.manip.speed).
+            params:
+                group:
+                    description: ''
+                    type: string
+                joints:
+                    type: object
+                mode:
+                    description: joint | cartesian
+                    type: string
+                pose:
+                    type: object
+                speed:
+                    description: 0.05-1
+                    type: number
+        -
+            method: POST
+            path: api/manipulation/preview
+            description: Play the kept plan on the ghost arm in every open page (the real arm doesn't move).
+        -
+            method: POST
+            path: api/manipulation/execute
+            description: Run the kept plan on the arm.
+        -
+            method: POST
+            path: api/manipulation/cancel
+            description: Stop planning or the running trajectory.
+        -
+            method: POST
+            path: api/manipulation/clear
+            description: Discard the kept plan.
+        -
+            method: GET
+            path: api/manipulation/obstacles
+            description: 'The planning scene''s obstacles: name -> pose.'
+        -
+            method: PATCH
+            path: api/manipulation/options
+            description: >-
+                The arm 3D view's planner options (lv.manip), applied in every open page: mode (joint | cartesian: what
+                the gizmo and sliders set), speed (next plan's speed scale 0.05-1), display (visual | collision | both:
+                the arm's geometry), obstacles (draw the planning scene's obstacles), interact (the 3D arm and gizmo are
+                shown).
+            params:
+                display:
+                    description: visual | collision | both
+                    type: string
+                interact:
+                    description: ''
+                    type: boolean
+                mode:
+                    description: joint | cartesian
+                    type: string
+                obstacles:
+                    description: ''
+                    type: boolean
+                speed:
+                    description: 0.05-1
+                    type: number
 nix:
     cache:
         aarch64-linux:
