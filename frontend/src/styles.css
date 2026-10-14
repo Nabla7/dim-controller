@@ -635,3 +635,9 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 :root .dr-field--inline > .dr-field-label, :root[data-dr-dark] .dr-field--inline > .dr-field-label { font-size: 11px; letter-spacing: normal; }
 /* controls in the HUD face, as Desktop's own pages */
 .dr-btn, .dr-select, .dr-input, .dr-check-label { font-family: var(--hud, var(--sans)); }
+
+/* the arm's planner panel (ui/ManipPanel.tsx) */
+.manip-status { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 4px; }
+.manip-panel code { font: 11px var(--mono); }
+.manip-joints .joint-row { grid-template-columns: 58px 1fr 56px; }
+.manip-actions { flex-wrap: wrap; }

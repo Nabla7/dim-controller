@@ -332,6 +332,33 @@ disarming mid-jog stopped it and nothing was sent while disarmed; the JointState
 encodes decode with dimos's own message classes. Not verified on a running arm: the end-effector jog and the gripper
 (the blueprints with those tasks need dimos's manipulation extra or a MuJoCo window that didn't start here).
 
+### Arm control: plan and move (like viser)
+
+With a manipulation blueprint running (one with dimos's `ManipulationModule`, e.g. `xarm-perception-sim`), the arm
+mode's 3D view works like viser, dimos's manipulation planning view, and Settings opens with **Plan and move**:
+
+- **The arm in 3D** is the robot's own URDF meshes, posed live from the joint state (gripper fingers included: a gripper
+  position drives the joint the fingers mimic). A `RobotDescriptionModule` in the blueprint publishes them: it answers
+  `/robot_description_request` with `dimos.robot_description.v1` JSON on `/robot_description` (links, joints, meshes as
+  base64 float32 / uint32 arrays, the base pose), and the page does the forward kinematics
+  ([core/robotDescription.ts](frontend/src/core/robotDescription.ts)). Robot display shows the visual geometry, the
+  collision geometry, or both.
+- **Drag the gizmo** on the tip (Move or Rotate) to set a pose target: a translucent ghost arm shows a joint
+  configuration that reaches it (damped least squares IK in the page, within the joint limits:
+  [core/ik.ts](frontend/src/core/ik.ts)) and the panel says whether the pose looks reachable. Or set joint targets with
+  the sliders (Joint space), or a preset: **Current**, **Init** (where the arm was when the planner started), **Home**.
+  A target moves nothing.
+- **Plan** asks the planner for a collision-checked plan to the target at the next plan's speed; its tip path is drawn.
+  **Preview** plays it on the ghost, **Execute** runs that plan (by its id), **Cancel** stops planning or the motion,
+  **Clear plan** drops it. Obstacles in the planning scene are drawn at their poses.
+
+Each of these is an endpoint (`api/manipulation`, `/target`, `/plan`, `/preview`, `/execute`, `/cancel`, `/clear`,
+`/obstacles`, `/options`), so the agent and every open page share the target and plan. The backend calls the planner
+over its own zenoh RPCs (`dimos/rpc/ManipulationModule/<method>`), whose payloads are Python pickles: a pickle reader and
+writer for exactly what these calls carry (dataclasses, enums, dimos messages, numpy scalars) is in
+[server/src/pickle.rs](server/src/pickle.rs), tested against bytes captured from a running sim. When dimos's RPCs move
+to JSON it goes. With no planner answering the panel says so, and the jog controls above keep working.
+
 ## Fork this for your robot
 
 Everything robot-specific is in **one file**, a profile under `frontend/src/profile/`, one per robot type (`dog.ts`,

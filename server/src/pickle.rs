@@ -740,6 +740,26 @@ mod tests {
         assert_eq!(loads(&ours).unwrap(), python);
     }
 
+    /// The encoder's bytes for each request shape, checked in as `ours_<name>.req.pkl` so a Python with dimos can
+    /// `pickle.loads` them (scripts/check_pickle_requests.py). UPDATE_PICKLE_FIXTURES=1 rewrites them.
+    #[test]
+    fn encoder_fixtures_are_current() {
+        let names: Vec<String> = (1..=7).map(|i| format!("joint{i}")).collect();
+        let requests = [
+            ("empty", rpc_request(vec![], vec![])),
+            ("execute", rpc_request(vec![], vec![("blocking", Out::Bool(false)), ("plan_id", Out::Str("84a9de8e36c04ece99efcd5d7716bf88".into()))])),
+            ("plan_to_joints", rpc_request(vec![Out::Dict(vec![("manipulator".into(), joint_state(&names, &[0.6, 0.1, 0.0, 1.2, 0.0, 1.0, 0.0], 1791963651.7957))])], vec![("speed_scale", Out::Float(0.5))])),
+            ("plan_to_poses", rpc_request(vec![Out::Dict(vec![("manipulator".into(), pose_stamped("world", [0.35, 0.2, 0.45], [1.0, 0.0, 0.0, 0.0], 1791963651.7957))])], vec![])),
+        ];
+        for (name, bytes) in requests {
+            let path = format!("{}/src/pickle_fixtures/ours_{name}.req.pkl", env!("CARGO_MANIFEST_DIR"));
+            if std::env::var("UPDATE_PICKLE_FIXTURES").is_ok() {
+                std::fs::write(&path, &bytes).unwrap();
+            }
+            assert_eq!(std::fs::read(&path).unwrap(), bytes, "{name}: run with UPDATE_PICKLE_FIXTURES=1 and re-check with scripts/check_pickle_requests.py");
+        }
+    }
+
     #[test]
     fn rejects_truncated_and_unknown() {
         let mut bytes = fixture("get_state");

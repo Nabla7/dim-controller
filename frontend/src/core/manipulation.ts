@@ -148,7 +148,8 @@ export class Manipulation {
 
     /** The ghost follows at once; the backend (and other pages) get it when the drag or slide ends (`commit`). */
     setTarget(target: ManipulationTarget | null, commit = true) {
-        this.state.update({ target, preview: null })
+        // a joint target has no pose to reach: the reach of an earlier dragged pose no longer applies
+        this.state.update({ target, preview: null, ...(target?.mode === "cartesian" ? {} : { reach: null }) })
         this.#uncommitted = !commit
         if (!commit) {
             return
