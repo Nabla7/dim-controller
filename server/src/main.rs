@@ -14,6 +14,7 @@ mod image;
 mod labels;
 mod logs;
 mod msgs;
+mod pickle;
 mod record;
 mod recorder;
 mod routes;
