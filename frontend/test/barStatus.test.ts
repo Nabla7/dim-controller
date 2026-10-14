@@ -6,13 +6,13 @@ import { disengagedShort, disengagedText, gamepadChip, linkChip, linkProblem, ra
 const link = (state: "connecting" | "connected" | "degraded" | "lost", rttMs: number | null = 20, throughputBytesPerSec: number | null = 240000) => ({ state, rttMs, droppedPerSecond: 0, error: null, throughputBytesPerSec })
 
 Deno.test("the link chip always shows live throughput and latency, coloured by the problem; lost or connecting say so", () => {
-    assertEquals(linkChip(link("connected"), 89), { text: "1.9 Mbps · 89 ms", tone: "ok", detail: "Link healthy. Throughput reaching this page and the control link's round trip" })
-    assertEquals(linkChip(link("connected", 20, null), null).text, "— Mbps · — ms")
+    assertEquals(linkChip(link("connected"), 89), { text: "\u2007\u20071.9 Mbps · \u2007\u200789 ms", tone: "ok", detail: "Link healthy. Throughput reaching this page and the control link's round trip" })
+    assertEquals(linkChip(link("connected", 20, null), null).text, "\u2007\u2007\u2007\u2007— Mbps · \u2007\u2007\u2007— ms")
     assertEquals(linkChip(link("degraded"), 120).tone, "warn")
     assertEquals(linkChip(link("connected", SLOW_RTT_MS + 50), SLOW_RTT_MS + 50).tone, "warn")
     assertEquals(linkChip(link("connecting"), null).text, "Connecting")
     assertEquals(linkChip(link("lost"), null).tone, "bad")
-    assertEquals([rateText(940), rateText(240_000), rateText(3_140_000)], ["0.01 Mbps", "1.9 Mbps", "25 Mbps"])
+    assertEquals([rateText(940), rateText(240_000), rateText(3_140_000), rateText(1e12)], ["\u2007\u20070.0 Mbps", "\u2007\u20071.9 Mbps", "\u200725.1 Mbps", "999.9 Mbps"])
 })
 
 Deno.test("the link chip shows only a problem: lost, connecting, degraded, slow", () => {
