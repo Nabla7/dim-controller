@@ -39,7 +39,7 @@ export function filterCommands(commands: Command[], query: string): Command[] {
  * A panel's header actions: fold / unfold (folded, a panel with a stream of its own unsubscribes), make it the main view
  * (swap: the main view's panel takes its place), and pop out / dock. No close: a panel folds instead.
  */
-export type PanelAction = "collapse" | "main" | "popout"
+export type PanelAction = "collapse" | "main" | "minimize" | "popout"
 
 export interface PanelActionState {
     action: PanelAction
@@ -56,6 +56,8 @@ export function panelActions(arrangement: Arrangement, id: string, options: { mo
     if (zone !== "stage") {
         states.push({ action: "collapse", label: arrangement.collapsed.includes(id) ? "Expand" : "Collapse (stops its stream)" })
         states.push({ action: "main", label: "Make this the main view (swap)" })
+    } else if (arrangement.left.length + arrangement.right.length + arrangement.floating.length > 0) {
+        states.push({ action: "minimize", label: "Back to its rail (the previous main view returns)" })
     }
     if (!options.mobile) {
         states.push({ action: "popout", label: zone === "float" ? "Dock into the nearest rail" : "Pop out: float over the main view" })
@@ -75,7 +77,7 @@ export function panelCommands(arrangement: Arrangement, id: string, title: strin
         run: () => act("show"),
     }]
     for (const state of panelActions(arrangement, id, options)) {
-        commands.push({ id: `panel.${id}.${state.action}`, label: `${title}: ${state.label}`, group: "Panels", words: `panel ${state.action} maximize main float dock collapse fold`, run: () => act(state.action) })
+        commands.push({ id: `panel.${id}.${state.action}`, label: `${title}: ${state.label}`, group: "Panels", words: `panel ${state.action} maximize minimize main float dock collapse fold`, run: () => act(state.action) })
     }
     return commands
 }

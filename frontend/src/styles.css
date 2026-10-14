@@ -135,8 +135,8 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 .zone-stage > .panel-head .panel-title svg { color: var(--primary); }
 .panel-info { flex: 1 1 auto; min-width: 0; text-align: right; font: 10.5px var(--mono); color: var(--muted-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* the header's buttons: while the panel is hovered (or a button in it has focus); always on a touch screen */
-.panel-actions { display: inline-flex; gap: 2px; margin-left: auto; flex: none; opacity: 0; transition: opacity 0.12s; }
-.lv-panel:hover > .panel-head .panel-actions, .panel-actions:focus-within, .mobile .panel-actions { opacity: 1; }
+/* the header's buttons always show (the in-panel ones, .panel-chrome and the tools, show on hover) */
+.panel-actions { display: inline-flex; gap: 2px; margin-left: auto; flex: none; }
 @media (hover: none) { .panel-actions { opacity: 1; } }
 .panel-info + .panel-actions { margin-left: 0; }
 .panel-action.dr-btn--icon.icon-button { width: 26px; height: 26px; border-color: transparent; background: transparent; color: var(--muted-fg); }
@@ -635,3 +635,21 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 :root .dr-field--inline > .dr-field-label, :root[data-dr-dark] .dr-field--inline > .dr-field-label { font-size: 11px; letter-spacing: normal; }
 /* controls in the HUD face, as Desktop's own pages */
 .dr-btn, .dr-select, .dr-input, .dr-check-label { font-family: var(--hud, var(--sans)); }
+
+/* the camera's fit / fill toggle says which it is (its icon alone was mistaken for "make main view") */
+.dr-btn--icon.icon-button.labeled { width: auto; gap: 4px; padding: 0 6px; }
+.icon-label { font: 600 10.5px var(--sans); }
+
+/* the camera's tools float on its picture: no bar of their own under the panel's head, each control its own chip */
+.camera-video > .panel-tools { background: none; border-bottom: 0; pointer-events: none; padding: 6px 6px 0; }
+.camera-video > .panel-tools .camera-tools > *, .camera-video > .panel-tools .camera-tab { pointer-events: auto; }
+.camera-video > .panel-tools .camera-tabs { flex: 0 1 auto; gap: 4px; align-self: center; }
+.camera-video > .panel-tools .camera-tab,
+.camera-video > .panel-tools .dr-select,
+.camera-video > .panel-tools .depth-range,
+.camera-video > .panel-tools .camera-fit {
+    height: 26px; border: 1px solid var(--border); border-radius: var(--radius); backdrop-filter: blur(6px);
+    background: color-mix(in srgb, var(--card) 72%, transparent);
+}
+.camera-video > .panel-tools .camera-tab.on { background: color-mix(in srgb, var(--accent) 85%, transparent); }
+.camera-video > .panel-tools .camera-fit { margin-left: auto; }

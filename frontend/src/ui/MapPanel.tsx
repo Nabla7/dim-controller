@@ -191,7 +191,7 @@ export function MapPanel({ app }: { app: ViewerApp }) {
     const followTitle = follow.following ? `Following ${layout.followFrame} (pan the map to look around)` : `Re-center on ${layout.followFrame} and follow it (or double-click the map)`
     useDockActions("map", [
         { id: "follow", label: follow.following ? "Following" : "Follow", icon: "target", title: followTitle, pressed: follow.following, run: recenter },
-        { id: "fit", label: "Fit map", icon: "fit", title: "Fit the whole map", run: fit },
+        { id: "fit", label: "Fit map", icon: "fit-map", title: "Fit the whole map", run: fit },
     ])
     const [settingsOpen, setSettingsOpen] = useState(false)
     const cog = useRef<HTMLButtonElement>(null)
@@ -232,7 +232,7 @@ export function MapPanel({ app }: { app: ViewerApp }) {
                         <MapSettings anchor={cog.current} onClose={() => setSettingsOpen(false)}>
                             <MapChoiceFields app={app} frames={frames} />
                             <Button size="sm" className="map-fit" title="Fit the whole map" onClick={fit}>
-                                <Icon name="fit" size={14} />Fit the whole map
+                                <Icon name="fit-map" size={14} />Fit the whole map
                             </Button>
                         </MapSettings>
                     )}
