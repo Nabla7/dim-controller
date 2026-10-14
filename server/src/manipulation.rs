@@ -8,6 +8,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::{anyhow, bail, Result};
 use serde_json::{json, Value};
 
+use zenoh::query::QueryTarget;
+
 use crate::pickle::{self, Out};
 use crate::recorder;
 
@@ -54,18 +56,17 @@ impl Manipulation {
         let replies = session
             .get(format!("dimos/rpc/{MODULE}/{method}"))
             .payload(pickle::rpc_request(args, kwargs))
+            .target(QueryTarget::All)
             .timeout(timeout)
             .await
             .map_err(|error| anyhow!("zenoh: {error}"))?;
-        let Ok(reply) = replies.recv_async().await else {
-            bail!("no {MODULE} answered {method} (is a manipulation blueprint running?)");
-        };
-        match reply.result() {
-            Ok(sample) => Ok(pickle::to_json(&pickle::loads(&sample.payload().to_bytes())?)),
-            Err(error) => {
-                let detail = pickle::loads(&error.payload().to_bytes()).map(|value| rpc_error(&pickle::to_json(&value)));
+        match first_answer(&replies).await {
+            Some(Ok(bytes)) => Ok(pickle::to_json(&pickle::loads(&bytes)?)),
+            Some(Err(bytes)) => {
+                let detail = pickle::loads(&bytes).map(|value| rpc_error(&pickle::to_json(&value)));
                 bail!("{MODULE}.{method} failed: {}", detail.unwrap_or_else(|_| "an error it couldn't describe".into()))
             }
+            None => bail!("no {MODULE} answered {method} (is a manipulation blueprint running?)"),
         }
     }
 
@@ -76,12 +77,12 @@ impl Manipulation {
         if !request.is_null() {
             query = query.payload(serde_json::to_vec(request)?);
         }
-        let replies = query.await.map_err(|error| anyhow!("zenoh: {error}"))?;
-        let Ok(reply) = replies.recv_async().await else {
-            bail!("no dim-controller hook in the blueprint's process (install it: api/manipulation/hook/install, then restart the blueprint)");
+        let replies = query.target(QueryTarget::All).await.map_err(|error| anyhow!("zenoh: {error}"))?;
+        let answer: Value = match first_answer(&replies).await {
+            Some(Ok(bytes)) => serde_json::from_slice(&bytes)?,
+            Some(Err(bytes)) => bail!("hook {name}: {}", String::from_utf8_lossy(&bytes)),
+            None => bail!("no dim-controller hook in the blueprint's process (install it: api/manipulation/hook/install, then restart the blueprint)"),
         };
-        let sample = reply.result().map_err(|error| anyhow!("hook {name}: {:?}", error.payload().try_to_string()))?;
-        let answer: Value = serde_json::from_slice(&sample.payload().to_bytes())?;
         if answer["ok"] == true {
             Ok(answer["result"].clone())
         } else {
@@ -209,6 +210,20 @@ impl Manipulation {
     pub async fn obstacles(&self) -> Result<Value> {
         self.call("get_obstacles", vec![], vec![], CALL_TIMEOUT).await
     }
+}
+
+/// The first reply with data among every queryable's (Ok: a sample's payload, Err: an error's), None when all were
+/// empty. Queries go to every matching queryable (QueryTarget::All): a zenoh peer that routes (another Desktop app's)
+/// can keep advertising a restarted blueprint's queryables and answer a query routed to it alone with nothing.
+async fn first_answer(replies: &zenoh::handlers::FifoChannelHandler<zenoh::query::Reply>) -> Option<std::result::Result<Vec<u8>, Vec<u8>>> {
+    let mut error = None;
+    while let Ok(reply) = replies.recv_async().await {
+        match reply.result() {
+            Ok(sample) => return Some(Ok(sample.payload().to_bytes().to_vec())),
+            Err(failure) => error = Some(Err(failure.payload().to_bytes().to_vec())),
+        }
+    }
+    error
 }
 
 fn speed_kwargs(speed: Option<f64>) -> Vec<(&'static str, Out)> {
