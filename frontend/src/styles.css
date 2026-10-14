@@ -635,3 +635,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 :root .dr-field--inline > .dr-field-label, :root[data-dr-dark] .dr-field--inline > .dr-field-label { font-size: 11px; letter-spacing: normal; }
 /* controls in the HUD face, as Desktop's own pages */
 .dr-btn, .dr-select, .dr-input, .dr-check-label { font-family: var(--hud, var(--sans)); }
+
+/* the camera's fit / fill toggle says which it is (its icon alone was mistaken for "make main view") */
+.dr-btn--icon.icon-button.labeled { width: auto; gap: 4px; padding: 0 6px; }
+.icon-label { font: 600 10.5px var(--sans); }

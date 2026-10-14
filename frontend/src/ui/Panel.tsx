@@ -14,9 +14,11 @@ import { useWorkspaceApi } from "./Workspace.tsx"
 import { arrange, clampFloat, FLOAT_MIN, movePanel, normalizeArrangement } from "./workspace.ts"
 import { startPointerDrag } from "./panelDrag.ts"
 
-const ACTION_ICONS: Record<PanelAction, (state: { collapsed: boolean; floating: boolean }) => string> = {
+const ACTION_ICONS: Record<PanelAction, (state: { collapsed: boolean; floating: boolean; zone: string }) => string> = {
     collapse: ({ collapsed }) => collapsed ? "chevron-down" : "chevron-up",
-    main: () => "main",
+    // make it the main view: a chevron toward the middle of the screen, where the main view is (a left rail's points
+    // right); unlike fit / fill's frames, nothing here looks like a picture
+    main: ({ zone }) => zone === "left" ? "chevron-right" : "chevron-left",
     popout: ({ floating }) => floating ? "dock" : "float",
 }
 
@@ -89,7 +91,7 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
                             aria-label={`${title}: ${state.label}`}
                             onClick={() => api.act(id, state.action)}
                         >
-                            <Icon name={ACTION_ICONS[state.action]({ collapsed: slot.collapsed, floating })} size={14} />
+                            <Icon name={ACTION_ICONS[state.action]({ collapsed: slot.collapsed, floating, zone: slot.zone })} size={14} />
                         </Button>
                     ))}
                 </span>
