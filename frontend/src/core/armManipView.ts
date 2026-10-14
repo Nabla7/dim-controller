@@ -1,24 +1,33 @@
-// The arm mode's 3D manipulation, like viser: the arm drawn from its URDF (RobotDescriptionModule) posed by the joint
-// state, a translucent ghost at the target (a gizmo's pose solved by IK, the target's joints, or the plan being
-// previewed), a gizmo on the tip to drag (move / rotate), the planned tip path, and the planner's obstacles. Only in
-// the arm mode, with the planner option `interact` on; everything is placed in the view's fixed frame by TF.
+// The arm mode's 3D manipulation, as viser draws it: the arm from the planner's own model (the hook's
+// api/manipulation/description) posed by the joint state; the target ghost (orange when the planner finds the target
+// feasible, red when not); the preview ghost (blue) playing a plan; a gizmo (move / rotate) on each selected group's
+// tip; the plan's tip paths; the planning scene's obstacles with their shapes; the ranked grasp proposals; and the
+// ground grid. Only in the arm mode with the planner option `interact` on; placed in the view's fixed frame by TF.
 import * as THREE from "three"
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js"
-import type { FrameInfo, TfTree, Viewer } from "dimos-react/three"
-import { decode, encode } from "./lcm/lcm.ts"
-import { dimosKey, type Connection, type Publisher } from "./transport.ts"
+import { LabelPool, type FrameInfo, type TfTree, type Viewer } from "dimos-react/three"
 import type { ArmControl } from "./arm.ts"
 import { isGripperJoint } from "./armTopics.ts"
 import { solveIk } from "./ik.ts"
-import { Manipulation, type ManipulationTarget } from "./manipulation.ts"
+import { Manipulation, type ManipulationTarget, type Pose } from "./manipulation.ts"
 import { basePose, Kinematics, meshGeometries, ROBOT_DESCRIPTION_FORMAT, type JointPositions, type RobotDescription, RobotModel, urdfPositions } from "./robotDescription.ts"
 import { Store } from "./store.ts"
 
-export const ROBOT_DESCRIPTION = dimosKey("/robot_description", "std_msgs.String")
-export const ROBOT_DESCRIPTION_REQUEST = dimosKey("/robot_description_request", "std_msgs.String")
-const ASK_EVERY_MS = 3000
-const OBSTACLES_EVERY_MS = 2000
-const GHOST_COLOR = "#7cc4ff"
+const DESCRIPTION_EVERY_MS = 3000
+const SCENE_EVERY_MS = 1000
+// viser's colors (dimos/manipulation/visualization/viser/scene.py)
+const TARGET_FEASIBLE = { color: "#ff7a00", opacity: 0.7 }
+const TARGET_INFEASIBLE = { color: "#ff1e1e", opacity: 0.75 }
+const PREVIEW = { color: "#50b4ff", opacity: 0.55 }
+const COLLISION = { color: "#d228dc", opacity: 0.35 }
+const OBSTACLE_FALLBACK = { color: "#37bed2", opacity: 0.55 }
+const OBSTACLE_PROXY = "#ff2d19"
+const GRASP_BEST = new THREE.Color(60 / 255, 220 / 255, 60 / 255)
+const GRASP_WORST = new THREE.Color(255 / 255, 160 / 255, 60 / 255)
+const GRASP_DRAW_LIMIT = 20
+const GRASP_EMPHASIS_COUNT = 3
+const GRASP_APPROACH_LENGTH = 0.05
+const GRASP_CLOSING_HALF_WIDTH = 0.02
 const PATH_COLOR = "#ffd166"
 
 interface Model {
@@ -26,9 +35,35 @@ interface Model {
     kinematics: Kinematics
     geometries: Map<string, THREE.BufferGeometry>
     real: RobotModel
-    ghost: RobotModel
+    /** viser's stand-in when the model has no collision geometry: the visual meshes in collision colors */
+    collisionFallback: RobotModel | null
+    target: RobotModel
+    preview: RobotModel
     /** the kinematics root (the URDF's root link) in the base frame: places base_link at the description's base pose */
     rootInBase: THREE.Matrix4
+}
+
+interface Gizmo {
+    controls: TransformControls
+    handle: THREE.Object3D
+}
+
+export interface Obstacle {
+    name: string
+    type: "box" | "sphere" | "cylinder" | "mesh" | "octree" | "marker"
+    pose: Pose
+    dimensions?: number[]
+    color?: number[] | null
+    vertices?: number[]
+    faces?: number[]
+    points?: number[]
+    resolution?: number | null
+    error?: string
+}
+
+export interface GraspProposal {
+    pose: Pose
+    score: number
 }
 
 export class ArmManipView {
@@ -36,70 +71,42 @@ export class ArmManipView {
     readonly root = new THREE.Group()
     /** the arm's root link in the world */
     readonly arm = new THREE.Group()
-    readonly handle = new THREE.Object3D()
-    readonly gizmo: TransformControls
-    readonly path: THREE.Line
+    readonly paths = new THREE.Group()
     readonly obstacles = new THREE.Group()
-    readonly status = new Store<{ model: string | null; problem: string | null }>({ model: null, problem: null })
+    readonly grasps = new THREE.Group()
+    readonly gizmos = new Map<string, Gizmo>()
+    readonly status = new Store<{ model: string | null; problem: string | null; collisionMissing: boolean; obstacleCount: number; graspCount: number; obstacleProblems: string[] }>({
+        model: null,
+        problem: null,
+        collisionMissing: false,
+        obstacleCount: 0,
+        graspCount: 0,
+        obstacleProblems: [],
+    })
     #model: Model | null = null
-    #requests: Publisher | null = null
-    #asking: ReturnType<typeof setInterval>
-    #obstacleTimer: ReturnType<typeof setInterval>
+    #labels = new LabelPool()
+    #descriptionTimer: ReturnType<typeof setInterval>
+    #sceneTimer: ReturnType<typeof setInterval>
+    #sceneVersions: Record<string, number> = {}
+    #fetching = false
     #active = false
-    /** the ghost's joints from the last IK solve (a cartesian target), so dragging starts from where it is */
+    /** without the hook: the ghost's joints from the page's own IK of the dragged pose */
     #solved: JointPositions | null = null
-    #solvedFor = ""
     #pathFor = ""
 
-    constructor(readonly viewer: Viewer, readonly tf: TfTree, readonly connection: Connection, readonly armControl: ArmControl, readonly manipulation: Manipulation, readonly isArm: () => boolean) {
+    constructor(readonly viewer: Viewer, readonly tf: TfTree, readonly armControl: ArmControl, readonly manipulation: Manipulation, readonly isArm: () => boolean) {
         this.root.matrixAutoUpdate = false
         this.root.visible = false
         this.arm.matrixAutoUpdate = false
-        this.root.add(this.arm, this.handle, this.obstacles)
-        this.path = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: PATH_COLOR, depthTest: false, transparent: true }))
-        this.path.renderOrder = 10
-        this.path.frustumCulled = false
-        this.arm.add(this.path)
+        this.root.add(this.arm, this.obstacles, this.grasps, this.#labels.group)
+        this.arm.add(this.paths)
         viewer.scene.add(this.root)
 
-        this.gizmo = new TransformControls(viewer.camera, viewer.canvas)
-        this.gizmo.setSize(0.8)
-        this.gizmo.setSpace("local")
-        this.gizmo.attach(this.handle)
-        const helper = this.gizmo.getHelper()
-        viewer.scene.add(helper)
-        this.gizmo.addEventListener("dragging-changed", (event) => {
-            const dragging = Boolean((event as unknown as { value: boolean }).value)
-            viewer.controls.enabled = !dragging
-            manipulation.gizmo.update({ dragging })
-            if (!dragging) {
-                // the drag ended: the backend (and every page) gets the target
-                const target = manipulation.state.get().target
-                if (target) {
-                    manipulation.setTarget(target, true)
-                }
-            }
-        })
-        this.gizmo.addEventListener("objectChange", () => this.#dragged())
-        this.gizmo.addEventListener("change", () => viewer.requestRender())
-        manipulation.gizmo.subscribe(() => this.gizmo.setMode(manipulation.gizmo.get().mode))
-
-        connection.subscribe(ROBOT_DESCRIPTION, { delivery: "reliable" }, (message) => {
-            if (this.#model) {
-                return
-            }
-            try {
-                const description = JSON.parse(String(decode("std_msgs.String", message.bytes).data)) as RobotDescription
-                if (description.format === ROBOT_DESCRIPTION_FORMAT) {
-                    this.#build(description)
-                }
-            } catch (error) {
-                this.status.update({ problem: `not a ${ROBOT_DESCRIPTION_FORMAT} message: ${error}` })
-            }
-        })
-        this.#asking = setInterval(() => this.#ask(), ASK_EVERY_MS)
-        this.#obstacleTimer = setInterval(() => this.#loadObstacles(), OBSTACLES_EVERY_MS)
+        this.#descriptionTimer = setInterval(() => this.#loadDescription(), DESCRIPTION_EVERY_MS)
+        this.#sceneTimer = setInterval(() => this.#loadScene(), SCENE_EVERY_MS)
         manipulation.options.subscribe(() => this.#applyOptions())
+        // only a changed mode: setting it on a gizmo mid-drag (the store also carries `dragging`) re-enters its events
+        manipulation.gizmo.subscribe(() => this.gizmos.forEach(({ controls }) => controls.mode !== manipulation.gizmo.get().mode && controls.setMode(manipulation.gizmo.get().mode)))
         manipulation.state.subscribe(() => viewer.requestRender())
         armControl.state.subscribe(() => this.#active && viewer.requestRender())
         viewer.onFrame((frame) => this.#frame(frame))
@@ -109,138 +116,192 @@ export class ArmManipView {
         return this.#model
     }
 
-    #ask() {
-        if (this.#model || !this.#active) {
+    async #loadDescription() {
+        if (this.#model || !this.#active || !this.manipulation.state.get().hook) {
+            if (this.#active && !this.#model && this.manipulation.state.get().available && !this.manipulation.state.get().hook) {
+                this.status.update({ problem: "no dim-controller hook in the blueprint's process: install it (Hook, below) and restart the blueprint" })
+            }
             return
         }
-        const client = this.connection.client
-        if (!client) {
-            return
-        }
-        this.#requests ??= client.publisher(ROBOT_DESCRIPTION_REQUEST, { delivery: "reliable" })
         try {
-            this.#requests.put(encode("std_msgs.String", { data: "dim-controller" }))
-        } catch {
-            // not open yet: the next tick asks again
+            const response = await fetch(new URL("api/manipulation/description", location.href).href)
+            const description = (await response.json()) as RobotDescription & { error?: string }
+            if (!response.ok || description.format !== ROBOT_DESCRIPTION_FORMAT) {
+                this.status.update({ problem: description.error ?? `not a ${ROBOT_DESCRIPTION_FORMAT}` })
+                return
+            }
+            if (!this.#model) {
+                this.#build(description)
+            }
+        } catch (error) {
+            this.status.update({ problem: String(error) })
         }
     }
 
     #build(description: RobotDescription) {
         const kinematics = new Kinematics(description)
         const geometries = meshGeometries(description)
-        const real = new RobotModel(kinematics, geometries)
-        const ghost = new RobotModel(kinematics, geometries, { color: GHOST_COLOR, opacity: 0.35 })
-        ghost.root.visible = false
-        ghost.root.renderOrder = 5
+        const collisionMissing = !description.links.some((link) => link.collisions.length)
+        const real = new RobotModel(kinematics, geometries, { collisionColor: COLLISION.color })
+        const collisionFallback = collisionMissing ? new RobotModel(kinematics, geometries, COLLISION) : null
+        const target = new RobotModel(kinematics, geometries, TARGET_FEASIBLE)
+        const preview = new RobotModel(kinematics, geometries, PREVIEW)
+        for (const ghost of [target, preview]) {
+            ghost.root.visible = false
+            ghost.root.renderOrder = 5
+        }
         // the base link sits at the description's base pose: the root link's pose follows from base_link's
         const baseInRoot = kinematics.linkPoses({}).get(description.base_link) ?? new THREE.Matrix4()
         const rootInBase = basePose(description).multiply(baseInRoot.clone().invert())
         this.arm.matrix.copy(rootInBase)
         this.arm.matrixWorldNeedsUpdate = true
-        this.arm.add(real.root, ghost.root)
-        this.#model = { description, kinematics, geometries, real, ghost, rootInBase }
+        this.arm.add(real.root, target.root, preview.root, ...(collisionFallback ? [collisionFallback.root] : []))
+        this.#model = { description, kinematics, geometries, real, collisionFallback, target, preview, rootInBase }
         this.#applyOptions()
-        this.status.update({ model: `${description.name}: ${description.links.length} links, ${description.joint_names.length} joints`, problem: null })
+        this.status.update({ model: `${description.name}: ${description.links.length} links, ${description.joint_names.length} joints`, problem: null, collisionMissing })
         this.viewer.requestRender()
     }
 
     #applyOptions() {
-        const model = this.#model
-        if (!model) {
-            return
-        }
-        const { display, obstacles } = this.manipulation.options.get()
-        model.real.setDisplay(display)
-        model.ghost.setDisplay(display === "collision" ? "collision" : "visual")
+        const { display, obstacles, grasps, grid } = this.manipulation.options.get()
         this.obstacles.visible = obstacles
+        this.grasps.visible = grasps
+        if (this.#active) {
+            this.viewer.setGrid(grid)
+        }
+        const model = this.#model
+        if (model) {
+            // viser: a model without collision geometry shows its visual meshes in collision colors instead
+            model.real.setDisplay(model.collisionFallback && display !== "visual" ? "visual" : display)
+            model.real.root.visible = !(model.collisionFallback && display === "collision")
+            if (model.collisionFallback) {
+                model.collisionFallback.setDisplay("visual")
+                model.collisionFallback.root.visible = display !== "visual"
+            }
+        }
         this.viewer.requestRender()
     }
 
-    /** The tip link the gizmo holds: the planning group's tip, else the last link of the joint chain. */
-    #tip(): string {
-        const group = this.manipulation.state.get().groups[0]
+    /** A group's tip link: its planning group's tip, else the last link of the joint chain. */
+    #tip(groupId: string): string | null {
         const model = this.#model!
-        if (group?.tip_frame && model.kinematics.joints.size && model.description.links.some((link) => link.name === group.tip_frame)) {
-            return group.tip_frame
-        }
-        const last = model.kinematics.joints.get(model.description.joint_names.at(-1) ?? "")
-        return last?.child ?? model.description.base_link
+        const tip = this.manipulation.groupById(groupId)?.tip_frame
+        return tip && model.description.links.some((link) => link.name === tip) ? tip : null
     }
 
     #measured(): JointPositions {
-        const model = this.#model!
-        return urdfPositions(model.kinematics, this.armControl.state.get().joints, isGripperJoint)
+        return urdfPositions(this.#model!.kinematics, this.armControl.state.get().joints, isGripperJoint)
     }
 
-    /** The ghost's joints now: the preview's, the target's joints, or the IK solve of the target's pose. */
-    #ghostPositions(now: number): JointPositions | null {
-        const { target, plan, preview } = this.manipulation.state.get()
-        const measured = this.#measured()
-        if (preview && plan && preview.id === plan.id) {
-            const seconds = (now - preview.startedAt) / 1000
-            if (seconds <= plan.duration + 0.6) {
-                this.viewer.requestRender()
-                return { ...measured, ...Manipulation.sample(plan, Math.min(seconds, plan.duration)) }
-            }
-            this.manipulation.state.update({ preview: null })
-        }
+    #withJoints(base: JointPositions, joints: Record<string, number>): JointPositions {
+        return { ...base, ...urdfPositions(this.#model!.kinematics, Object.entries(joints).map(([name, position]) => ({ name, position })), isGripperJoint) }
+    }
+
+    /** The target ghost's joints: the target's (a pose target's from the planner's IK, or without the hook the page's). */
+    #targetPositions(): JointPositions | null {
+        const { target, hook } = this.manipulation.state.get()
         if (!target) {
             return null
         }
-        if (target.mode === "joint" && target.joints) {
-            return { ...measured, ...urdfPositions(this.#model!.kinematics, Object.entries(target.joints).map(([name, position]) => ({ name, position })), isGripperJoint) }
-        }
-        if (target.mode === "cartesian" && target.pose) {
-            const key = JSON.stringify(target.pose)
-            if (this.#solvedFor !== key || !this.#solved) {
-                this.#solve(this.#poseMatrix(target), this.#solved ?? measured)
-                this.#solvedFor = key
-            }
+        if (target.source === "cartesian" && !hook && this.#solved) {
             return this.#solved
         }
-        return null
+        return this.#withJoints(this.#measured(), target.joints)
     }
 
-    #poseMatrix(target: ManipulationTarget): THREE.Matrix4 {
-        const pose = target.pose!
+    #previewPositions(now: number): JointPositions | null {
+        const { plan, preview } = this.manipulation.state.get()
+        if (!preview || !plan || preview.id !== plan.id) {
+            return null
+        }
+        const seconds = (now - preview.startedAt) / 1000
+        if (seconds > plan.duration + 0.6) {
+            this.manipulation.state.update({ preview: null })
+            return null
+        }
+        this.viewer.requestRender()
+        return this.#withJoints(this.#measured(), Manipulation.sample(plan, Math.min(seconds, plan.duration)))
+    }
+
+    static poseMatrix(pose: Pose): THREE.Matrix4 {
         return new THREE.Matrix4().compose(new THREE.Vector3(...pose.position), new THREE.Quaternion(...pose.orientation), new THREE.Vector3(1, 1, 1))
     }
 
-    /** IK for a world pose of the tip; the ghost and the reach indicator follow. */
-    #solve(world: THREE.Matrix4, seed: JointPositions) {
-        const model = this.#model!
-        const inRoot = model.rootInBase.clone().invert().multiply(world)
-        const result = solveIk(model.kinematics, this.#tip(), inRoot, seed)
-        this.#solved = result.positions
-        this.manipulation.setReach({ reachable: result.reachable, positionError: result.positionError, angleError: result.angleError })
+    /** One gizmo per selected group with a tip (viser's ee_control per group). */
+    #syncGizmos() {
+        const wanted = this.manipulation.state.get().selected.filter((group) => this.#tip(group))
+        for (const [group, gizmo] of this.gizmos) {
+            if (!wanted.includes(group)) {
+                gizmo.controls.detach()
+                gizmo.controls.dispose()
+                this.viewer.scene.remove(gizmo.controls.getHelper())
+                this.root.remove(gizmo.handle)
+                this.gizmos.delete(group)
+            }
+        }
+        for (const group of wanted) {
+            if (this.gizmos.has(group)) {
+                continue
+            }
+            const handle = new THREE.Object3D()
+            this.root.add(handle)
+            const controls = new TransformControls(this.viewer.camera, this.viewer.canvas)
+            controls.setSize(0.8)
+            controls.setSpace("local")
+            controls.setMode(this.manipulation.gizmo.get().mode)
+            controls.attach(handle)
+            this.viewer.scene.add(controls.getHelper())
+            controls.addEventListener("dragging-changed", (event) => {
+                const dragging = Boolean((event as unknown as { value: boolean }).value)
+                this.viewer.controls.enabled = !dragging
+                this.manipulation.gizmo.update({ dragging })
+                if (!dragging) {
+                    // the drag ended: the backend (and every page) gets the target
+                    const target = this.manipulation.state.get().target
+                    if (target) {
+                        this.manipulation.setTarget(target, true)
+                    }
+                }
+            })
+            controls.addEventListener("objectChange", () => this.#dragged(group, handle))
+            controls.addEventListener("change", () => this.viewer.requestRender())
+            this.gizmos.set(group, { controls, handle })
+        }
     }
 
-    /** The gizmo moved: a cartesian target at the handle's pose (world), the ghost solved for it. */
-    #dragged() {
+    /** A gizmo moved: its group's pose target at the handle (world); the planner's IK sets the joints. */
+    #dragged(group: string, handle: THREE.Object3D) {
         const model = this.#model
         if (!model) {
             return
         }
-        this.handle.updateMatrix()
-        const world = this.handle.matrix.clone()
+        handle.updateMatrix()
         const position = new THREE.Vector3()
         const orientation = new THREE.Quaternion()
-        world.decompose(position, orientation, new THREE.Vector3())
-        this.#solve(world, this.#solved ?? this.#ghostPositions(performance.now()) ?? this.#measured())
-        const target: ManipulationTarget = {
-            mode: "cartesian",
-            group: this.manipulation.group,
-            pose: { position: position.toArray() as [number, number, number], orientation: [orientation.x, orientation.y, orientation.z, orientation.w], frame: model.description.base_frame },
+        handle.matrix.decompose(position, orientation, new THREE.Vector3())
+        const { target, selected, hook } = this.manipulation.state.get()
+        const pose: Pose = { position: position.toArray() as [number, number, number], orientation: [orientation.x, orientation.y, orientation.z, orientation.w], frame: model.description.base_frame }
+        const next: ManipulationTarget = {
+            groups: selected,
+            joints: target?.joints ?? this.manipulation.currentJoints(),
+            poses: { ...(target?.poses ?? {}), [group]: pose },
+            source: "cartesian",
         }
-        this.#solvedFor = JSON.stringify(target.pose)
-        if (this.manipulation.options.get().mode !== "cartesian") {
-            this.manipulation.options.update({ mode: "cartesian" })
+        if (!hook) {
+            // no planner to ask: the page's own IK (no collision check) places the ghost and says whether it reaches
+            const tip = this.#tip(group)!
+            const inRoot = model.rootInBase.clone().invert().multiply(handle.matrix)
+            const result = solveIk(model.kinematics, tip, inRoot, this.#solved ?? this.#targetPositions() ?? this.#measured())
+            this.#solved = result.positions
+            this.manipulation.setReach({ reachable: result.reachable, positionError: result.positionError, angleError: result.angleError })
+            const groupJoints = this.manipulation.groupById(group)?.joint_names ?? []
+            next.joints = { ...next.joints, ...Object.fromEntries(groupJoints.filter((name) => name in result.positions).map((name) => [name, result.positions[name]])) }
         }
-        this.manipulation.setTarget(target, false)
+        this.manipulation.setTarget(next, false)
     }
 
-    /** The plan's tip path, in the arm's root frame. */
-    #updatePath() {
+    /** The plan's tip path per group, in the arm's root frame. */
+    #updatePaths() {
         const model = this.#model!
         const { plan } = this.manipulation.state.get()
         const key = plan?.id ?? ""
@@ -248,47 +309,107 @@ export class ArmManipView {
             return
         }
         this.#pathFor = key
-        const points: THREE.Vector3[] = []
-        if (plan) {
-            const measured = this.#measured()
-            const tip = this.#tip()
+        this.paths.children.forEach((line) => (line as THREE.Line).geometry.dispose())
+        this.paths.clear()
+        if (!plan) {
+            return
+        }
+        const measured = this.#measured()
+        for (const group of plan.groups) {
+            const tip = this.#tip(group)
+            if (!tip) {
+                continue
+            }
+            const points: THREE.Vector3[] = []
             for (const row of plan.positions) {
-                const positions = { ...measured, ...Object.fromEntries(plan.jointNames.map((name, index) => [name, row[index]])) }
-                const pose = model.kinematics.linkPoses(positions).get(tip)
+                const pose = model.kinematics.linkPoses({ ...measured, ...Object.fromEntries(plan.jointNames.map((name, index) => [name, row[index]])) }).get(tip)
                 if (pose) {
                     points.push(new THREE.Vector3().setFromMatrixPosition(pose))
                 }
             }
+            const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: PATH_COLOR, depthTest: false, transparent: true }))
+            line.renderOrder = 10
+            line.frustumCulled = false
+            this.paths.add(line)
         }
-        this.path.geometry.dispose()
-        this.path.geometry = new THREE.BufferGeometry().setFromPoints(points)
-        this.path.visible = points.length > 1
     }
 
-    async #loadObstacles() {
-        if (!this.#active || !this.manipulation.options.get().obstacles || !this.manipulation.state.get().available) {
+    /** The planning scene: obstacles and grasp proposals, each fetched again only when its version moved. */
+    async #loadScene() {
+        if (this.#fetching || !this.#active || !this.manipulation.state.get().available) {
             return
         }
+        this.#fetching = true
         try {
-            const response = await fetch(new URL("api/manipulation/obstacles", location.href).href)
-            const obstacles = (await response.json()) as Record<string, { position?: { x: number; y: number; z: number }; orientation?: { x: number; y: number; z: number; w: number } }>
-            this.obstacles.clear()
-            for (const [name, pose] of Object.entries(obstacles)) {
-                if (!pose?.position) {
-                    continue
-                }
-                const marker = new THREE.AxesHelper(0.08)
-                marker.name = name
-                marker.position.set(pose.position.x, pose.position.y, pose.position.z)
-                if (pose.orientation) {
-                    marker.quaternion.set(pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w)
-                }
-                this.obstacles.add(marker)
+            const query = new URLSearchParams(Object.entries(this.#sceneVersions).map(([key, value]) => [key, String(value)]))
+            const response = await fetch(new URL(`api/manipulation/scene?${query}`, location.href).href)
+            const answer = (await response.json()) as { hook: boolean; scene: { versions: Record<string, number>; obstacles?: Obstacle[]; grasps?: GraspProposal[] } }
+            if (!response.ok) {
+                return
             }
+            const { scene } = answer
+            if (scene.obstacles) {
+                this.#drawObstacles(scene.obstacles)
+            }
+            if (scene.grasps) {
+                this.#drawGrasps(scene.grasps)
+            }
+            // without the hook there are no versions: poses are fetched every time
+            this.#sceneVersions = answer.hook ? scene.versions : {}
             this.viewer.requestRender()
         } catch {
-            // the planner went away: the next poll tries again
+            // the planner went away: the next tick tries again
+        } finally {
+            this.#fetching = false
         }
+    }
+
+    #drawObstacles(obstacles: Obstacle[]) {
+        disposeChildren(this.obstacles)
+        const problems: string[] = []
+        for (const obstacle of obstacles) {
+            const object = obstacleObject(obstacle)
+            if (obstacle.error) {
+                problems.push(`${obstacle.name}: ${obstacle.error}`)
+            }
+            object.name = obstacle.name
+            this.obstacles.add(object)
+        }
+        this.status.update({ obstacleCount: obstacles.length, obstacleProblems: problems })
+    }
+
+    /** viser's glyphs: per proposal the approach axis and the closing axis across it, best green through worst orange. */
+    #drawGrasps(grasps: GraspProposal[]) {
+        disposeChildren(this.grasps)
+        const drawn = grasps.slice(0, GRASP_DRAW_LIMIT)
+        const local = [new THREE.Vector3(0, 0, -GRASP_APPROACH_LENGTH), new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, -GRASP_CLOSING_HALF_WIDTH, 0), new THREE.Vector3(0, GRASP_CLOSING_HALF_WIDTH, 0)]
+        const positions: number[] = []
+        const colors: number[] = []
+        drawn.forEach((grasp, rank) => {
+            const matrix = ArmManipView.poseMatrix(grasp.pose)
+            const color = GRASP_BEST.clone().lerp(GRASP_WORST, drawn.length <= 1 ? 0 : rank / (drawn.length - 1))
+            for (const point of local) {
+                positions.push(...point.clone().applyMatrix4(matrix).toArray())
+                colors.push(color.r, color.g, color.b)
+            }
+            if (rank < GRASP_EMPHASIS_COUNT) {
+                // viser draws the leaders thicker; WebGL lines are one pixel, so the leaders get a dot at the grasp point
+                const dot = new THREE.Mesh(new THREE.SphereGeometry(0.006, 12, 8), new THREE.MeshBasicMaterial({ color, depthTest: false }))
+                dot.position.set(...grasp.pose.position)
+                dot.renderOrder = 11
+                this.grasps.add(dot)
+            }
+        })
+        if (positions.length) {
+            const geometry = new THREE.BufferGeometry()
+            geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3))
+            geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3))
+            const lines = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true }))
+            lines.renderOrder = 11
+            this.grasps.add(lines)
+        }
+        this.grasps.userData.leaders = drawn.slice(0, GRASP_EMPHASIS_COUNT)
+        this.status.update({ graspCount: grasps.length })
     }
 
     #frame(frame: FrameInfo) {
@@ -297,16 +418,25 @@ export class ArmManipView {
             this.#active = active
             this.manipulation.setActive(active)
             if (active) {
-                this.#ask()
+                this.#applyOptions()
+                this.#loadDescription()
+                this.#loadScene()
             }
         }
         const model = this.#model
         const placed = model ? this.tf.lookup(model.description.base_frame, frame.fixedFrame) : null
         const show = active && !!model && !!placed
         this.root.visible = show
-        this.gizmo.enabled = show
-        this.gizmo.getHelper().visible = show
+        if (show) {
+            this.#syncGizmos()
+        }
+        for (const { controls } of this.gizmos.values()) {
+            controls.enabled = show
+            controls.getHelper().visible = show
+        }
+        this.#labels.begin()
         if (!show || !model || !placed) {
+            this.#labels.end()
             return
         }
         if (!this.root.matrix.equals(placed)) {
@@ -315,36 +445,111 @@ export class ArmManipView {
         }
         const measured = this.#measured()
         model.real.pose(measured)
-        const ghost = this.#ghostPositions(frame.now)
-        model.ghost.root.visible = !!ghost
-        if (ghost) {
-            model.ghost.pose(ghost)
+        model.collisionFallback?.pose(measured)
+
+        const { target, feasibility, hook } = this.manipulation.state.get()
+        const targetPositions = this.#targetPositions()
+        model.target.root.visible = !!targetPositions
+        if (targetPositions) {
+            model.target.pose(targetPositions)
+            const infeasible = hook ? feasibility.status !== "feasible" && feasibility.status !== "checking" : this.manipulation.state.get().reach?.reachable === false
+            const look = infeasible ? TARGET_INFEASIBLE : TARGET_FEASIBLE
+            model.target.tint(look.color, look.opacity)
         }
-        this.#updatePath()
-        // the gizmo sits on the ghost's tip (or the arm's) unless it is being dragged
+        const previewPositions = this.#previewPositions(frame.now)
+        model.preview.root.visible = !!previewPositions
+        if (previewPositions) {
+            model.preview.pose(previewPositions)
+        }
+        this.#updatePaths()
+
+        // each gizmo sits on its group's pose target, else the target ghost's (or the arm's) tip, unless dragged
         if (!this.manipulation.gizmo.get().dragging) {
-            const tip = model.kinematics.linkPoses(ghost ?? measured).get(this.#tip())
-            if (tip) {
-                const world = model.rootInBase.clone().multiply(tip)
-                const target = this.manipulation.state.get().target
-                // a cartesian target's own pose wins over the IK's (they differ when the pose can't be reached)
-                const shown = target?.mode === "cartesian" && target.pose && !this.manipulation.state.get().preview ? this.#poseMatrix(target) : world
-                shown.decompose(this.handle.position, this.handle.quaternion, this.handle.scale)
-                this.handle.updateMatrixWorld()
+            for (const [group, { handle }] of this.gizmos) {
+                const pose = target?.poses[group]
+                const tip = this.#tip(group)
+                const linkPose = tip ? model.kinematics.linkPoses(targetPositions ?? measured).get(tip) : undefined
+                const world = pose ? ArmManipView.poseMatrix(pose) : linkPose ? model.rootInBase.clone().multiply(linkPose) : null
+                if (world) {
+                    world.decompose(handle.position, handle.quaternion, handle.scale)
+                    handle.updateMatrixWorld()
+                }
             }
         }
+        // viser labels the three best grasps with their rank and score
+        if (this.grasps.visible) {
+            for (const [rank, grasp] of ((this.grasps.userData.leaders ?? []) as GraspProposal[]).entries()) {
+                this.#labels.place(`#${rank} ${grasp.score.toFixed(3)}`, new THREE.Vector3(...grasp.pose.position))
+            }
+        }
+        this.#labels.end()
     }
 
     dispose() {
-        clearInterval(this.#asking)
-        clearInterval(this.#obstacleTimer)
-        this.gizmo.detach()
-        this.gizmo.dispose()
-        this.viewer.scene.remove(this.root, this.gizmo.getHelper())
+        clearInterval(this.#descriptionTimer)
+        clearInterval(this.#sceneTimer)
+        for (const { controls } of this.gizmos.values()) {
+            controls.detach()
+            controls.dispose()
+            this.viewer.scene.remove(controls.getHelper())
+        }
+        this.viewer.scene.remove(this.root)
+        this.#labels.dispose()
+        disposeChildren(this.obstacles)
+        disposeChildren(this.grasps)
         if (this.#model) {
-            this.#model.real.dispose()
-            this.#model.ghost.dispose()
+            for (const robot of [this.#model.real, this.#model.target, this.#model.preview, this.#model.collisionFallback]) {
+                robot?.dispose()
+            }
             this.#model.geometries.forEach((geometry) => geometry.dispose())
         }
     }
+}
+
+/** An obstacle as viser draws it: its shape in its color (or viser's fallback), the occupied cells of an octree as
+ * square points, a red box with a label when its shape couldn't be read, and axes for a pose without a shape. */
+export function obstacleObject(obstacle: Obstacle): THREE.Object3D {
+    const color = obstacle.color ? new THREE.Color(obstacle.color[0], obstacle.color[1], obstacle.color[2]) : new THREE.Color(OBSTACLE_FALLBACK.color)
+    const opacity = obstacle.color?.[3] ?? OBSTACLE_FALLBACK.opacity
+    const material = () => new THREE.MeshStandardMaterial({ color, transparent: opacity < 1, opacity, depthWrite: opacity >= 1, roughness: 0.7 })
+    const dimensions = obstacle.dimensions ?? []
+    let object: THREE.Object3D
+    if (obstacle.error) {
+        object = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, 0.25), new THREE.MeshStandardMaterial({ color: OBSTACLE_PROXY, transparent: true, opacity: 0.9 }))
+    } else if (obstacle.type === "box") {
+        object = new THREE.Mesh(new THREE.BoxGeometry(dimensions[0] ?? 0.1, dimensions[1] ?? 0.1, dimensions[2] ?? 0.1), material())
+    } else if (obstacle.type === "sphere") {
+        object = new THREE.Mesh(new THREE.IcosahedronGeometry(dimensions[0] ?? 0.05, 3), material())
+    } else if (obstacle.type === "cylinder") {
+        // dimos cylinders (radius, height) run along z, three's along y
+        const cylinder = new THREE.CylinderGeometry(dimensions[0] ?? 0.05, dimensions[0] ?? 0.05, dimensions[1] ?? 0.1, 32)
+        cylinder.rotateX(Math.PI / 2)
+        object = new THREE.Mesh(cylinder, material())
+    } else if (obstacle.type === "mesh" && obstacle.vertices && obstacle.faces) {
+        const geometry = new THREE.BufferGeometry()
+        geometry.setAttribute("position", new THREE.Float32BufferAttribute(obstacle.vertices, 3))
+        geometry.setIndex(obstacle.faces)
+        geometry.computeVertexNormals()
+        object = new THREE.Mesh(geometry, material())
+    } else if (obstacle.type === "octree" && obstacle.points) {
+        const geometry = new THREE.BufferGeometry()
+        geometry.setAttribute("position", new THREE.Float32BufferAttribute(obstacle.points, 3))
+        object = new THREE.Points(geometry, new THREE.PointsMaterial({ color, size: obstacle.resolution ?? 0.05, sizeAttenuation: true }))
+    } else {
+        object = new THREE.AxesHelper(0.08)
+    }
+    object.position.set(...obstacle.pose.position)
+    object.quaternion.set(...obstacle.pose.orientation)
+    object.userData.obstacle = obstacle.type
+    return object
+}
+
+function disposeChildren(group: THREE.Group) {
+    group.traverse((object) => {
+        const mesh = object as THREE.Mesh
+        mesh.geometry?.dispose()
+        const material = mesh.material as THREE.Material | undefined
+        material?.dispose?.()
+    })
+    group.clear()
 }

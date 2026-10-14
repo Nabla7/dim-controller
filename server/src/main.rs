@@ -13,6 +13,7 @@ mod frontend;
 mod image;
 mod labels;
 mod logs;
+mod hook_install;
 mod manipulation;
 mod msgs;
 mod pickle;

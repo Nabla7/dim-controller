@@ -233,6 +233,20 @@ export class RobotModel {
         }
     }
 
+    /** One color for every visual mesh (viser's target and preview ghosts). */
+    tint(color: THREE.ColorRepresentation, opacity: number) {
+        this.root.traverse((object) => {
+            const mesh = object as THREE.Mesh
+            if (mesh.isMesh && mesh.userData.kind === "visual") {
+                const material = mesh.material as THREE.MeshStandardMaterial
+                material.color.set(color)
+                material.opacity = opacity
+                material.transparent = opacity < 1
+                material.depthWrite = opacity >= 1
+            }
+        })
+    }
+
     setDisplay(mode: DisplayMode) {
         this.root.traverse((object) => {
             const kind = object.userData.kind as string | undefined

@@ -437,45 +437,51 @@ provides:
             method: POST
             path: api/manipulation/target
             description: >-
-                Set the target every open page shows as the ghost arm (it moves nothing): mode joint with joints {name:
-                radians}, or mode cartesian with pose {position [x, y, z], orientation [x, y, z, w], frame (default
-                world)}; or preset current | init | home (that preset's joints). clear=true removes the target.
+                Set the target every open page shows as the ghost arm (it moves nothing): groups (the planning groups
+                selected, default [manipulator]) with joints {name: radians} and/or poses {group: {position [x, y, z],
+                orientation [x, y, z, w], frame (default world)}} (or one pose for the first group), source joints |
+                cartesian (which was edited); or preset current | init | home (that preset's joints for the groups).
+                clear=true removes the target.
             params:
                 clear:
                     description: remove the target
                     type: boolean
-                group:
-                    description: planning group (default manipulator)
-                    type: string
+                groups:
+                    description: planning group ids
+                    type: array
                 joints:
                     description: joint name -> radians
                     type: object
-                mode:
-                    description: joint | cartesian
-                    type: string
                 pose:
-                    description: '{position [x, y, z], orientation [x, y, z, w], frame}'
+                    description: the first group's pose
+                    type: object
+                poses:
+                    description: 'group -> {position, orientation, frame}'
                     type: object
                 preset:
                     description: current | init | home
+                    type: string
+                source:
+                    description: joints | cartesian
                     type: string
         -
             method: POST
             path: api/manipulation/plan
             description: >-
-                Plan from where the arm is to the target (the body's, else the current one): collision-checked by the
-                ManipulationModule; on success the plan is kept for Preview and Execute and every page draws its path.
-                speed: the plan's speed scale 0.05-1 (default lv.manip.speed).
+                Plan from where the arm is to the target (the body's, else the current one), collision-checked by the
+                ManipulationModule: mode joint (default lv.manip.mode) plans to the groups' joints, mode cartesian a
+                straight TCP path to the poses (with the hook; without it plan_to_poses). On success the plan is kept
+                for Preview and Execute and every page draws its path. speed: the plan's speed scale 0.05-1 (default
+                lv.manip.speed).
             params:
-                group:
-                    description: ''
-                    type: string
+                groups:
+                    type: array
                 joints:
                     type: object
                 mode:
                     description: joint | cartesian
                     type: string
-                pose:
+                poses:
                     type: object
                 speed:
                     description: 0.05-1
@@ -501,17 +507,74 @@ provides:
             path: api/manipulation/obstacles
             description: 'The planning scene''s obstacles: name -> pose.'
         -
+            method: POST
+            path: api/manipulation/evaluate
+            description: >-
+                Check a target the way viser's panel does, in the planner's process (needs the hook): collision-aware IK
+                for poses, collision and limits for joints. Body: a target (groups, joints or poses, source). Answers
+                success, collision_free, status (FEASIBLE, COLLISION, NO_SOLUTION, INVALID...), message, joints (the
+                IK's for poses), poses (each group's tip for joints).
+            params:
+                groups:
+                    type: array
+                joints:
+                    type: object
+                poses:
+                    type: object
+                source:
+                    description: joints | cartesian
+                    type: string
+        -
+            method: GET
+            path: api/manipulation/scene
+            description: >-
+                What viser draws besides the arm (needs the hook): obstacles with their shapes (box, sphere, cylinder,
+                mesh vertices/faces, octree points), grasp proposals (pose, score; best first), the last preview; each
+                with a version, left out when ?obstacles=&grasps=&preview= already has it. Without the hook: obstacle
+                poses only (type marker).
+        -
+            method: GET
+            path: api/manipulation/description
+            description: >-
+                The planner's robot model as dimos.robot_description.v1 (links with visual and collision geometry,
+                joints, base pose), from the hook.
+        -
+            method: GET
+            path: api/manipulation/hook
+            description: >-
+                dim-controller's hook in the blueprint's process: loaded (its info: pid, python, groups, joint topology)
+                and installed (per running dimos run's venv).
+        -
+            method: POST
+            path: api/manipulation/hook/install
+            description: >-
+                Install (uninstall=true: remove) the hook into the venv of every running dimos run, or venv; it loads
+                when the blueprint restarts.
+            params:
+                uninstall:
+                    description: ''
+                    type: boolean
+                venv:
+                    description: 'a venv or its python (default: every running dimos run''s)'
+                    type: string
+        -
             method: PATCH
             path: api/manipulation/options
             description: >-
                 The arm 3D view's planner options (lv.manip), applied in every open page: mode (joint | cartesian: what
                 the gizmo and sliders set), speed (next plan's speed scale 0.05-1), display (visual | collision | both:
-                the arm's geometry), obstacles (draw the planning scene's obstacles), interact (the 3D arm and gizmo are
-                shown).
+                the arm's geometry), obstacles (draw the planning scene's obstacles), grasps (draw the grasp proposals),
+                grid (the ground grid), interact (the 3D arm and gizmo are shown).
             params:
                 display:
                     description: visual | collision | both
                     type: string
+                grasps:
+                    description: ''
+                    type: boolean
+                grid:
+                    description: ''
+                    type: boolean
                 interact:
                     description: ''
                     type: boolean

@@ -104,7 +104,7 @@ export class ViewerApp {
         this.drive = new Drive(this.connection, this.profile)
         this.joy = new JoyPublisher(this.connection)
         this.arm = new ArmControl(this.connection, this.drive, profileFor("arm").arm!)
-        this.manipView = new ArmManipView(this.viewer, this.tf, this.connection, this.arm, this.manipulation, () => this.robot.get().type === "arm")
+        this.manipView = new ArmManipView(this.viewer, this.tf, this.arm, this.manipulation, () => this.robot.get().type === "arm")
         feedTf(this.connection, this.tf, this.viewer)
         feedBattery(this.connection, () => this.profile.name)
         this.connection.status.subscribe(() => this.#updateDriveCandidates())

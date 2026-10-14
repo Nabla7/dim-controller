@@ -334,30 +334,48 @@ encodes decode with dimos's own message classes. Not verified on a running arm: 
 
 ### Arm control: plan and move (like viser)
 
-With a manipulation blueprint running (one with dimos's `ManipulationModule`, e.g. `xarm-perception-sim`), the arm
-mode's 3D view works like viser, dimos's manipulation planning view, and Settings opens with **Plan and move**:
+With a manipulation blueprint running (one with dimos's `ManipulationModule`, e.g. `xarm-perception-sim` or
+`dual-xarm6-planner-coordinator`), the arm mode's 3D view and Settings → **Plan and move** do what viser, dimos's
+manipulation panel, does, in its order:
 
-- **The arm in 3D** is the robot's own URDF meshes, posed live from the joint state (gripper fingers included: a gripper
-  position drives the joint the fingers mimic). A `RobotDescriptionModule` in the blueprint publishes them: it answers
-  `/robot_description_request` with `dimos.robot_description.v1` JSON on `/robot_description` (links, joints, meshes as
-  base64 float32 / uint32 arrays, the base pose), and the page does the forward kinematics
-  ([core/robotDescription.ts](frontend/src/core/robotDescription.ts)). Robot display shows the visual geometry, the
-  collision geometry, or both.
-- **Drag the gizmo** on the tip (Move or Rotate) to set a pose target: a translucent ghost arm shows a joint
-  configuration that reaches it (damped least squares IK in the page, within the joint limits:
-  [core/ik.ts](frontend/src/core/ik.ts)) and the panel says whether the pose looks reachable. Or set joint targets with
-  the sliders (Joint space), or a preset: **Current**, **Init** (where the arm was when the planner started), **Home**.
-  A target moves nothing.
-- **Plan** asks the planner for a collision-checked plan to the target at the next plan's speed; its tip path is drawn.
-  **Preview** plays it on the ghost, **Execute** runs that plan (by its id), **Cancel** stops planning or the motion,
-  **Clear plan** drops it. Obstacles in the planning scene are drawn at their poses.
+- **Status**: the planner's state (or its error), the target's (empty, checking, feasible, infeasible) and the plan's
+  (none, planning, fresh, stale, failed), whether the joint state is stale, the current joints, the last result.
+- **The arm in 3D** is the planner's own model (its URDF meshes), posed live from the joint state. **Robot display**:
+  visual, collision or both (a model with no collision geometry shows its visual meshes in collision colors, with
+  viser's warning). **Scene grid** toggles the ground grid.
+- **Planning Groups**: toggle which groups the target covers (two arms, an arm and a gripper...). Each selected group
+  with a tip gets a gizmo (Move / Rotate) and its joints' sliders under **Joint Control** (a continuous joint wraps
+  -pi..pi, an unbounded one is a number box).
+- **Target**: drag a gizmo, move a slider, or pick a **Preset** (Init, Current, Home). The planner checks every edit
+  the way viser does, in its own process: collision-aware IK for a gizmo's pose (the sliders follow the solution),
+  collision and limits for joints (the gizmos follow the tips). The target ghost is orange when feasible, red when not,
+  and **Plan** waits for a feasible target. A target moves nothing.
+- **Actions**: **Next plan speed**, **Planning mode** (Joint space: plan to the joints; Cartesian space: a straight TCP
+  path to the gizmos' poses), **Plan** (its tip paths are drawn), **Preview** (the blue preview ghost plays it),
+  **Execute** (that plan, by its id; only while it is fresh: editing the target, the groups or the mode makes it
+  stale), **Cancel** (shown while planning or moving), **Clear plan**.
+- **Scene**: the planning scene's obstacles as their shapes (boxes, spheres, cylinders, meshes, a voxel map's occupied
+  cells) and the grasp proposals a grasp module ranked (best green through worst orange, the leaders labelled with
+  their score), each with a toggle.
 
-Each of these is an endpoint (`api/manipulation`, `/target`, `/plan`, `/preview`, `/execute`, `/cancel`, `/clear`,
-`/obstacles`, `/options`), so the agent and every open page share the target and plan. The backend calls the planner
-over its own zenoh RPCs (`dimos/rpc/ManipulationModule/<method>`), whose payloads are Python pickles: a pickle reader and
-writer for exactly what these calls carry (dataclasses, enums, dimos messages, numpy scalars) is in
-[server/src/pickle.rs](server/src/pickle.rs), tested against bytes captured from a running sim. When dimos's RPCs move
-to JSON it goes. With no planner answering the panel says so, and the jog controls above keep working.
+Each of these is an endpoint (`api/manipulation`, `/target`, `/evaluate`, `/plan`, `/preview`, `/execute`, `/cancel`,
+`/clear`, `/scene`, `/description`, `/options`), so the agent and every open page share the target and plan. Planning
+and execution go over the planner's own zenoh RPCs (`dimos/rpc/ManipulationModule/<method>`), whose payloads are Python
+pickles: a reader and writer for exactly what these calls carry is in [server/src/pickle.rs](server/src/pickle.rs),
+tested against bytes captured from a running sim.
+
+**The hook.** What viser has that no RPC gives (the model, the feasibility check, the Cartesian plan, obstacle shapes,
+grasp proposals) it gets in-process: dimos's WorldMonitor hands its visualizer all of it. dim-controller does the same
+without changing dimos: [server/python/dim_controller_hook](server/python/dim_controller_hook) is installed into the venv the
+blueprint runs from (a `.pth` file Python runs at startup), wraps `WorldMonitor.finalize` to stand beside the
+visualizer (viser, or none), and answers `dim_controller/hook/*` zenoh queries on loopback. Install it from the panel
+(**Install hook**, for every running `dimos run`, found through dimos's run registry), `POST
+api/manipulation/hook/install`, or `python3 server/python/install_hook.py [--venv PATH]`; restart the blueprint to load it. If
+dimos changes under it (`finalize`'s signature, the visualizer protocol), it turns itself off with one warning and
+dimos runs untouched; `DIM_CONTROLLER_HOOK=0` turns it off. Without it the panel still plans and executes (Cartesian
+mode then uses `plan_to_poses`, not a straight line), checks a dragged pose's reach with the page's own IK (no
+collisions), and draws obstacles as axes at their poses, but there is no 3D arm. It is a stopgap until WorldMonitor
+exposes this itself. Its tests run in a dimos venv: `<dimos>/.venv/bin/python -m pytest server/python/tests -q`.
 
 ## Fork this for your robot
 

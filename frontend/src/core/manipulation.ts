@@ -1,22 +1,34 @@
-// viser's manipulation workflow for the arm mode, the page's side (server/src/manipulation.rs does the planner calls):
-// the target (the ghost arm), Plan, Preview, Execute, Cancel, Clear, and the planner's live state. Every action is the
-// backend's endpoint, so the agent and other open pages see the same target and plan (the `manipulation` event).
+// viser's manipulation panel for the arm mode, the page's side (server/src/manipulation.rs does the planner calls):
+// the selected planning groups, the target (joints per group and a TCP pose per pose-capable group, as viser's
+// sliders and gizmos), its feasibility (checked by the planner through dim-controller's hook, as viser does), Plan /
+// Preview / Execute / Cancel / Clear, and the planner's live state. Every action is the backend's endpoint, so the
+// agent and other open pages see the same target and plan (the `manipulation` event).
 import { persistentStore, Store } from "./store.ts"
 
 export type PlanningMode = "joint" | "cartesian"
 
+export interface Pose {
+    /** world frame */
+    position: [number, number, number]
+    orientation: [number, number, number, number]
+    frame?: string
+}
+
 export interface ManipulationTarget {
-    mode: PlanningMode
-    group: string
-    joints?: Record<string, number>
-    /** world frame: position [x, y, z], orientation [x, y, z, w] */
-    pose?: { position: [number, number, number]; orientation: [number, number, number, number]; frame?: string }
+    groups: string[]
+    /** every selected group's joints (viser's sliders) */
+    joints: Record<string, number>
+    /** a TCP pose per selected group with a tip (viser's gizmos) */
+    poses: Record<string, Pose>
+    /** what was edited last: the sliders (joints) or a gizmo (cartesian); the other follows from the check */
+    source: "joints" | "cartesian"
     preset?: string
 }
 
 export interface ManipulationPlan {
     id: string
-    group: string
+    groups: string[]
+    mode: PlanningMode
     duration: number
     jointNames: string[]
     times: number[]
@@ -28,8 +40,20 @@ export interface PlanningGroup {
     id: string
     joint_names: string[]
     base_frame: string
-    tip_frame: string
+    tip_frame: string | null
     has_gripper: boolean
+}
+
+/** dim-controller's hook in the blueprint's process (server/python/dim_controller_hook), when it is loaded */
+export interface HookInfo {
+    hook: number
+    pid: number
+    python: string
+    visualization: string | null
+    visualization_url: string | null
+    operator: boolean
+    /** per joint, as viser's sliders read it: limited | circle (-pi..pi) | line (unbounded: a number box) */
+    joint_topology: Record<string, string>
 }
 
 interface EnumValue {
@@ -43,12 +67,15 @@ export interface PlannerState {
     has_pending_plan: boolean
     error: string | null
     groups: Record<string, {
-        joints: { name: string[]; position: number[] }
-        end_effector_pose: { frame_id: string; position: { x: number; y: number; z: number }; orientation: { x: number; y: number; z: number; w: number } }
+        joints: { name: string[]; position: number[] } | null
+        end_effector_pose: { frame_id: string; position: { x: number; y: number; z: number }; orientation: { x: number; y: number; z: number; w: number } } | null
         gripper_position: number | null
         joint_presets: Record<string, { name: string[]; position: number[] }>
     }>
 }
+
+/** viser's FeasibilityStatus; "unchecked" when there is no hook to ask */
+export type Feasibility = "unknown" | "checking" | "feasible" | "collision" | "ik_failed" | "invalid" | "unchecked"
 
 export interface ManipulationOptions {
     mode: PlanningMode
@@ -56,6 +83,8 @@ export interface ManipulationOptions {
     speed: number
     display: "visual" | "collision" | "both"
     obstacles: boolean
+    grasps: boolean
+    grid: boolean
     /** the 3D arm, ghost and gizmo are drawn */
     interact: boolean
 }
@@ -66,27 +95,65 @@ export interface ManipulationState {
     error: string | null
     planner: PlannerState | null
     groups: PlanningGroup[]
+    hook: HookInfo | null
+    /** viser's planning-group toggles */
+    selected: string[]
     target: ManipulationTarget | null
+    /** bumps on every target edit: a plan or check made for an older one is stale (viser's sequence ids) */
+    targetSequence: number
+    feasibility: { status: Feasibility; message: string; sequence: number }
     plan: ManipulationPlan | null
-    /** the plan being previewed on the ghost: its id and when it started (performance.now) */
+    /** the target sequence the plan was made for */
+    planSequence: number | null
+    /** the plan being previewed on the preview ghost: its id and when it started (performance.now) */
     preview: { id: string; startedAt: number } | null
-    /** what the last action said: plan / execute / cancel / clear */
+    /** what the last action said: plan / execute / cancel / clear (viser's "Last result") */
     last: { action: string; ok: boolean; message: string } | null
     busy: string | null
-    /** the ghost pose from the gizmo: reachable (browser IK); null when the target is joints */
+    /** without the hook: the gizmo pose's reach by the page's own IK */
     reach: { reachable: boolean; positionError: number; angleError: number } | null
 }
 
 const POLL_MS = 700
+const CHECKING_STATUSES: Record<string, Feasibility> = {
+    FEASIBLE: "feasible",
+    COLLISION: "collision",
+    COLLISION_AT_START: "collision",
+    COLLISION_AT_GOAL: "collision",
+    NO_SOLUTION: "ik_failed",
+    SINGULARITY: "ik_failed",
+    JOINT_LIMITS: "ik_failed",
+    TIMEOUT: "ik_failed",
+}
 
 export class Manipulation {
-    readonly state = new Store<ManipulationState>({ available: null, error: null, planner: null, groups: [], target: null, plan: null, preview: null, last: null, busy: null, reach: null })
-    readonly options = persistentStore<ManipulationOptions>("lv.manip", { mode: "joint", speed: 1, display: "visual", obstacles: true, interact: true })
-    /** the gizmo's drag is moving the target and it isn't committed yet: polls keep it */
+    readonly state = new Store<ManipulationState>({
+        available: null,
+        error: null,
+        planner: null,
+        groups: [],
+        hook: null,
+        selected: [],
+        target: null,
+        targetSequence: 0,
+        feasibility: { status: "unknown", message: "", sequence: 0 },
+        plan: null,
+        planSequence: null,
+        preview: null,
+        last: null,
+        busy: null,
+        reach: null,
+    })
+    readonly options = persistentStore<ManipulationOptions>("lv.manip", { mode: "joint", speed: 1, display: "visual", obstacles: true, grasps: true, grid: true, interact: true })
+    /** a gizmo's drag is moving the target and it isn't committed yet: polls keep it */
     readonly gizmo = new Store<{ mode: "translate" | "rotate"; dragging: boolean }>({ mode: "translate", dragging: false })
     #polling: ReturnType<typeof setInterval> | null = null
     #inFlight = false
     #uncommitted = false
+    #checking = false
+    #checkAgain = false
+    /** the target sequence this page edited last: only its own edits take the check's other half (and send it on) */
+    #localSequence = -1
 
     #url(path: string): string {
         return new URL(path, location.href).href
@@ -124,14 +191,26 @@ export class Manipulation {
         try {
             const answer = await this.#call("GET", "api/manipulation")
             if (answer.available) {
+                const groups = (answer.groups as PlanningGroup[]) ?? []
+                const hadHook = this.state.get().hook !== null
+                const target = this.#uncommitted ? this.state.get().target : (answer.target as ManipulationTarget | null) ?? null
+                const changed = JSON.stringify(target) !== JSON.stringify(this.state.get().target)
                 this.state.update({
                     available: true,
                     error: null,
                     planner: answer.state as PlannerState,
-                    groups: (answer.groups as PlanningGroup[]) ?? [],
-                    target: this.#uncommitted ? this.state.get().target : (answer.target as ManipulationTarget | null) ?? null,
+                    groups,
+                    hook: (answer.hook as HookInfo | null) ?? null,
+                    target,
                     plan: (answer.plan as ManipulationPlan | null) ?? null,
+                    ...(this.state.get().selected.length ? {} : { selected: defaultSelection(groups) }),
                 })
+                if (target && target.groups.length && !this.#uncommitted) {
+                    this.state.update({ selected: target.groups })
+                }
+                if (changed || (!hadHook && this.state.get().hook)) {
+                    this.#edited(false)
+                }
             } else {
                 this.state.update({ available: false, error: String(answer.error ?? "no ManipulationModule answered") })
             }
@@ -142,18 +221,49 @@ export class Manipulation {
         }
     }
 
-    get group(): string {
-        return this.state.get().groups[0]?.id ?? "manipulator"
+    groupById(id: string): PlanningGroup | undefined {
+        return this.state.get().groups.find((group) => group.id === id)
+    }
+
+    /** The selected groups' measured joints. */
+    currentJoints(groups = this.state.get().selected): Record<string, number> {
+        const planner = this.state.get().planner
+        const joints: Record<string, number> = {}
+        for (const id of groups) {
+            const measured = planner?.groups[id]?.joints
+            measured?.name.forEach((name, index) => (joints[name] = measured.position[index]))
+        }
+        return joints
+    }
+
+    /** viser's group toggle: the target keeps the groups still selected, plus the new group's current joints. */
+    toggleGroup(id: string) {
+        const { selected, target } = this.state.get()
+        const next = selected.includes(id) ? selected.filter((group) => group !== id) : [...selected, id]
+        // viser's order: groups with a tip first, then by id
+        next.sort((a, b) => Number(!this.groupById(a)?.tip_frame) - Number(!this.groupById(b)?.tip_frame) || a.localeCompare(b))
+        this.state.update({ selected: next })
+        if (!target) {
+            return
+        }
+        const keep = new Set(next.flatMap((group) => this.groupById(group)?.joint_names ?? []))
+        const joints = { ...this.currentJoints(next), ...Object.fromEntries(Object.entries(target.joints).filter(([name]) => keep.has(name))) }
+        const poses = Object.fromEntries(Object.entries(target.poses).filter(([group]) => next.includes(group)))
+        this.setTarget(next.length ? { ...target, groups: next, joints, poses, source: "joints" } : null)
     }
 
     /** The ghost follows at once; the backend (and other pages) get it when the drag or slide ends (`commit`). */
     setTarget(target: ManipulationTarget | null, commit = true) {
-        // a joint target has no pose to reach: the reach of an earlier dragged pose no longer applies
-        this.state.update({ target, preview: null, ...(target?.mode === "cartesian" ? {} : { reach: null }) })
+        this.state.update({ target, preview: null, ...(target?.source === "cartesian" ? {} : { reach: null }) })
         this.#uncommitted = !commit
-        if (!commit) {
-            return
+        this.#edited(true)
+        this.#localSequence = this.state.get().targetSequence
+        if (commit) {
+            this.#commit(target)
         }
+    }
+
+    #commit(target: ManipulationTarget | null) {
         const body = target ? { ...target, from: "page" } : { clear: true }
         this.#call("POST", "api/manipulation/target", body).catch((error) => this.state.update({ last: { action: "target", ok: false, message: String(error) } }))
     }
@@ -162,10 +272,78 @@ export class Manipulation {
         this.state.update({ reach })
     }
 
+    /** A new target (or a new hook): a new sequence, the plan goes stale, and the planner checks it (viser's worker). */
+    #edited(bump: boolean) {
+        const { targetSequence, hook, target } = this.state.get()
+        const sequence = bump ? targetSequence + 1 : targetSequence
+        this.state.update({
+            targetSequence: sequence,
+            feasibility: { status: !target ? "unknown" : hook ? "checking" : "unchecked", message: "", sequence },
+        })
+        if (target && hook) {
+            this.#check()
+        }
+    }
+
+    /** One check in flight, the newest target next (viser's TargetEvaluationWorker); stale answers are dropped. */
+    async #check() {
+        if (this.#checking) {
+            this.#checkAgain = true
+            return
+        }
+        this.#checking = true
+        try {
+            do {
+                this.#checkAgain = false
+                const { target, targetSequence } = this.state.get()
+                if (!target) {
+                    break
+                }
+                let result: Record<string, unknown>
+                try {
+                    result = await this.#call("POST", "api/manipulation/evaluate", target)
+                } catch (error) {
+                    result = { success: false, status: "INVALID", message: String(error) }
+                }
+                if (this.state.get().targetSequence !== targetSequence) {
+                    continue
+                }
+                this.#applyCheck(target, result)
+            } while (this.#checkAgain)
+        } finally {
+            this.#checking = false
+        }
+    }
+
+    #applyCheck(target: ManipulationTarget, result: Record<string, unknown>) {
+        const feasible = result.success === true && result.collision_free === true
+        const status: Feasibility = feasible ? "feasible" : CHECKING_STATUSES[String(result.status)] ?? "invalid"
+        const sequence = this.state.get().targetSequence
+        const update: Partial<ManipulationState> = { feasibility: { status, message: String(result.message ?? ""), sequence } }
+        // this page's edit: the other half of the target follows, as viser's sliders follow a gizmo's IK and a gizmo
+        // follows the sliders (another page's edit arrives whole)
+        if (sequence === this.#localSequence) {
+            if (target.source === "cartesian" && result.joints) {
+                update.target = { ...target, joints: { ...target.joints, ...(result.joints as Record<string, number>) } }
+            } else if (target.source === "joints" && result.poses) {
+                const poses = Object.fromEntries(Object.entries(result.poses as Record<string, Pose>).filter(([group]) => this.groupById(group)?.tip_frame))
+                update.target = { ...target, poses: { ...target.poses, ...poses } }
+            }
+        }
+        this.state.update(update)
+        if (update.target && !this.#uncommitted) {
+            this.#commit(update.target)
+        }
+    }
+
+    /** viser's Preset menu: Current, Init or Home joints for the selected groups. */
     async preset(name: "current" | "init" | "home") {
         try {
-            const answer = await this.#call("POST", "api/manipulation/target", { preset: name, group: this.group })
+            const answer = await this.#call("POST", "api/manipulation/target", { preset: name, groups: this.state.get().selected })
             this.state.update({ target: answer.target as ManipulationTarget, preview: null, reach: null })
+            this.#uncommitted = false
+            this.#edited(true)
+            this.#localSequence = this.state.get().targetSequence
         } catch (error) {
             this.state.update({ last: { action: "preset", ok: false, message: String(error) } })
         }
@@ -188,11 +366,38 @@ export class Manipulation {
         }
     }
 
+    /** viser's can_plan: a target the planner found feasible (when there's a hook to ask), and the planner idle. */
+    canPlan(): boolean {
+        const { target, feasibility, hook, busy } = this.state.get()
+        return !!target && busy === null && this.#plannerIdle() && (hook ? feasibility.status === "feasible" : true)
+    }
+
+    /** viser's plan freshness: made for this exact target, groups and planning mode. */
+    planIsFresh(): boolean {
+        const { plan, planSequence, targetSequence, selected } = this.state.get()
+        return !!plan && planSequence === targetSequence && plan.mode === this.options.get().mode && plan.groups.join() === selected.join()
+    }
+
+    canExecute(): boolean {
+        const { busy, feasibility, hook } = this.state.get()
+        return this.planIsFresh() && busy === null && this.#plannerIdle() && (hook ? feasibility.status === "feasible" : true)
+    }
+
+    canCancel(): boolean {
+        const { busy, planner } = this.state.get()
+        return busy === "plan" || busy === "execute" || planner?.operation_status.name === "EXECUTING" || planner?.execution_status.name === "EXECUTING"
+    }
+
+    #plannerIdle(): boolean {
+        const status = this.state.get().planner?.operation_status.name
+        return status === "IDLE" || status === "COMPLETED"
+    }
+
     async plan() {
-        const target = this.state.get().target
-        const answer = await this.#act("plan", "api/manipulation/plan", target ? { ...target, speed: this.options.get().speed } : {})
+        const { target, targetSequence } = this.state.get()
+        const answer = await this.#act("plan", "api/manipulation/plan", target ? { ...target, mode: this.options.get().mode, speed: this.options.get().speed } : {})
         if (answer) {
-            this.state.update({ plan: (answer.plan as ManipulationPlan | null) ?? null, preview: null })
+            this.state.update({ plan: (answer.plan as ManipulationPlan | null) ?? null, planSequence: answer.plan ? targetSequence : null, preview: null })
         }
     }
 
@@ -219,17 +424,21 @@ export class Manipulation {
     }
 
     clear() {
-        this.state.update({ plan: null, preview: null })
+        this.state.update({ plan: null, planSequence: null, preview: null })
         this.#act("clear", "api/manipulation/clear")
     }
 
     /** The backend's `manipulation` event: another page's or the agent's target, plan, preview or execute. */
     applyEvent(event: Record<string, unknown>) {
         if ("target" in event && event.from !== "page") {
-            this.state.update({ target: event.target as ManipulationTarget | null, reach: null })
+            const target = event.target as ManipulationTarget | null
+            this.state.update({ target, reach: null, ...(target?.groups.length ? { selected: target.groups } : {}) })
+            this.#edited(true)
         }
         if ("plan" in event) {
-            this.state.update({ plan: event.plan as ManipulationPlan | null, preview: null })
+            const plan = event.plan as ManipulationPlan | null
+            // a plan made elsewhere for the target just set is fresh for it
+            this.state.update({ plan, planSequence: plan ? this.state.get().targetSequence : null, preview: null })
         }
         if (typeof event.preview === "string") {
             this.startPreview(event.preview)
@@ -252,4 +461,27 @@ export class Manipulation {
         const fraction = index === 0 || span <= 0 ? 1 : Math.min(1, Math.max(0, (seconds - times[index - 1]) / span))
         return Object.fromEntries(jointNames.map((name, joint) => [name, before[joint] + (after[joint] - before[joint]) * fraction]))
     }
+}
+
+/** viser's first selection: the first group with a tip, else the first group. */
+export function defaultSelection(groups: PlanningGroup[]): string[] {
+    const first = groups.find((group) => group.tip_frame) ?? groups[0]
+    return first ? [first.id] : []
+}
+
+/** viser's slider for a joint: limited (its limits), circle (-pi..pi, wrapped) or line (unbounded: a number box). */
+export function jointControl(topology: string | undefined, limit: [number, number] | undefined, urdfType: string | undefined): { kind: "slider" | "number"; min: number; max: number; wrap: boolean } {
+    const kind = topology ?? (urdfType === "continuous" ? "circle" : !limit ? "line" : "limited")
+    if (kind === "line") {
+        return { kind: "number", min: -Infinity, max: Infinity, wrap: false }
+    }
+    if (kind === "circle" || !limit) {
+        return { kind: "slider", min: -Math.PI, max: Math.PI, wrap: true }
+    }
+    return { kind: "slider", min: limit[0], max: limit[1], wrap: false }
+}
+
+/** An angle wrapped into -pi..pi (viser's angle_diff(value, 0)). */
+export function wrapAngle(value: number): number {
+    return Math.atan2(Math.sin(value), Math.cos(value))
 }

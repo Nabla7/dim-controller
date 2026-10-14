@@ -4,10 +4,11 @@
 //! event on zenoh (annotations.rs, frontend.rs). The page's continuous driving (keys, stick) publishes through the gateway with
 //! its deadman; `POST api/drive` is the endpoint way to drive. Neither needs arming (`POST api/drive/arm` is a no-op
 //! kept so older callers don't 404).
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::body::Bytes;
-use axum::extract::{FromRef, FromRequest, Request, State as Extract};
+use axum::extract::{FromRef, FromRequest, Query, Request, State as Extract};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -139,14 +140,19 @@ pub fn routes() -> Routes<Api> {
         .endpoint("POST", "api/drive/stop", "Stop driving: cancels a running drive command and sends a second of zeros.", json!({ "topic": s("default as for api/drive"), "dryRun": b("") }), stop_robot)
         // the arm's planner: viser's workflow through dimos's ManipulationModule
         .endpoint("GET", "api/manipulation", "The arm's planner (dimos's ManipulationModule): available (false with error when none answers), state (operation_status, execution_status, has_pending_plan, groups: {<group>: {joints {name, position}, end_effector_pose (world), gripper_position, joint_presets {home, init}}}), planning groups (id, joint_names, base_frame, tip_frame, has_gripper), the target shown as the ghost arm, and the plan last made (id, duration, jointNames, times, positions).", json!({}), manipulation_status)
-        .endpoint("POST", "api/manipulation/target", "Set the target every open page shows as the ghost arm (it moves nothing): mode joint with joints {name: radians}, or mode cartesian with pose {position [x, y, z], orientation [x, y, z, w], frame (default world)}; or preset current | init | home (that preset's joints). clear=true removes the target.", json!({ "mode": s("joint | cartesian"), "group": s("planning group (default manipulator)"), "joints": json!({ "type": "object", "description": "joint name -> radians" }), "pose": json!({ "type": "object", "description": "{position [x, y, z], orientation [x, y, z, w], frame}" }), "preset": s("current | init | home"), "clear": b("remove the target") }), manipulation_target)
-        .endpoint("POST", "api/manipulation/plan", "Plan from where the arm is to the target (the body's, else the current one): collision-checked by the ManipulationModule; on success the plan is kept for Preview and Execute and every page draws its path. speed: the plan's speed scale 0.05-1 (default lv.manip.speed).", json!({ "mode": s("joint | cartesian"), "group": s(""), "joints": json!({ "type": "object" }), "pose": json!({ "type": "object" }), "speed": n("0.05-1") }), manipulation_plan)
+        .endpoint("POST", "api/manipulation/target", "Set the target every open page shows as the ghost arm (it moves nothing): groups (the planning groups selected, default [manipulator]) with joints {name: radians} and/or poses {group: {position [x, y, z], orientation [x, y, z, w], frame (default world)}} (or one pose for the first group), source joints | cartesian (which was edited); or preset current | init | home (that preset's joints for the groups). clear=true removes the target.", json!({ "groups": json!({ "type": "array", "description": "planning group ids" }), "joints": json!({ "type": "object", "description": "joint name -> radians" }), "poses": json!({ "type": "object", "description": "group -> {position, orientation, frame}" }), "pose": json!({ "type": "object", "description": "the first group's pose" }), "source": s("joints | cartesian"), "preset": s("current | init | home"), "clear": b("remove the target") }), manipulation_target)
+        .endpoint("POST", "api/manipulation/plan", "Plan from where the arm is to the target (the body's, else the current one), collision-checked by the ManipulationModule: mode joint (default lv.manip.mode) plans to the groups' joints, mode cartesian a straight TCP path to the poses (with the hook; without it plan_to_poses). On success the plan is kept for Preview and Execute and every page draws its path. speed: the plan's speed scale 0.05-1 (default lv.manip.speed).", json!({ "mode": s("joint | cartesian"), "groups": json!({ "type": "array" }), "joints": json!({ "type": "object" }), "poses": json!({ "type": "object" }), "speed": n("0.05-1") }), manipulation_plan)
         .endpoint("POST", "api/manipulation/preview", "Play the kept plan on the ghost arm in every open page (the real arm doesn't move).", json!({}), manipulation_preview)
         .endpoint("POST", "api/manipulation/execute", "Run the kept plan on the arm.", json!({}), manipulation_execute)
         .endpoint("POST", "api/manipulation/cancel", "Stop planning or the running trajectory.", json!({}), manipulation_cancel)
         .endpoint("POST", "api/manipulation/clear", "Discard the kept plan.", json!({}), manipulation_clear)
         .endpoint("GET", "api/manipulation/obstacles", "The planning scene's obstacles: name -> pose.", json!({}), manipulation_obstacles)
-        .endpoint("PATCH", "api/manipulation/options", "The arm 3D view's planner options (lv.manip), applied in every open page: mode (joint | cartesian: what the gizmo and sliders set), speed (next plan's speed scale 0.05-1), display (visual | collision | both: the arm's geometry), obstacles (draw the planning scene's obstacles), interact (the 3D arm and gizmo are shown).", json!({ "mode": s("joint | cartesian"), "speed": n("0.05-1"), "display": s("visual | collision | both"), "obstacles": b(""), "interact": b("") }), manipulation_options)
+        .endpoint("POST", "api/manipulation/evaluate", "Check a target the way viser's panel does, in the planner's process (needs the hook): collision-aware IK for poses, collision and limits for joints. Body: a target (groups, joints or poses, source). Answers success, collision_free, status (FEASIBLE, COLLISION, NO_SOLUTION, INVALID...), message, joints (the IK's for poses), poses (each group's tip for joints).", json!({ "groups": json!({ "type": "array" }), "joints": json!({ "type": "object" }), "poses": json!({ "type": "object" }), "source": s("joints | cartesian") }), manipulation_evaluate)
+        .endpoint("GET", "api/manipulation/scene", "What viser draws besides the arm (needs the hook): obstacles with their shapes (box, sphere, cylinder, mesh vertices/faces, octree points), grasp proposals (pose, score; best first), the last preview; each with a version, left out when ?obstacles=&grasps=&preview= already has it. Without the hook: obstacle poses only (type marker).", json!({}), manipulation_scene)
+        .endpoint("GET", "api/manipulation/description", "The planner's robot model as dimos.robot_description.v1 (links with visual and collision geometry, joints, base pose), from the hook.", json!({}), manipulation_description)
+        .endpoint("GET", "api/manipulation/hook", "dim-controller's hook in the blueprint's process: loaded (its info: pid, python, groups, joint topology) and installed (per running dimos run's venv).", json!({}), manipulation_hook)
+        .endpoint("POST", "api/manipulation/hook/install", "Install (uninstall=true: remove) the hook into the venv of every running dimos run, or venv; it loads when the blueprint restarts.", json!({ "venv": s("a venv or its python (default: every running dimos run's)"), "uninstall": b("") }), manipulation_hook_install)
+        .endpoint("PATCH", "api/manipulation/options", "The arm 3D view's planner options (lv.manip), applied in every open page: mode (joint | cartesian: what the gizmo and sliders set), speed (next plan's speed scale 0.05-1), display (visual | collision | both: the arm's geometry), obstacles (draw the planning scene's obstacles), grasps (draw the grasp proposals), grid (the ground grid), interact (the 3D arm and gizmo are shown).", json!({ "mode": s("joint | cartesian"), "speed": n("0.05-1"), "display": s("visual | collision | both"), "obstacles": b(""), "grasps": b(""), "grid": b(""), "interact": b("") }), manipulation_options)
         // the page's plumbing: its event socket, its reports, its answers to the backend's capture requests
         .plumbing("POST", "api/pages/{page}", annotations::report_page)
         .plumbing("POST", "api/pages/{page}/close", annotations::close_page)
@@ -322,28 +328,31 @@ fn planner_error(error: anyhow::Error) -> Response {
     error_response(StatusCode::BAD_GATEWAY, error)
 }
 
-/// A target from a body: its own mode/joints/pose, or a preset's joints from the planner's state.
+/// A target from a body (manipulation::normalize_target's shape), or a preset's joints from the planner's state for
+/// the body's groups: current, init or home, as viser's Preset menu.
 async fn target_from(api: &Api, body: &Value) -> Result<Value, Response> {
-    let group = body["group"].as_str().unwrap_or("manipulator");
     if let Some(preset) = body["preset"].as_str() {
+        let groups: Vec<String> = match &body["groups"] {
+            Value::Array(groups) if !groups.is_empty() => groups.iter().filter_map(|group| group.as_str().map(str::to_string)).collect(),
+            _ => vec![body["group"].as_str().unwrap_or("manipulator").to_string()],
+        };
         let state = api.manipulation.call("get_state", vec![], vec![], std::time::Duration::from_secs(5)).await.map_err(planner_error)?;
-        let group_state = &state["groups"][group];
-        let joints = match preset {
-            "current" => &group_state["joints"],
-            "init" | "home" => &group_state["joint_presets"][preset],
-            _ => return Err(error_response(StatusCode::BAD_REQUEST, "preset is current, init or home")),
-        };
-        let (Some(names), Some(positions)) = (joints["name"].as_array(), joints["position"].as_array()) else {
-            return Err(error_response(StatusCode::NOT_FOUND, format!("the planner has no {preset} preset for {group}")));
-        };
-        let joints: serde_json::Map<String, Value> = names.iter().zip(positions).filter_map(|(name, position)| Some((name.as_str()?.to_string(), position.clone()))).collect();
-        return Ok(json!({ "mode": "joint", "group": group, "joints": joints, "preset": preset }));
+        let mut joints = serde_json::Map::new();
+        for group in &groups {
+            let group_state = &state["groups"][group];
+            let preset_joints = match preset {
+                "current" => &group_state["joints"],
+                "init" | "home" => &group_state["joint_presets"][preset],
+                _ => return Err(error_response(StatusCode::BAD_REQUEST, "preset is current, init or home")),
+            };
+            let (Some(names), Some(positions)) = (preset_joints["name"].as_array(), preset_joints["position"].as_array()) else {
+                return Err(error_response(StatusCode::NOT_FOUND, format!("the planner has no {preset} preset for {group}")));
+            };
+            joints.extend(names.iter().zip(positions).filter_map(|(name, position)| Some((name.as_str()?.to_string(), position.clone()))));
+        }
+        return Ok(json!({ "groups": groups, "joints": joints, "poses": {}, "source": "joints", "preset": preset }));
     }
-    match body["mode"].as_str() {
-        Some("joint") if body["joints"].is_object() => Ok(json!({ "mode": "joint", "group": group, "joints": body["joints"] })),
-        Some("cartesian") if body["pose"].is_object() => Ok(json!({ "mode": "cartesian", "group": group, "pose": body["pose"] })),
-        _ => Err(error_response(StatusCode::BAD_REQUEST, "a target is mode joint with joints, mode cartesian with pose, or a preset")),
-    }
+    crate::manipulation::normalize_target(body).ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "a target has joints {name: radians} or poses {group: {position, orientation}} (or a pose), or is a preset"))
 }
 
 async fn manipulation_target(Extract(api): Extract<Api>, Body(body): Body) -> Response {
@@ -362,7 +371,7 @@ async fn manipulation_target(Extract(api): Extract<Api>, Body(body): Body) -> Re
 }
 
 async fn manipulation_plan(Extract(api): Extract<Api>, Body(body): Body) -> Response {
-    let target = if body["mode"].is_string() || body["preset"].is_string() {
+    let target = if body["joints"].is_object() || body["poses"].is_object() || body["pose"].is_object() || body["preset"].is_string() {
         match target_from(&api, &body).await {
             Ok(target) => target,
             Err(response) => return response,
@@ -373,8 +382,10 @@ async fn manipulation_plan(Extract(api): Extract<Api>, Body(body): Body) -> Resp
             None => return error_response(StatusCode::BAD_REQUEST, "no target: set one (api/manipulation/target) or pass it"),
         }
     };
-    let speed = body["speed"].as_f64().or_else(|| api.settings.get("lv.manip")["speed"].as_f64());
-    match api.manipulation.plan_to(&target, speed).await {
+    let options = api.settings.get("lv.manip");
+    let speed = body["speed"].as_f64().or_else(|| options["speed"].as_f64());
+    let mode = body["mode"].as_str().or_else(|| options["mode"].as_str()).unwrap_or("joint").to_string();
+    match api.manipulation.plan_to(&target, &mode, speed).await {
         Ok(result) => {
             api.manipulation.set_target(Some(target.clone()));
             api.annotations.broadcast(json!({ "type": "manipulation", "target": target, "plan": result["plan"], "planned": result }));
@@ -420,6 +431,69 @@ async fn manipulation_clear(Extract(api): Extract<Api>) -> Response {
     }
 }
 
+/// viser's target check through the hook: collision-aware IK for poses, state validity for joints.
+async fn manipulation_evaluate(Extract(api): Extract<Api>, Body(body): Body) -> Response {
+    let Some(target) = crate::manipulation::normalize_target(&body) else {
+        return error_response(StatusCode::BAD_REQUEST, "a target to check: joints or poses, and groups");
+    };
+    let request = if target["source"] == "cartesian" {
+        json!({ "groups": target["groups"], "poses": target["poses"], "seed": target["joints"] })
+    } else {
+        json!({ "groups": target["groups"], "joints": target["joints"] })
+    };
+    match api.manipulation.hook("evaluate", &request, std::time::Duration::from_secs(5)).await {
+        Ok(result) => Json(result).into_response(),
+        Err(error) => error_response(StatusCode::SERVICE_UNAVAILABLE, error),
+    }
+}
+
+/// The hook's scene: obstacles with their shapes, grasp proposals, the last preview; each with a version, and left out
+/// when the query's version (?obstacles=&grasps=&preview=) is already current. Without the hook: the RPC's obstacle
+/// poses as markers.
+async fn manipulation_scene(Extract(api): Extract<Api>, Query(query): Query<HashMap<String, String>>) -> Response {
+    let known: serde_json::Map<String, Value> = query.iter().filter_map(|(key, value)| Some((key.clone(), json!(value.parse::<i64>().ok()?)))).collect();
+    match api.manipulation.hook("scene", &Value::Object(known), std::time::Duration::from_secs(5)).await {
+        Ok(scene) => Json(json!({ "hook": true, "scene": scene })).into_response(),
+        Err(hook_error) => match api.manipulation.obstacles().await {
+            Ok(poses) => {
+                let obstacles: Vec<Value> = poses.as_object().into_iter().flatten().map(|(name, pose)| json!({ "name": name, "type": "marker", "pose": { "position": [pose["position"]["x"], pose["position"]["y"], pose["position"]["z"]], "orientation": [pose["orientation"]["x"], pose["orientation"]["y"], pose["orientation"]["z"], pose["orientation"]["w"]] } })).collect();
+                Json(json!({ "hook": false, "problem": hook_error.to_string(), "scene": { "versions": {}, "obstacles": obstacles } })).into_response()
+            }
+            Err(error) => planner_error(error),
+        },
+    }
+}
+
+/// The planner's robot model (dimos.robot_description.v1) from the hook, for the 3D arm.
+async fn manipulation_description(Extract(api): Extract<Api>) -> Response {
+    match api.manipulation.hook("robot_description", &Value::Null, std::time::Duration::from_secs(30)).await {
+        Ok(description) => Json(description).into_response(),
+        Err(error) => error_response(StatusCode::SERVICE_UNAVAILABLE, error),
+    }
+}
+
+/// Where the hook is: loaded (its info), and for each running `dimos run`, whether its venv has it installed.
+async fn manipulation_hook(Extract(api): Extract<Api>) -> Response {
+    let loaded = api.manipulation.hook("info", &Value::Null, std::time::Duration::from_secs(2)).await.ok();
+    let installed = crate::hook_install::run(&["--status"]).await;
+    Json(json!({ "loaded": loaded, "installed": installed.unwrap_or_else(|error| error.to_string()) })).into_response()
+}
+
+/// Install the hook into the venv of every running `dimos run` (or `venv`); it loads when the blueprint restarts.
+async fn manipulation_hook_install(Body(body): Body) -> Response {
+    let mut args = vec![];
+    if let Some(venv) = body["venv"].as_str() {
+        args.extend(["--venv", venv]);
+    }
+    if body["uninstall"] == true {
+        args.push("--uninstall");
+    }
+    match crate::hook_install::run(&args).await {
+        Ok(output) => Json(json!({ "ok": true, "output": output })).into_response(),
+        Err(error) => error_response(StatusCode::INTERNAL_SERVER_ERROR, error),
+    }
+}
+
 async fn manipulation_obstacles(Extract(api): Extract<Api>) -> Response {
     match api.manipulation.obstacles().await {
         Ok(obstacles) => Json(obstacles).into_response(),
@@ -434,6 +508,8 @@ async fn manipulation_options(Extract(api): Extract<Api>, Body(body): Body) -> R
         ("speed", body["speed"].as_f64().is_some_and(|speed| (0.05..=1.0).contains(&speed))),
         ("display", body["display"].as_str().is_some_and(|display| ["visual", "collision", "both"].contains(&display))),
         ("obstacles", body["obstacles"].is_boolean()),
+        ("grasps", body["grasps"].is_boolean()),
+        ("grid", body["grid"].is_boolean()),
         ("interact", body["interact"].is_boolean()),
     ] {
         if !body[key].is_null() {

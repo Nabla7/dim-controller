@@ -1,11 +1,12 @@
-// The arm's planner panel, viser's Manipulation Panel: the planner's state, the target (planning mode, presets, joint
-// targets; or drag the gizmo in the 3D view), the reach of a dragged pose, the next plan's speed, Plan / Preview /
-// Execute / Cancel / Clear plan, and the 3D arm's display. Every action is an api/manipulation endpoint
-// (core/manipulation.ts); the planner is dimos's ManipulationModule.
+// The arm's planner panel, viser's Manipulation Panel in its order: status, scene grid, robot display, planning-group
+// toggles, target (preset, feasibility, gizmo mode), actions (next plan speed, planning mode, Plan / Preview / Execute /
+// Cancel / Clear plan), joint control, and the scene's obstacle and grasp-proposal toggles. Every action is an
+// api/manipulation endpoint (core/manipulation.ts); the planner is dimos's ManipulationModule, and what the RPCs
+// don't give (the model, feasibility, obstacle shapes, grasps) comes from dim-controller's hook in its process.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
-import type { ManipulationTarget, PlanningMode } from "../core/manipulation.ts"
-import { Badge, Button, Field, Heading, Select, Slider, Toggle } from "dimos-react"
+import { jointControl, type ManipulationTarget, type PlanningMode, wrapAngle } from "../core/manipulation.ts"
+import { Badge, Button, Field, Heading, NumberInput, Select, Slider, Toggle } from "dimos-react"
 
 const degrees = (radians: number) => `${((radians * 180) / Math.PI).toFixed(1)}°`
 
@@ -15,12 +16,20 @@ function statusTone(name: string | null | undefined): Tone {
     switch (name) {
         case "EXECUTING":
         case "PLANNING":
+        case "CHECKING":
             return "info"
         case "COMPLETED":
         case "IDLE":
+        case "FEASIBLE":
+        case "FRESH":
             return "ok"
+        case "STALE":
+        case "UNCHECKED":
+            return "warn"
         case "FAULT":
         case "ABORTED":
+        case "INFEASIBLE":
+        case "FAILED":
             return "danger"
         default:
             return "default"
@@ -33,13 +42,9 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
     const options = useStore(manipulation.options)
     const gizmo = useStore(manipulation.gizmo)
     const view = useStore(app.manipView.status)
-    const group = state.groups[0]
-    const groupState = group ? state.planner?.groups[group.id] : undefined
-    const current: Record<string, number> = groupState ? Object.fromEntries(groupState.joints.name.map((name, index) => [name, groupState.joints.position[index]])) : {}
-    const target = state.target
-    const limits = (name: string): [number, number] => app.manipView.model?.kinematics.joints.get(name)?.limit ?? [-Math.PI, Math.PI]
+    const { target, selected, hook, planner } = state
+    const current = manipulation.currentJoints()
     const busy = state.busy !== null
-    const executing = state.planner?.operation_status.name === "EXECUTING" || state.planner?.execution_status.name === "EXECUTING"
 
     if (state.available === false) {
         return (
@@ -51,92 +56,40 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
         )
     }
 
-    /** a joint target from the current joints (or the target's), with one joint changed */
-    const jointTarget = (name: string, value: number): ManipulationTarget => {
-        const base = target?.mode === "joint" && target.joints ? target.joints : current
-        return { mode: "joint", group: group?.id ?? "manipulator", joints: { ...current, ...base, [name]: value } }
-    }
-    const shown = (name: string) => (target?.mode === "joint" && target.joints?.[name] !== undefined ? target.joints[name] : current[name] ?? 0)
+    const targetStatus = !target ? "EMPTY" : state.feasibility.status === "checking" ? "CHECKING" : state.feasibility.status === "feasible" ? "FEASIBLE" : state.feasibility.status === "unchecked" ? "UNCHECKED" : "INFEASIBLE"
+    const planStatus = state.busy === "plan" ? "PLANNING" : state.plan ? (manipulation.planIsFresh() ? "FRESH" : "STALE") : state.last?.action === "plan" && !state.last.ok ? "FAILED" : "NONE"
+    const stale = selected.some((group) => !planner?.groups[group]?.joints)
+    const moduleState = planner?.error ?? planner?.operation_status.name ?? "…"
+
+    /** the sliders' target: the selected groups' current joints under the target's, with one joint changed */
+    const jointTarget = (name: string, value: number): ManipulationTarget => ({
+        groups: selected,
+        joints: { ...current, ...(target?.joints ?? {}), [name]: value },
+        poses: target?.poses ?? {},
+        source: "joints",
+    })
+    const shown = (name: string) => target?.joints[name] ?? current[name] ?? 0
+    const urdfJoint = (name: string) => app.manipView.model?.kinematics.joints.get(name)
 
     return (
         <div className="manip-panel" data-testid="manip-panel">
+            <Heading level={3}>Status</Heading>
             <div className="manip-status" data-testid="manip-status">
-                <Badge tone={statusTone(state.planner?.operation_status.name)} dot>{state.planner?.operation_status.name ?? "…"}</Badge>
-                <span className="hint">execution <b>{state.planner?.execution_status.name ?? "—"}</b></span>
-                {group && <span className="hint">group <code>{group.id}</code> · tip <code>{group.tip_frame}</code></span>}
+                <span className="hint">State</span> <Badge tone={statusTone(planner?.operation_status.name)} dot data-testid="manip-state">{moduleState}</Badge>
+                <span className="hint">Target</span> <Badge tone={statusTone(targetStatus)} data-testid="manip-target-status">{targetStatus}</Badge>
+                <span className="hint">Plan</span> <Badge tone={statusTone(planStatus)} data-testid="manip-plan-status">{planStatus}</Badge>
             </div>
-            {view.model ? <p className="hint" data-testid="manip-model">3D arm: {view.model}</p> : <p className="hint">3D arm: waiting for a RobotDescriptionModule on <code>/robot_description</code>.</p>}
-            {state.planner?.error && <p className="problem">{state.planner.error}</p>}
-
-            <Heading level={3}>Target</Heading>
-            <Field inline label="Planning mode">
-                <Select<PlanningMode>
-                    aria-label="Planning mode"
-                    value={options.mode}
-                    options={[["joint", "Joint space"], ["cartesian", "Cartesian space"]]}
-                    onChange={(mode: PlanningMode) => manipulation.options.update({ mode })}
-                />
-            </Field>
-            <div className="button-row" data-testid="manip-presets">
-                <Button size="sm" onClick={() => manipulation.preset("current")} title="The target is where the arm is now">Current</Button>
-                <Button size="sm" onClick={() => manipulation.preset("init")} title="Where the arm was when the planner started">Init</Button>
-                <Button size="sm" onClick={() => manipulation.preset("home")} title="The robot's home joints">Home</Button>
-                <Button size="sm" variant="ghost" disabled={!target} onClick={() => manipulation.setTarget(null)}>Clear target</Button>
-            </div>
-            <div className="button-row" data-testid="manip-gizmo">
-                <span className="hint">Gizmo:</span>
-                <Button size="sm" pressed={gizmo.mode === "translate"} onClick={() => manipulation.gizmo.update({ mode: "translate" })}>Move</Button>
-                <Button size="sm" pressed={gizmo.mode === "rotate"} onClick={() => manipulation.gizmo.update({ mode: "rotate" })}>Rotate</Button>
-            </div>
-            <p className="hint" data-testid="manip-target">
-                {!target
-                    ? "No target: drag the gizmo on the arm's tip in the 3D view, move a joint below, or pick a preset."
-                    : target.mode === "cartesian" && target.pose
-                    ? <>Pose target ({target.pose.position.map((value) => value.toFixed(3)).join(", ")}) m{" "}
-                        {state.reach && <Badge tone={state.reach.reachable ? "ok" : "warn"} data-testid="manip-reach">{state.reach.reachable ? "reachable" : `unreachable (${(state.reach.positionError * 100).toFixed(1)} cm off)`}</Badge>}</>
-                    : `Joint target${target.preset ? ` (${target.preset})` : ""}`}
+            {selected.length > 0 && <p className="hint">State stale: <code>{String(stale)}</code> · execution <b>{planner?.execution_status.name ?? "—"}</b></p>}
+            {Object.keys(current).length > 0 && <p className="hint" data-testid="manip-current">Current joints: <code>[{Object.values(current).map((value) => value.toFixed(3)).join(", ")}]</code></p>}
+            {state.last && <p className={state.last.ok ? "hint" : "warn-text"} data-testid="manip-last">Last result: {state.last.action}{state.last.ok ? "" : " failed"}{state.last.message ? `: ${state.last.message}` : ""}</p>}
+            <p className="hint" data-testid="manip-hook">
+                {hook
+                    ? <>Planner's process (pid {hook.pid}): model, feasibility, obstacles and grasps from dim-controller's hook{hook.visualization ? `, beside ${hook.visualization}` : ""}.</>
+                    : <>No dim-controller hook in the planner's process: no 3D arm, feasibility, obstacle shapes or grasps. <HookInstall app={app} /></>}
             </p>
-            {group && options.mode === "joint" && (
-                <div className="manip-joints" data-testid="manip-joints">
-                    {group.joint_names.map((name) => {
-                        const [min, max] = limits(name)
-                        return (
-                            <div className="joint-row" key={name} data-joint={name}>
-                                <span className="joint-name">{name}</span>
-                                <Slider
-                                    className="joint-slider"
-                                    aria-label={`${name} target`}
-                                    min={min}
-                                    max={max}
-                                    step={0.01}
-                                    value={shown(name)}
-                                    showValue={false}
-                                    onChange={(value: number) => manipulation.setTarget(jointTarget(name, value), false)}
-                                    onCommit={(value: number) => manipulation.setTarget(jointTarget(name, value), true)}
-                                />
-                                <span className="joint-value">{degrees(shown(name))}</span>
-                            </div>
-                        )
-                    })}
-                </div>
-            )}
+            {view.model ? <p className="hint" data-testid="manip-model">3D arm: {view.model}</p> : view.problem && <p className="hint">3D arm: {view.problem}</p>}
 
-            <Heading level={3}>Plan</Heading>
-            <Field inline label="Next plan speed">
-                <Slider min={0.05} max={1} step={0.05} value={options.speed} format={(speed: number) => `${Math.round(speed * 100)}%`} onChange={(speed: number) => manipulation.options.update({ speed })} />
-            </Field>
-            <div className="button-row manip-actions" data-testid="manip-actions">
-                <Button size="sm" variant="primary" disabled={!target || busy || executing} loading={state.busy === "plan"} onClick={() => manipulation.plan()} data-testid="manip-plan">Plan</Button>
-                <Button size="sm" disabled={!state.plan || busy} onClick={() => manipulation.preview()} data-testid="manip-preview">Preview</Button>
-                <Button size="sm" disabled={!state.plan || busy || executing} loading={state.busy === "execute"} onClick={() => manipulation.execute()} data-testid="manip-execute">Execute</Button>
-                <Button size="sm" variant="danger" disabled={!executing && state.busy !== "plan"} onClick={() => manipulation.cancel()} data-testid="manip-cancel">Cancel</Button>
-                <Button size="sm" variant="ghost" disabled={!state.plan} onClick={() => manipulation.clear()} data-testid="manip-clear">Clear plan</Button>
-            </div>
-            {state.plan && <p className="hint" data-testid="manip-plan-info">Plan {state.plan.id.slice(0, 8)}: {state.plan.duration.toFixed(2)} s, {state.plan.positions.length} points{state.preview ? " · previewing" : ""}</p>}
-            {state.last && <p className={state.last.ok ? "hint" : "warn-text"} data-testid="manip-last">{state.last.action}: {state.last.message || (state.last.ok ? "ok" : "failed")}</p>}
-
-            <Heading level={3}>Display</Heading>
-            <Field inline label="Arm in 3D"><Toggle value={options.interact} onChange={(interact: boolean) => manipulation.options.update({ interact })} /></Field>
+            <Field inline label="Scene grid"><Toggle value={options.grid} onChange={(grid: boolean) => manipulation.options.update({ grid })} /></Field>
             <Field inline label="Robot display">
                 <Select<string>
                     aria-label="Robot display"
@@ -145,7 +98,112 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
                     onChange={(display: string) => manipulation.options.update({ display: display as "visual" | "collision" | "both" })}
                 />
             </Field>
+            {options.display !== "visual" && view.collisionMissing && <p className="warn-text" data-testid="manip-collision-warning"><b>Collision meshes unavailable.</b> Showing visual geometry with collision styling.</p>}
+            <Field inline label="Arm in 3D"><Toggle value={options.interact} onChange={(interact: boolean) => manipulation.options.update({ interact })} /></Field>
+
+            <Heading level={3}>Planning Groups</Heading>
+            <p className="hint">Active planning groups for pose goals, planning, and joint edits.</p>
+            <div className="button-row" data-testid="manip-groups">
+                {state.groups.map((group) => (
+                    <Button key={group.id} size="sm" pressed={selected.includes(group.id)} onClick={() => manipulation.toggleGroup(group.id)} title="Toggle this planning group in the target set" data-group={group.id}>{group.id}</Button>
+                ))}
+            </div>
+
+            <Heading level={3}>Target</Heading>
+            <Field inline label="Preset">
+                <Select<string>
+                    aria-label="Preset"
+                    value=""
+                    placeholder="Select preset..."
+                    options={[
+                        ...(selected.every((group) => planner?.groups[group]?.joint_presets.init) && selected.length ? [["init", "Init"] as [string, string]] : []),
+                        ["current", "Current"],
+                        ...(selected.every((group) => planner?.groups[group]?.joint_presets.home) && selected.length ? [["home", "Home"] as [string, string]] : []),
+                    ]}
+                    onChange={(preset: string) => manipulation.preset(preset as "current" | "init" | "home")}
+                />
+            </Field>
+            <p className="hint" data-testid="manip-feasibility">
+                Feasibility: <code>{hook ? state.feasibility.status : "unchecked (no hook)"}</code>
+                {state.feasibility.message && state.feasibility.status !== "feasible" ? ` · ${state.feasibility.message}` : ""}
+                {!hook && state.reach && <> · <Badge tone={state.reach.reachable ? "ok" : "warn"} data-testid="manip-reach">{state.reach.reachable ? "reachable" : `unreachable (${(state.reach.positionError * 100).toFixed(1)} cm off)`}</Badge></>}
+            </p>
+            <div className="button-row" data-testid="manip-gizmo">
+                <span className="hint">Gizmo:</span>
+                <Button size="sm" pressed={gizmo.mode === "translate"} onClick={() => manipulation.gizmo.update({ mode: "translate" })}>Move</Button>
+                <Button size="sm" pressed={gizmo.mode === "rotate"} onClick={() => manipulation.gizmo.update({ mode: "rotate" })}>Rotate</Button>
+                <Button size="sm" variant="ghost" disabled={!target} onClick={() => manipulation.setTarget(null)}>Clear target</Button>
+            </div>
+
+            <Heading level={3}>Actions</Heading>
+            <Field inline label="Next plan speed">
+                <Slider min={0.05} max={1} step={0.05} value={options.speed} disabled={busy} format={(speed: number) => `${Math.round(speed * 100)}%`} onChange={(speed: number) => manipulation.options.update({ speed })} />
+            </Field>
+            <Field inline label="Planning mode">
+                <Select<PlanningMode>
+                    aria-label="Planning mode"
+                    value={options.mode}
+                    options={[["joint", "Joint space"], ["cartesian", "Cartesian space"]]}
+                    onChange={(mode: PlanningMode) => manipulation.options.update({ mode })}
+                />
+            </Field>
+            <div className="button-row manip-actions" data-testid="manip-actions">
+                <Button size="sm" variant="primary" disabled={!manipulation.canPlan()} loading={state.busy === "plan"} onClick={() => manipulation.plan()} data-testid="manip-plan">Plan</Button>
+            </div>
+            <p className="hint">Plan controls</p>
+            <div className="button-row manip-actions">
+                <Button size="sm" disabled={!manipulation.planIsFresh() || busy} onClick={() => manipulation.preview()} data-testid="manip-preview">Preview</Button>
+                <Button size="sm" disabled={!manipulation.canExecute()} loading={state.busy === "execute"} onClick={() => manipulation.execute()} data-testid="manip-execute">Execute</Button>
+                {manipulation.canCancel() && <Button size="sm" variant="danger" onClick={() => manipulation.cancel()} data-testid="manip-cancel">Cancel</Button>}
+                <Button size="sm" variant="ghost" disabled={!state.plan} onClick={() => manipulation.clear()} data-testid="manip-clear">Clear plan</Button>
+            </div>
+            {state.plan && <p className="hint" data-testid="manip-plan-info">Plan {state.plan.id.slice(0, 8)} ({state.plan.mode}): {state.plan.duration.toFixed(2)} s, {state.plan.positions.length} points{state.preview ? " · previewing" : ""}</p>}
+
+            <details className="manip-joint-control" data-testid="manip-joint-control">
+                <summary>Joint Control</summary>
+                <div className="manip-joints" data-testid="manip-joints">
+                    {selected.flatMap((groupId) => manipulation.groupById(groupId)?.joint_names.map((name) => {
+                        const joint = urdfJoint(name)
+                        const control = jointControl(hook?.joint_topology[name], joint?.limit, joint?.type)
+                        const value = control.wrap ? wrapAngle(shown(name)) : shown(name)
+                        return (
+                            <div className="joint-row" key={`${groupId}/${name}`} data-joint={name}>
+                                <span className="joint-name" title={`${groupId}/${name}`}>{name}</span>
+                                {control.kind === "number"
+                                    ? <NumberInput size="sm" aria-label={`${name} target`} value={value} step={0.001} precision={3} onChange={(next: number) => manipulation.setTarget(jointTarget(name, next), true)} />
+                                    : <Slider
+                                        className="joint-slider"
+                                        aria-label={`${name} target`}
+                                        min={control.min}
+                                        max={control.max}
+                                        step={0.001}
+                                        value={value}
+                                        showValue={false}
+                                        onChange={(next: number) => manipulation.setTarget(jointTarget(name, next), false)}
+                                        onCommit={(next: number) => manipulation.setTarget(jointTarget(name, next), true)}
+                                    />}
+                                <span className="joint-value">{control.kind === "number" ? "" : degrees(value)}</span>
+                            </div>
+                        )
+                    }) ?? [])}
+                </div>
+            </details>
+
+            <Heading level={3}>Scene</Heading>
             <Field inline label="Obstacles"><Toggle value={options.obstacles} onChange={(obstacles: boolean) => manipulation.options.update({ obstacles })} /></Field>
+            <Field inline label="Grasp proposals"><Toggle value={options.grasps} onChange={(grasps: boolean) => manipulation.options.update({ grasps })} /></Field>
+            <p className="hint" data-testid="manip-scene">{view.obstacleCount} obstacles · {view.graspCount} grasp proposals</p>
+            {view.obstacleProblems.map((problem) => <p className="warn-text" key={problem}>⚠ Obstacle drawn as a stand-in: {problem}</p>)}
         </div>
     )
+}
+
+/** Puts the hook into the venv of every running `dimos run`; it loads when the blueprint restarts. */
+function HookInstall({ app }: { app: ViewerApp }) {
+    const install = async () => {
+        const response = await fetch(new URL("api/manipulation/hook/install", location.href).href, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
+        const answer = await response.json().catch(() => ({}))
+        app.manipulation.state.update({ last: { action: "install hook", ok: response.ok, message: String(answer.output ?? answer.error ?? "") } })
+    }
+    return <Button size="sm" onClick={install} data-testid="manip-hook-install" title="Install it into the running blueprint's venv; restart the blueprint to load it">Install hook</Button>
 }
