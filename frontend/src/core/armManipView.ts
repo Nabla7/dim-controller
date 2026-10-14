@@ -119,7 +119,7 @@ export class ArmManipView {
     async #loadDescription() {
         if (this.#model || !this.#active || !this.manipulation.state.get().hook) {
             if (this.#active && !this.#model && this.manipulation.state.get().available && !this.manipulation.state.get().hook) {
-                this.status.update({ problem: "no dim-controller hook in the blueprint's process: install it (Hook, below) and restart the blueprint" })
+                this.status.update({ problem: "no dim-controller hook in the blueprint's process: install it (Install hook, in the panel's status) and restart the blueprint" })
             }
             return
         }
