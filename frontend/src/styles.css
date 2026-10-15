@@ -409,6 +409,7 @@ h3.dr-h3.first { margin-top: 4px; }
 .camera-tabs { margin: 0; padding: 0; }
 .camera-body { background: var(--scene-bg, var(--bg)); }
 .camera-body { position: relative; flex: 1; min-height: 0; }
+.camera-stalled { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 6px 12px; border-radius: 6px; background: rgba(0, 0, 0, 0.65); color: #fff; font-weight: 600; pointer-events: none; }
 .camera-media, .camera-overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .camera-overlay { pointer-events: none; }
 /* fullscreen "fill": the picture (video, depth canvas) and its overlay crop alike, so boxes stay on what they mark */

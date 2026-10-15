@@ -25,6 +25,9 @@ import { panelTitle } from "./commands.ts"
 import { cameraId, isCamera, workspace } from "./workspace.ts"
 import type { CameraActions } from "./useCommands.ts"
 
+/** a camera view with no new picture for this long says "slow / stopped link" and drops its fps */
+const STALL_MS = 1000
+
 export interface PanelState {
     id: number
     /** image topic key ("" until one is picked) */
@@ -149,6 +152,9 @@ function CameraPanel({ app, panel, topics, onChange }: {
         everSeen.current = null
     }
     const [size, setSize] = useState({ width: 0, height: 0, fps: 0 })
+    // when a picture last reached the screen: the bridge's fps can hold while the track itself has stalled
+    const lastPaint = useRef(0)
+    const [stalled, setStalled] = useState(false)
     const depth = topic ? isDepthTopic(topic) : false
     const api = useWorkspaceApi()
     const slot = api.layout.slots[cameraId(panel.id)]
@@ -181,6 +187,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
                         depthHost.current.prepend(depthRenderer.current.canvas)
                     }
                     const range = depthRenderer.current.draw(image, lookRef.current)
+                    lastPaint.current = performance.now()
                     setDepthRange((old) => old && Math.abs(old[0] - range[0]) < 0.05 && Math.abs(old[1] - range[1]) < 0.05 ? old : range)
                     setSize((old) => old.width === image.width ? old : { width: image.width, height: image.height, fps: 0 })
                 }
@@ -203,6 +210,31 @@ function CameraPanel({ app, panel, topics, onChange }: {
             app.video.release(topic)
         }
     }, [app, topic?.key, open])
+
+    // no new picture for STALL_MS: drop the fps and say so over the view
+    useEffect(() => {
+        const element = video.current
+        if (!topic || !open) {
+            setStalled(false)
+            return
+        }
+        lastPaint.current = performance.now()
+        let frameCallback = 0
+        const painted = () => {
+            lastPaint.current = performance.now()
+            frameCallback = element!.requestVideoFrameCallback(painted)
+        }
+        if (!depth && element) {
+            frameCallback = element.requestVideoFrameCallback(painted)
+        }
+        const timer = setInterval(() => setStalled(performance.now() - lastPaint.current > STALL_MS), 250)
+        return () => {
+            clearInterval(timer)
+            if (!depth && element) {
+                element.cancelVideoFrameCallback(frameCallback)
+            }
+        }
+    }, [topic?.key, open, depth])
 
     // the overlay (latest message, redrawn as it arrives)
     useEffect(() => {
@@ -262,7 +294,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
         return () => removeEventListener("pointerdown", close, true)
     }, [qualityOpen])
 
-    const info = size.width ? `${size.width}×${size.height}${size.fps ? ` · ${size.fps} fps` : ""}${depth && depthRange ? ` · ${depthRange[0].toFixed(1)}–${depthRange[1].toFixed(1)} m` : ""}` : ""
+    const info = size.width ? `${size.width}×${size.height}${size.fps && !stalled ? ` · ${size.fps} fps` : ""}${depth && depthRange ? ` · ${depthRange[0].toFixed(1)}–${depthRange[1].toFixed(1)} m` : ""}` : ""
     const overlays = topics.filter((other) => overlayTypeFor(other.type))
     const tabs = cameraTabs(topics)
     const nextTab = tabs.length > 1 ? tabs[(tabs.findIndex((tab) => tab.topic.key === panel.key) + 1) % tabs.length] : null
@@ -323,6 +355,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
             {depth && depthError && <Unavailable what="Depth view" reason={depthError} />}
             {depth ? <div ref={depthHost} className="camera-media depth-host" /> : <video ref={video} className="camera-media" muted playsInline autoPlay disablePictureInPicture disableRemotePlayback />}
             <canvas ref={overlayCanvas} className="camera-overlay" />
+            {topic && open && stalled && <div className="camera-stalled" data-testid="camera-stalled">slow / stopped link</div>}
             {!topic && <div className="camera-placeholder"><Icon name="camera" size={28} /><span>{!tabs.length ? "No camera on the bus yet" : switched ? "Pick a camera from the view switch (top bar)" : "Pick a camera from this panel's topic tabs (shown on hover) or the palette (/)"}</span></div>}
             {topic && !depth && (
                 <div className={`camera-quality panel-chrome ${qualityOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
