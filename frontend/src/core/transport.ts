@@ -41,6 +41,8 @@ export interface ConnectionState {
     topics: Topic[]
     droppedPerSecond: number
     rttMs: number | null
+    /** bytes per second reaching this page over the wire (the WebRTC transport's received bytes), else the gateway's own count; null before the first sample */
+    throughputBytesPerSec: number | null
     error: string | null
 }
 
@@ -63,9 +65,34 @@ export function rememberTopics(lastSeen: Map<string, { topic: Topic; at: number 
     return [...lastSeen.values()].map((seen) => seen.topic).sort((a, b) => a.name.localeCompare(b.name) || a.type.localeCompare(b.type))
 }
 
+/** Bytes per second the gateway got through to this page: its delivered data plus the video it sent (null without stats). */
+export function throughputOf(stats: Record<string, Record<string, unknown> | null> | null): number | null {
+    const bandwidth = stats?.bandwidth
+    const delivered = bandwidth?.deliveredBytesPerSec
+    if (typeof delivered !== "number") {
+        return null
+    }
+    const video = bandwidth?.videoSentBytesPerSec
+    return delivered + (typeof video === "number" ? video : 0)
+}
+
+/** Bytes the page's WebRTC transport has received so far (wire bytes: data, video and overhead); null without a connection. */
+export async function transportBytesReceived(peer: RTCPeerConnection | null | undefined): Promise<number | null> {
+    if (!peer || peer.connectionState === "closed") {
+        return null
+    }
+    let received: number | null = null
+    ;(await peer.getStats()).forEach((stat) => {
+        if (stat.type === "transport" && typeof stat.bytesReceived === "number") {
+            received = Math.max(received ?? 0, stat.bytesReceived)
+        }
+    })
+    return received
+}
+
 export class Connection {
     client: ZenohGateway | null = null
-    readonly status = new Store<ConnectionState>({ state: "connecting", topics: [], droppedPerSecond: 0, rttMs: null, error: null })
+    readonly status = new Store<ConnectionState>({ state: "connecting", topics: [], droppedPerSecond: 0, rttMs: null, throughputBytesPerSec: null, error: null })
     #subscriptions = new Set<LiveSubscription>()
     #lastDropped = 0
     #shared: ReturnType<typeof getZenoh>
@@ -87,9 +114,15 @@ export class Connection {
         for (const subscription of this.#subscriptions) {
             subscription.open(client)
         }
-        setInterval(() => {
+        let lastWire: { bytes: number; at: number } | null = null
+        setInterval(async () => {
             const dropped = Object.values(client.stats).reduce((sum, stats) => sum + (stats.dropped || 0), 0)
-            this.status.update({ droppedPerSecond: dropped - this.#lastDropped, rttMs: client.rttMs ?? null })
+            // the gateway counts payload before it is compressed and framed, so the wire is the true rate
+            const bytes = await transportBytesReceived((client as unknown as { _peer?: RTCPeerConnection | null })._peer).catch(() => null)
+            const now = performance.now()
+            const wire = bytes !== null && lastWire !== null && bytes >= lastWire.bytes ? ((bytes - lastWire.bytes) * 1000) / (now - lastWire.at) : null
+            lastWire = bytes === null ? null : { bytes, at: now }
+            this.status.update({ droppedPerSecond: dropped - this.#lastDropped, rttMs: client.rttMs ?? null, throughputBytesPerSec: wire ?? throughputOf(client.gatewayStats) })
             this.#lastDropped = dropped
         }, 1000)
         this.#lastRtt = { value: client.rttMs ?? null, at: performance.now() }
@@ -141,7 +174,7 @@ export class Connection {
             return Promise.resolve()
         }
         this.#reconnecting ??= (async () => {
-            this.status.update({ state: "connecting", rttMs: null })
+            this.status.update({ state: "connecting", rttMs: null, throughputBytesPerSec: null })
             // the old peer's close events come after _open bumps the client's generation, so they're ignored
             client._peer?.close()
             try {

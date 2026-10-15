@@ -313,8 +313,9 @@ function CameraPanel({ app, panel, topics, onChange }: {
                             <NumberInput nullable className="number depth-range" step={0.1} placeholder="far" title="far (m); empty = auto" value={depthLook.far} onChange={(far) => onChange({ depth: { ...depthLook, far } })} />
                         </>
                     )}
-                    <Button className="dr-btn--icon icon-button camera-fit" pressed={fill} title={fill ? "Fill: the picture fills its space, edges cropped (click to fit the whole picture)" : "Fit: the whole picture, letterboxed (click to fill its space)"} onClick={toggleFill}>
+                    <Button className="dr-btn--icon icon-button camera-fit labeled" pressed={fill} title={fill ? "Fill: the picture fills its space, edges cropped (click to fit the whole picture)" : "Fit: the whole picture, letterboxed (click to fill its space)"} onClick={toggleFill}>
                         <Icon name={fill ? "fill" : "fit"} size={15} />
+                        <span className="icon-label">{fill ? "Fill" : "Fit"}</span>
                     </Button>
                 </div>
             }

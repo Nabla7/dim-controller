@@ -22,6 +22,8 @@ export interface Rect {
 export interface Arrangement {
     /** the panel in the main view (null: empty) */
     stage: string | null
+    /** the one that was in the main view before it (minimize brings it back) */
+    previousStage?: string | null
     left: string[]
     right: string[]
     floating: (Rect & { id: string })[]
@@ -58,7 +60,7 @@ const HOMES: Record<string, { side: Side; collapsed?: boolean; weight: number; f
 const CAMERA_HOME = { side: "left" as Side, weight: 1, float: { width: 480, height: 270 + PANEL_HEAD } }
 export const isCamera = (id: string) => id.startsWith("camera:")
 export const cameraId = (n: number) => `camera:${n}`
-const homeOf = (id: string) => HOMES[id] ?? CAMERA_HOME
+export const homeOf = (id: string) => HOMES[id] ?? CAMERA_HOME
 /** the panels that always exist (cameras come and go: camera:<n>) */
 export const FIXED_PANELS = Object.keys(HOMES)
 
@@ -124,8 +126,13 @@ export function normalizeArrangement(saved: Partial<Arrangement> | null | undefi
             floatMemory[id] = { x: box.x, y: box.y, width: box.width, height: box.height }
         }
     }
+    const previousStage = typeof saved?.previousStage === "string" && known.has(saved.previousStage) &&
+            saved.previousStage !== stage
+        ? saved.previousStage
+        : null
     return {
         stage,
+        previousStage,
         left,
         right,
         floating,
@@ -180,7 +187,7 @@ export function movePanel(arrangement: Arrangement, id: string, to: Placement): 
     let next = without(arrangement, id)
     if (to.zone === "stage") {
         const previous = arrangement.stage
-        next = { ...expand(next, id), stage: id }
+        next = { ...expand(next, id), stage: id, previousStage: previous && previous !== id ? previous : null }
         if (previous && previous !== id) {
             if (from?.zone === "left" || from?.zone === "right") {
                 const rail = next[from.zone].slice()
@@ -201,6 +208,22 @@ export function movePanel(arrangement: Arrangement, id: string, to: Placement): 
     const rail = next[to.zone].slice()
     rail.splice(clamp(Math.round(to.index), 0, rail.length), 0, id)
     return { ...next, [to.zone]: rail }
+}
+
+/**
+ * The main view's panel goes back to a rail: the one that was main before it takes its place again (a swap, so it lands
+ * where that one was), or else the top of its home rail, or any rail panel. Unchanged when there's nothing to swap in.
+ */
+export function minimizeStage(arrangement: Arrangement): Arrangement {
+    const id = arrangement.stage
+    if (!id) {
+        return arrangement
+    }
+    const inRail = (other: string | null | undefined): other is string =>
+        !!other && other !== id && (arrangement.left.includes(other) || arrangement.right.includes(other) || arrangement.floating.some((box) => box.id === other))
+    const home = homeOf(id).side
+    const replacement = [arrangement.previousStage, arrangement[home][0], ...arrangement.left, ...arrangement.right].find(inRail)
+    return replacement ? movePanel(arrangement, replacement, { zone: "stage" }) : arrangement
 }
 
 export function toggleCollapsed(arrangement: Arrangement, id: string): Arrangement {

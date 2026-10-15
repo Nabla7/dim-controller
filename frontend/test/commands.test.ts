@@ -2,7 +2,7 @@
 // the ones that apply where it is), offered in the palette too.
 import { assert, assertEquals } from "jsr:@std/assert@1"
 import { type Command, filterCommands, panelActions, panelCommands, panelTitle } from "../src/ui/commands.ts"
-import { defaultArrangement, FIXED_PANELS, movePanel, toggleCollapsed } from "../src/ui/workspace.ts"
+import { defaultArrangement, FIXED_PANELS, minimizeStage, movePanel, toggleCollapsed } from "../src/ui/workspace.ts"
 
 const IDS = ["camera:1", ...FIXED_PANELS]
 const command = (id: string, label: string, extra: Partial<Command> = {}): Command => ({ id, label, group: "View", run: () => {}, ...extra })
@@ -25,8 +25,8 @@ Deno.test("a panel's header actions, in a fixed order: collapse and make main vi
         assertEquals(actions(id, true), ["collapse", "main"], id)
     }
     // the main view: nothing to collapse or swap
-    assertEquals(actions("camera:1"), ["popout"])
-    assertEquals(actions("camera:1", true), [])
+    assertEquals(actions("camera:1"), ["minimize", "popout"])
+    assertEquals(actions("camera:1", true), ["minimize"])
 })
 
 Deno.test("what each action says depends on where the panel is", () => {
@@ -48,7 +48,17 @@ Deno.test("the palette has a show command and each of the header's actions for e
         }
     }
     assertEquals(acted.filter((entry) => entry.startsWith("map.")), ["map.show", "map.collapse", "map.main", "map.popout"])
-    assertEquals(acted.filter((entry) => entry.startsWith("camera:1.")), ["camera:1.show", "camera:1.popout"])
+    assertEquals(acted.filter((entry) => entry.startsWith("camera:1.")), ["camera:1.show", "camera:1.minimize", "camera:1.popout"])
     assertEquals(panelTitle("camera:2"), "Camera 2")
     assertEquals(panelTitle("scene"), "3D view")
+})
+
+Deno.test("minimize sends the main view back and brings the previous one back", () => {
+    let arrangement = defaultArrangement(IDS)
+    const first = arrangement.stage!
+    arrangement = movePanel(arrangement, "map", { zone: "stage" })
+    assertEquals(arrangement.stage, "map")
+    arrangement = minimizeStage(arrangement)
+    assertEquals(arrangement.stage, first)
+    assert(arrangement.left.includes("map"))
 })

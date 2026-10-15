@@ -1,7 +1,7 @@
 //! The recorder and its zenoh side (routes in api.rs). A start names its keys, or leaves them out: then the topics on
 //! the bus now are found here (liveliness tokens and a short listen, as Desktop's /api/topics does) minus rpc topics and
 //! the ones unticked in the recorder panel (the `lv.record.topics` setting), and while it runs, new ones join (unless
-//! `lv.record.options.recordNew` is off) and dimos runs that start later bring their log dirs (Desktop's /dimos/runs).
+//! `lv.record.options.recordNew` is off) and dimos runs that start later bring their log dirs (Desktop's /dimos-gateway/runs).
 //! While a recording runs this process subscribes to exactly the recorded keys, so an idle recorder costs no bandwidth;
 //! the stream meter (`GET api/recorder/streams`, each key's bytes/s) listens to everything only while someone asks.
 //! The recorder's options (format, compression, folder, logs, per-stream max rates) are the `lv.record.options`

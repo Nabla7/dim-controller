@@ -30,8 +30,7 @@ import {
     type View,
     workspace,
     workspaceView,
-    type WorkspaceLayout,
-} from "./workspace.ts"
+    type WorkspaceLayout, minimizeStage } from "./workspace.ts"
 
 export interface WorkspaceApi {
     arrangement: Arrangement
@@ -103,6 +102,8 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
                     workspaceView.set({ ...workspaceView.get(), drawer: null })
                 }
             }
+        } else if (action === "minimize") {
+            normalized((arrangement) => minimizeStage(arrangement))
         } else if (!mobile) {
             normalized((arrangement) => popOut(arrangement, id, layoutWorkspace(arrangement, frame, workspaceView.get())))
         }
