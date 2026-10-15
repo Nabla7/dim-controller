@@ -3,7 +3,7 @@
 // (core/netHistory.ts, sampled by core/transport.ts), so opening the panel shows the recent past.
 import type { ViewerApp } from "../core/app.ts"
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react"
-import { assignSlots, breakdown, type NetSample, OTHER } from "../core/netHistory.ts"
+import { assignSlots, breakdown, CONTROL, HEARTBEAT, type NetSample, OTHER, RESENT, RTP_HEADERS } from "../core/netHistory.ts"
 import { parseKey } from "../core/transport.ts"
 
 /** colour slots (styles.css --net-1..7); a stream past them is drawn with "other" */
@@ -14,8 +14,15 @@ const LATENCY_H = 50
 
 const mbps = (bytesPerSec: number) => (bytesPerSec * 8) / 1e6
 const mbpsText = (bytesPerSec: number) => `${mbps(bytesPerSec).toFixed(mbps(bytesPerSec) < 10 ? 2 : 1)} Mbps`
-// a dimos topic by its name; another key (Desktop's events) by its last two parts
-const streamName = (key: string) => key === OTHER ? "other (framing, control, unlisted)" : parseKey(key)?.name ?? `…/${key.split("/").slice(-2).join("/")}`
+const PART_NAMES: Record<string, string> = {
+    [OTHER]: "protocol overhead (DTLS/SCTP framing, acks, resends)",
+    [CONTROL]: "gateway control",
+    [HEARTBEAT]: "heartbeat",
+    [RTP_HEADERS]: "video RTP headers",
+    [RESENT]: "video resent (NACK)",
+}
+// a named part, a dimos topic by its name, another key (Desktop's events) by its last two parts
+const streamName = (key: string) => PART_NAMES[key] ?? parseKey(key)?.name ?? `…/${key.split("/").slice(-2).join("/")}`
 const colorOf = (slot: number | undefined) => slot === undefined ? "var(--net-other)" : `var(--net-${slot + 1})`
 
 /** a round axis top over `value` (1, 2, 5 × 10^n) */
@@ -125,13 +132,13 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
                             <td>{Math.round(row.share * 100)}%</td>
                         </tr>
                     ))}
-                    {!rows.length && <tr><td colSpan={3} className="dim">no stream counts yet (the gateway's stats come every 1–10 s)</td></tr>}
+                    {!rows.length && <tr><td colSpan={3} className="dim">nothing received in the last second</td></tr>}
                 </tbody>
             </table>
             <p className="hint">
-                Throughput is the page's WebRTC wire bytes; each stream is the gateway's own count of what it sent that
-                subscription (between its stats replies, every 1–10 s); "other" is the wire beyond them. Latency is the
-                heartbeat's round trip. <button type="button" className="net-link" onClick={onStatus}>Status</button>
+                All counted by this browser (WebRTC stats), each second: throughput is the wire's bytes, a stream its data
+                channel's payload or its video track's; protocol overhead is the wire beyond everything named (the browser
+                doesn't count DTLS/SCTP framing or SCTP resends on their own). Latency is the heartbeat's round trip. <button type="button" className="net-link" onClick={onStatus}>Status</button>
             </p>
         </div>
     )

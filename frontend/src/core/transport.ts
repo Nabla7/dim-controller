@@ -4,7 +4,7 @@
 import { connect, type Message, Priority, type Publisher, type SubscribeOptions, type Subscription, type SubscriptionUpdate, type ZenohGateway } from "dimos-react/dim-app/vendor/zenoh-gateway/zenoh_gateway.js"
 import { getZenoh } from "dimos-react/dim-app/zenoh.js"
 import { Store } from "./store.ts"
-import { type ChannelReport, NetHistory } from "./netHistory.ts"
+import { NetHistory, wireCounts, type WireCounts } from "./netHistory.ts"
 
 export { Priority }
 export type { Message, Publisher, SubscribeOptions, SubscriptionUpdate }
@@ -77,18 +77,17 @@ export function throughputOf(stats: Record<string, Record<string, unknown> | nul
     return delivered + (typeof video === "number" ? video : 0)
 }
 
-/** Bytes the page's WebRTC transport has received so far (wire bytes: data, video and overhead); null without a connection. */
-export async function transportBytesReceived(peer: RTCPeerConnection | null | undefined): Promise<number | null> {
+/** The page's WebRTC counters so far (core/netHistory.ts): the wire's bytes (data, video and overhead) and each part's; null without a connection. */
+export async function peerCounts(peer: RTCPeerConnection | null | undefined): Promise<WireCounts | null> {
     if (!peer || peer.connectionState === "closed") {
         return null
     }
-    let received: number | null = null
-    ;(await peer.getStats()).forEach((stat) => {
-        if (stat.type === "transport" && typeof stat.bytesReceived === "number") {
-            received = Math.max(received ?? 0, stat.bytesReceived)
-        }
-    })
-    return received
+    return wireCounts(await peer.getStats())
+}
+
+/** Bytes the page's WebRTC transport has received so far (wire bytes: data, video and overhead); null without a connection. */
+export async function transportBytesReceived(peer: RTCPeerConnection | null | undefined): Promise<number | null> {
+    return (await peerCounts(peer))?.wire ?? null
 }
 
 export class Connection {
@@ -117,27 +116,18 @@ export class Connection {
         for (const subscription of this.#subscriptions) {
             subscription.open(client)
         }
-        // every channel's counters ride the client's own stats poll; its parsed `stats` keeps one channel per key, so take the reply
-        const request = client._request.bind(client)
-        client._request = (async (body: { op: string }, timeoutMs: number) => {
-            const response = await request(body as never, timeoutMs)
-            const channels = (response as { channels?: ChannelReport[] } | null)?.channels
-            if (body.op === "stats" && Array.isArray(channels)) {
-                this.network.recordStats(channels, performance.now())
-            }
-            return response
-        }) as typeof client._request
         let lastWire: { bytes: number; at: number } | null = null
         setInterval(async () => {
             const dropped = Object.values(client.stats).reduce((sum, stats) => sum + (stats.dropped || 0), 0)
             // the gateway counts payload before it is compressed and framed, so the wire is the true rate
-            const bytes = await transportBytesReceived((client as unknown as { _peer?: RTCPeerConnection | null })._peer).catch(() => null)
+            const counts = await peerCounts((client as unknown as { _peer?: RTCPeerConnection | null })._peer).catch(() => null)
+            const bytes = counts?.wire ?? null
             const now = performance.now()
             const wire = bytes !== null && lastWire !== null && bytes >= lastWire.bytes ? ((bytes - lastWire.bytes) * 1000) / (now - lastWire.at) : null
             lastWire = bytes === null ? null : { bytes, at: now }
             this.status.update({ droppedPerSecond: dropped - this.#lastDropped, rttMs: client.rttMs ?? null, throughputBytesPerSec: wire ?? throughputOf(client.gatewayStats) })
             this.#lastDropped = dropped
-            this.network.sample(now, this.status.get().throughputBytesPerSec, this.latencyMs(now))
+            this.network.sample(now, counts, this.latencyMs(now))
         }, 1000)
         this.#lastRtt = { value: client.rttMs ?? null, at: performance.now() }
         const lastSeen = new Map<string, { topic: Topic; at: number }>()

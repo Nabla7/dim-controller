@@ -1,16 +1,9 @@
-// The link's recent past for the Network panel (ui/NetworkPanel.tsx): once a second, the throughput reaching the page and
-// the control link's latency, and each stream's share. A stream's rate is the gateway's own count (each subscription's
-// `bytesSent` in its stats: data-channel frames handed to SCTP, or video handed to the track) differenced between two
-// stats replies; what the wire carried beyond their sum (SCTP/DTLS/UDP and RTP framing, control, heartbeats) is "other".
+// The link's recent past for the Network panel (ui/NetworkPanel.tsx): once a second, the throughput reaching the page,
+// the control link's latency, and what used it, all from this page's own WebRTC stats (RTCPeerConnection.getStats):
+// each subscription's data channel (its label names the key), each video track's payload (its m-line's mid, also in its
+// data channel's label), the video's RTP headers and resent packets, the gateway's control and heartbeat channels, and
+// the rest of the wire (DTLS/SCTP framing and acks, SCTP resends, ICE: the browser counts these only in the total).
 // Pure (no DOM): tested in test/netHistory.test.ts.
-
-/** one gateway channel as a stats reply lists it (zenoh-gateway SPEC "Stats": `channels`) */
-export interface ChannelReport {
-    id: number | null
-    type: string
-    key: string
-    stats: Record<string, unknown>
-}
 
 export interface NetSample {
     /** ms (performance.now()) */
@@ -18,14 +11,19 @@ export interface NetSample {
     /** wire bytes/s reaching the page; null: no data */
     bytesPerSec: number | null
     latencyMs: number | null
-    /** subscription key → bytes/s the gateway sent it (summed over that key's subscriptions); empty: no fresh stats */
+    /** what used the wire, bytes/s: a subscription key, or one of the named parts (CONTROL, HEARTBEAT, RTP_HEADERS, RESENT) */
     streams: Record<string, number>
 }
 
 /** 5 minutes at one sample a second */
 export const HISTORY_SAMPLES = 300
-/** stats older than this (the gateway asks for them at most every 10 s on a slow link) no longer count as now */
-export const STREAM_STALE_MS = 12_000
+
+/** the wire beyond everything counted */
+export const OTHER = "other"
+export const CONTROL = "control"
+export const HEARTBEAT = "heartbeat"
+export const RTP_HEADERS = "rtp headers"
+export const RESENT = "video resent"
 
 /** A fixed-size ring: the newest `capacity` items, oldest first. */
 export class Ring<T> {
@@ -51,51 +49,93 @@ export class Ring<T> {
     }
 }
 
-/**
- * Per subscription key, bytes/s between two stats replies: each channel's `bytesSent` growth over the time between them.
- * A channel new since the last reply, or whose count went back (a reconnect remade it), has no rate yet.
- */
-export function streamRates(previous: Map<number, number> | null, channels: ChannelReport[], elapsedMs: number): Record<string, number> {
-    const rates: Record<string, number> = {}
-    if (!previous || elapsedMs <= 0) {
-        return rates
+/** the counters this needs from one getStats report: the wire total and, per part, bytes received so far */
+export interface WireCounts {
+    wire: number | null
+    parts: Record<string, number>
+}
+
+type Stat = Record<string, unknown>
+const count = (value: unknown) => typeof value === "number" ? value : 0
+
+/** What a data channel carries, from the label zenoh-gateway's client gives it: a key, control or the heartbeat. */
+function channelOf(label: string): { part: string; mid?: string } {
+    if (label === "control") {
+        return { part: CONTROL }
     }
-    for (const channel of channels) {
-        const bytes = Number(channel.stats.bytesSent)
-        const before = channel.id === null ? undefined : previous.get(channel.id)
-        if (channel.type !== "sub" || !Number.isFinite(bytes) || before === undefined || bytes < before) {
+    try {
+        const parsed = JSON.parse(label) as { type?: string; key?: string; mid?: string | number }
+        if (parsed.type === "heartbeat") {
+            return { part: HEARTBEAT }
+        }
+        if (typeof parsed.key === "string") {
+            return { part: parsed.key, mid: parsed.mid === undefined ? undefined : String(parsed.mid) }
+        }
+    } catch {
+        // another app's channel: counted under its own label
+    }
+    return { part: label }
+}
+
+/**
+ * One getStats report as counters: the transport's bytesReceived (the wire), each data channel's under its key, each
+ * video m-line's payload under the key whose channel names its mid (minus resent bytes), its RTP headers and resends.
+ */
+export function wireCounts(report: { forEach(callback: (stat: Stat) => void): void }): WireCounts {
+    const stats: Stat[] = []
+    report.forEach((stat) => stats.push(stat))
+    let wire: number | null = null
+    const parts: Record<string, number> = {}
+    const add = (part: string, bytes: number) => {
+        parts[part] = (parts[part] ?? 0) + bytes
+    }
+    const keyOfMid = new Map<string, string>()
+    for (const stat of stats) {
+        if (stat.type === "transport" && typeof stat.bytesReceived === "number") {
+            wire = Math.max(wire ?? 0, stat.bytesReceived)
+        } else if (stat.type === "data-channel" && typeof stat.label === "string") {
+            const { part, mid } = channelOf(stat.label)
+            add(part, count(stat.bytesReceived))
+            if (mid !== undefined) {
+                keyOfMid.set(mid, part)
+            }
+        }
+    }
+    for (const stat of stats) {
+        if (stat.type !== "inbound-rtp") {
             continue
         }
-        rates[channel.key] = (rates[channel.key] ?? 0) + ((bytes - before) * 1000) / elapsedMs
+        const resent = count(stat.retransmittedBytesReceived)
+        add(keyOfMid.get(String(stat.mid)) ?? `video (mid ${stat.mid})`, count(stat.bytesReceived) - resent)
+        add(RTP_HEADERS, count(stat.headerBytesReceived))
+        add(RESENT, resent)
+    }
+    return { wire, parts }
+}
+
+/** Bytes/s per part between two reports; a part new since the last, or whose count went back (a channel remade), has none. */
+export function partRates(previous: Record<string, number>, next: Record<string, number>, elapsedMs: number): Record<string, number> {
+    const rates: Record<string, number> = {}
+    for (const [part, bytes] of Object.entries(next)) {
+        const before = previous[part]
+        if (elapsedMs > 0 && before !== undefined && bytes >= before) {
+            rates[part] = ((bytes - before) * 1000) / elapsedMs
+        }
     }
     return rates
 }
 
-/** Each channel's `bytesSent` now, by id: the next reply's baseline. */
-export function sentById(channels: ChannelReport[]): Map<number, number> {
-    const sent = new Map<number, number>()
-    for (const channel of channels) {
-        const bytes = Number(channel.stats.bytesSent)
-        if (channel.id !== null && Number.isFinite(bytes)) {
-            sent.set(channel.id, bytes)
-        }
-    }
-    return sent
-}
-
 export interface StreamShare {
-    /** a subscription key, or "other" (wire bytes no stream accounts for) */
+    /** a part (a subscription key or a named one), or OTHER */
     key: string
     bytesPerSec: number
-    /** of the wire total (or of the streams' sum without one), 0..1 */
+    /** of the wire total (or of the parts' sum without one), 0..1 */
     share: number
 }
 
-export const OTHER = "other"
-
-/** Who's using the link in one sample, largest first; "other" is what the wire carried beyond the streams' sum. */
+/** Who's using the link in one sample, largest first; OTHER is what the wire carried beyond the parts' sum. */
 export function breakdown(sample: Pick<NetSample, "bytesPerSec" | "streams">): StreamShare[] {
-    const rows = Object.entries(sample.streams).map(([key, bytesPerSec]) => ({ key, bytesPerSec }))
+    const rows = Object.entries(sample.streams).filter(([, bytesPerSec]) => bytesPerSec > 0).map(([key, bytesPerSec]) => ({ key, bytesPerSec }))
     const counted = rows.reduce((sum, row) => sum + row.bytesPerSec, 0)
     if (sample.bytesPerSec !== null && sample.bytesPerSec > counted) {
         rows.push({ key: OTHER, bytesPerSec: sample.bytesPerSec - counted })
@@ -104,27 +144,25 @@ export function breakdown(sample: Pick<NetSample, "bytesPerSec" | "streams">): S
     return rows.map((row) => ({ ...row, share: total > 0 ? row.bytesPerSec / total : 0 })).sort((a, b) => b.bytesPerSec - a.bytesPerSec)
 }
 
-/** The samples, and each stream's latest rate from the stats replies between them. */
+/** The samples: each one the wire and parts since the last report. */
 export class NetHistory {
     readonly samples: Ring<NetSample>
-    #sent: Map<number, number> | null = null
-    #statsAt = -Infinity
-    #streams: Record<string, number> = {}
+    #last: { at: number; counts: WireCounts } | null = null
     constructor(capacity = HISTORY_SAMPLES) {
         this.samples = new Ring(capacity)
     }
 
-    /** A stats reply arrived at `at`: the streams' rates since the last one. */
-    recordStats(channels: ChannelReport[], at: number) {
-        this.#streams = streamRates(this.#sent, channels, at - this.#statsAt)
-        this.#sent = sentById(channels)
-        this.#statsAt = at
-    }
-
-    /** One sample (once a second); stream rates from stats older than STREAM_STALE_MS are left out. */
-    sample(at: number, bytesPerSec: number | null, latencyMs: number | null) {
-        const fresh = at - this.#statsAt <= STREAM_STALE_MS
-        this.samples.push({ at, bytesPerSec, latencyMs, streams: fresh ? { ...this.#streams } : {} })
+    /** One sample (once a second) from a getStats report's counts; null counts (no connection) record no data. */
+    sample(at: number, counts: WireCounts | null, latencyMs: number | null) {
+        const last = this.#last
+        this.#last = counts && { at, counts }
+        if (!counts || !last) {
+            this.samples.push({ at, bytesPerSec: null, latencyMs, streams: {} })
+            return
+        }
+        const elapsed = at - last.at
+        const wire = counts.wire !== null && last.counts.wire !== null && counts.wire >= last.counts.wire && elapsed > 0 ? ((counts.wire - last.counts.wire) * 1000) / elapsed : null
+        this.samples.push({ at, bytesPerSec: wire, latencyMs, streams: partRates(last.counts.parts, counts.parts, elapsed) })
     }
 }
 
