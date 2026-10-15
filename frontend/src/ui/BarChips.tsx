@@ -40,7 +40,7 @@ export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
     const link = linkChip({ ...connection, throughputBytesPerSec: average.rate }, average.latency)
     return (
         <>
-            <button type="button" className={`bar-chip tone-${link.tone} bar-button`} title={`${link.detail} (open Status)`} data-testid="bar-link" onClick={() => api.act("status", "show")}>
+            <button type="button" className={`bar-chip tone-${link.tone} bar-button`} title={`${link.detail} (open Network: history and who's using the link)`} data-testid="bar-link" onClick={() => api.act("network", "show")}>
                 <span className="bar-dot" />
                 <span className="bar-value">{link.text}</span>
             </button>

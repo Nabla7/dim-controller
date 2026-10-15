@@ -531,6 +531,27 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .status-row dd.tone-warn { color: var(--warn); }
 .status-row dd.tone-bad { color: var(--lv-stop); }
 
+/* ── network panel (ui/NetworkPanel.tsx): one fixed colour per stream, in the order they appear (a categorical
+   palette checked for colour-blind separation; the only non-theme colours in this file, stepped for each mode) ── */
+:root { --net-1: #2a78d6; --net-2: #eb6834; --net-3: #1baf7a; --net-4: #eda100; --net-5: #e87ba4; --net-6: #008300; --net-7: #4a3aa7; --net-other: color-mix(in srgb, var(--muted-fg) 45%, transparent); }
+:root[data-dr-dark] { --net-1: #3987e5; --net-2: #d95926; --net-3: #199e70; --net-4: #c98500; --net-5: #d55181; --net-6: #008300; --net-7: #9085e9; }
+.net-panel { display: grid; gap: 8px; }
+.net-now { display: flex; gap: 14px; align-items: baseline; font-size: 11px; color: var(--muted-fg); }
+.net-now b { font: 600 13px var(--mono); color: var(--fg); }
+.net-now .dim { margin-left: auto; }
+.net-chart svg { display: block; width: 100%; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--fg) 3%, transparent); touch-action: none; }
+.net-chart polygon { stroke: var(--card); stroke-width: 0.5; }
+.net-axis { display: flex; justify-content: space-between; font: 10px var(--mono); color: var(--muted-fg); }
+.net-latency { fill: none; stroke: var(--net-1); stroke-width: 2; stroke-linejoin: round; }
+.net-cursor { stroke: var(--fg); stroke-width: 1; opacity: 0.6; }
+.net-streams { width: 100%; border-collapse: collapse; font-size: 11px; }
+.net-streams th { text-align: right; font: 10px var(--mono); color: var(--muted-fg); font-weight: 400; border-bottom: 1px solid var(--border); padding: 2px 0 2px 8px; }
+.net-streams th:first-child, .net-streams td:first-child { text-align: left; }
+.net-streams td { text-align: right; padding: 3px 0 3px 8px; font-family: var(--mono); border-bottom: 1px solid var(--hair, var(--border)); white-space: nowrap; }
+.net-streams td:first-child { padding-left: 0; font-family: var(--sans); overflow: hidden; text-overflow: ellipsis; max-width: 0; width: 100%; }
+.net-swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.net-link { border: 0; padding: 0; background: none; color: var(--primary); font: inherit; cursor: pointer; text-decoration: underline; }
+
 /* point-style picker */
 .style-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; width: 100%; }
 .style-card { background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); display: grid; grid-template-columns: 22px 1fr; grid-template-rows: auto auto; column-gap: 8px; text-align: left; padding: 7px 8px; cursor: pointer; font: inherit; }

@@ -4,6 +4,7 @@
 import { connect, type Message, Priority, type Publisher, type SubscribeOptions, type Subscription, type SubscriptionUpdate, type ZenohGateway } from "dimos-react/dim-app/vendor/zenoh-gateway/zenoh_gateway.js"
 import { getZenoh } from "dimos-react/dim-app/zenoh.js"
 import { Store } from "./store.ts"
+import { type ChannelReport, NetHistory } from "./netHistory.ts"
 
 export { Priority }
 export type { Message, Publisher, SubscribeOptions, SubscriptionUpdate }
@@ -99,6 +100,8 @@ export class Connection {
     /** the last RTT sample seen and when (performance.now()): a link that stops answering stops changing it */
     #lastRtt: { value: number | null; at: number } = { value: null, at: 0 }
     #reconnecting: Promise<void> | null = null
+    /** the last few minutes of throughput, latency and each stream's rate (the Network panel), sampled from start */
+    readonly network = new NetHistory()
 
     /** Makes the page's shared connection (the first getZenoh() call: its options win), with the heartbeat drive needs. */
     constructor(deadmanMs = 400) {
@@ -114,6 +117,16 @@ export class Connection {
         for (const subscription of this.#subscriptions) {
             subscription.open(client)
         }
+        // every channel's counters ride the client's own stats poll; its parsed `stats` keeps one channel per key, so take the reply
+        const request = client._request.bind(client)
+        client._request = (async (body: { op: string }, timeoutMs: number) => {
+            const response = await request(body as never, timeoutMs)
+            const channels = (response as { channels?: ChannelReport[] } | null)?.channels
+            if (body.op === "stats" && Array.isArray(channels)) {
+                this.network.recordStats(channels, performance.now())
+            }
+            return response
+        }) as typeof client._request
         let lastWire: { bytes: number; at: number } | null = null
         setInterval(async () => {
             const dropped = Object.values(client.stats).reduce((sum, stats) => sum + (stats.dropped || 0), 0)
@@ -124,6 +137,7 @@ export class Connection {
             lastWire = bytes === null ? null : { bytes, at: now }
             this.status.update({ droppedPerSecond: dropped - this.#lastDropped, rttMs: client.rttMs ?? null, throughputBytesPerSec: wire ?? throughputOf(client.gatewayStats) })
             this.#lastDropped = dropped
+            this.network.sample(now, this.status.get().throughputBytesPerSec, this.latencyMs(now))
         }, 1000)
         this.#lastRtt = { value: client.rttMs ?? null, at: performance.now() }
         const lastSeen = new Map<string, { topic: Topic; at: number }>()
