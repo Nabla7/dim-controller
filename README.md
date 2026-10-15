@@ -47,6 +47,15 @@ to the fixed frame is not drawn; the layer list says why.
 | `tf2_msgs.TFMessage` | frame axes, names and parent links |
 | `sensor_msgs.Image`, `CompressedImage` | camera panels; optionally projected into 3D (frustum + picture, from `CameraInfo`) |
 | `vision_msgs.Detection2DArray`, `Detection2D`, `BoundingBox2DArray` | boxes over a camera panel |
+| `std_msgs.String` on `/urdf_info` | the robot's own model from its URDF (below) |
+
+**Robot model (URDF).** When a blueprint runs dimos's `UrdfManager`, the robot is drawn from its URDF, for any robot:
+`/urdf_info` carries the XML (re-sent every 5 s), each mesh is asked for once by its `package://` name on
+`/mesh_request` and arrives on `/mesh_info` (`shape_msgs.MeshFile`: the file's bytes, matched by name; STL, OBJ and
+DAE), a few at a time, so the model fills in. Each link sits at its TF frame (UrdfManager puts every joint on TF), its
+visuals at their URDF origins. The layer ("Robot model (URDF)") turns on by itself, has opacity and visual / collision /
+both, and replaces the robot type's stand-in model while it's drawn ([layers/robotModel.tsx](frontend/src/layers/robotModel.tsx),
+[core/urdfSource.ts](frontend/src/core/urdfSource.ts)).
 
 Point clouds are GL point sprites, never meshes. The styles (Settings → Rendering for the default, each cloud's
 settings to override): **Glow** (default: soft gaussian splats fading into the background with distance), **Cubes**
@@ -322,8 +331,8 @@ Known gaps (none of these are on a topic in dimos today):
 - **Go home as dimos means it** is `ManipulationSkills.go_home`, an RPC skill (pickled zenoh queryable) the browser
   can't call; Home here is joints to 0 over `joint_command`, which is that skill's default preset (the xArm7 sim's
   preset differs).
-- **The arm in 3D** is what TF has: ManipulationModule publishes `world → <tip link>` only, and there is no
-  `robot_description` topic, so the view shows those TF frames (Settings → Layers → TF), not a URDF mesh.
+- **The arm in 3D** without UrdfManager or the planner is what TF has: ManipulationModule publishes `world → <tip
+  link>` only, so the view shows those TF frames (Settings → Layers → TF), not a URDF mesh.
 - Arm commands are page → gateway like continuous driving; there is no agent endpoint for them yet.
 
 Verified against dimos `main` @ 0861d853e3: with `dtk run coordinator-mock` on Desktop's gateway, Auto picked arm, a
@@ -340,7 +349,9 @@ manipulation panel, does, in its order:
 
 - **Status**: the planner's state (or its error), the target's (empty, checking, feasible, infeasible) and the plan's
   (none, planning, fresh, stale, failed), whether the joint state is stale, the current joints, the last result.
-- **The arm in 3D** is the planner's own model (its URDF meshes), posed live from the joint state. **Robot display**:
+- **The arm in 3D** is the robot's URDF from `/urdf_info` when UrdfManager publishes it (joints the joint state doesn't
+  name are read from TF), else the planner's own model (its URDF meshes, through the hook), posed live from the joint
+  state. **Robot display**:
   visual, collision or both (a model with no collision geometry shows its visual meshes in collision colors, with
   viser's warning). **Scene grid** toggles the ground grid.
 - **Planning Groups**: toggle which groups the target covers (two arms, an arm and a gripper...). Each selected group

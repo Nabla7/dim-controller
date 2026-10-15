@@ -1,5 +1,5 @@
-// The arm mode's 3D manipulation, as viser draws it: the arm from the planner's own model (the hook's
-// api/manipulation/description) posed by the joint state; the target ghost (orange when the planner finds the target
+// The arm mode's 3D manipulation, as viser draws it: the arm from the robot's URDF (dimos's UrdfManager, core/urdfSource.ts)
+// when one is published, else the planner's own model (the hook's api/manipulation/description), posed by the joint state; the target ghost (orange when the planner finds the target
 // feasible, red when not); the preview ghost (blue) playing a plan; a gizmo (move / rotate) on each selected group's
 // tip; the plan's tip paths; the planning scene's obstacles with their shapes; the ranked grasp proposals; and the
 // ground grid. Only in the arm mode with the planner option `interact` on; placed in the view's fixed frame by TF.
@@ -12,6 +12,7 @@ import { solveIk } from "./ik.ts"
 import { Manipulation, type ManipulationTarget, type Pose } from "./manipulation.ts"
 import { basePose, Kinematics, meshGeometries, ROBOT_DESCRIPTION_FORMAT, type JointPositions, type RobotDescription, RobotModel, urdfPositions } from "./robotDescription.ts"
 import { Store } from "./store.ts"
+import type { UrdfSource } from "./urdfSource.ts"
 
 const DESCRIPTION_EVERY_MS = 3000
 const SCENE_EVERY_MS = 1000
@@ -32,6 +33,10 @@ const PATH_COLOR = "#ffd166"
 
 interface Model {
     description: RobotDescription
+    /** urdf: UrdfManager's (shared meshes, placed by TF); hook: the planner's (its own meshes, placed by its base pose) */
+    source: "urdf" | "hook"
+    /** the frame the view's root sits at, and planner poses are in */
+    baseFrame: string
     kinematics: Kinematics
     geometries: Map<string, THREE.BufferGeometry>
     real: RobotModel
@@ -93,8 +98,10 @@ export class ArmManipView {
     /** without the hook: the ghost's joints from the page's own IK of the dragged pose */
     #solved: JointPositions | null = null
     #pathFor = ""
+    #releaseUrdf: (() => void) | null = null
+    #fixedFrame = ""
 
-    constructor(readonly viewer: Viewer, readonly tf: TfTree, readonly armControl: ArmControl, readonly manipulation: Manipulation, readonly isArm: () => boolean) {
+    constructor(readonly viewer: Viewer, readonly tf: TfTree, readonly armControl: ArmControl, readonly manipulation: Manipulation, readonly urdf: UrdfSource, readonly isArm: () => boolean) {
         this.root.matrixAutoUpdate = false
         this.root.visible = false
         this.arm.matrixAutoUpdate = false
@@ -110,6 +117,25 @@ export class ArmManipView {
         manipulation.state.subscribe(() => viewer.requestRender())
         armControl.state.subscribe(() => this.#active && viewer.requestRender())
         viewer.onFrame((frame) => this.#frame(frame))
+        urdf.state.subscribe(() => this.#onUrdf())
+    }
+
+    /** The URDF is the robot model when there is one: it replaces the hook's, and its meshes fill in as they arrive. */
+    #onUrdf() {
+        if (!this.#active) {
+            return
+        }
+        const { description } = this.urdf.state.get()
+        const model = this.#model
+        if (description && model?.description !== description) {
+            this.#teardown()
+            this.#build(description, "urdf")
+        } else if (model?.source === "urdf") {
+            if ([model.real, model.target, model.preview, model.collisionFallback].map((robot) => robot?.fill(this.urdf.geometries)).some(Boolean)) {
+                this.viewer.requestRender()
+            }
+            this.#modelStatus()
+        }
     }
 
     get model(): Model | null {
@@ -117,6 +143,10 @@ export class ArmManipView {
     }
 
     async #loadDescription() {
+        if (this.urdf.state.get().description) {
+            this.#onUrdf()
+            return
+        }
         if (this.#model || !this.#active || !this.manipulation.state.get().hook) {
             if (this.#active && !this.#model && this.manipulation.state.get().available && !this.manipulation.state.get().hook) {
                 this.status.update({ problem: "no dim-controller hook in the blueprint's process: install it (Install hook, in the panel's status) and restart the blueprint" })
@@ -130,17 +160,18 @@ export class ArmManipView {
                 this.status.update({ problem: description.error ?? `not a ${ROBOT_DESCRIPTION_FORMAT}` })
                 return
             }
-            if (!this.#model) {
-                this.#build(description)
+            // the URDF may have come meanwhile
+            if (!this.#model && !this.urdf.state.get().description) {
+                this.#build(description, "hook")
             }
         } catch (error) {
             this.status.update({ problem: String(error) })
         }
     }
 
-    #build(description: RobotDescription) {
+    #build(description: RobotDescription, source: Model["source"]) {
         const kinematics = new Kinematics(description)
-        const geometries = meshGeometries(description)
+        const geometries = source === "urdf" ? this.urdf.geometries : meshGeometries(description)
         const collisionMissing = !description.links.some((link) => link.collisions.length)
         const real = new RobotModel(kinematics, geometries, { collisionColor: COLLISION.color })
         const collisionFallback = collisionMissing ? new RobotModel(kinematics, geometries, COLLISION) : null
@@ -156,10 +187,61 @@ export class ArmManipView {
         this.arm.matrix.copy(rootInBase)
         this.arm.matrixWorldNeedsUpdate = true
         this.arm.add(real.root, target.root, preview.root, ...(collisionFallback ? [collisionFallback.root] : []))
-        this.#model = { description, kinematics, geometries, real, collisionFallback, target, preview, rootInBase }
+        this.#model = { description, source, baseFrame: description.base_frame, kinematics, geometries, real, collisionFallback, target, preview, rootInBase }
         this.#applyOptions()
-        this.status.update({ model: `${description.name}: ${description.links.length} links, ${description.joint_names.length} joints`, problem: null, collisionMissing })
+        this.status.update({ problem: null, collisionMissing })
+        this.#modelStatus()
         this.viewer.requestRender()
+    }
+
+    #modelStatus() {
+        const model = this.#model
+        if (!model) {
+            return
+        }
+        const { description } = model
+        const { meshesLoaded, meshesWanted } = this.urdf.state.get()
+        const from = model.source === "urdf" ? ` (URDF${meshesWanted && meshesLoaded < meshesWanted ? `, meshes ${meshesLoaded}/${meshesWanted}` : ""})` : ""
+        this.status.update({ model: `${description.name}: ${description.links.length} links, ${description.joint_names.length} joints${from}` })
+    }
+
+    #teardown() {
+        const model = this.#model
+        if (!model) {
+            return
+        }
+        for (const robot of [model.real, model.target, model.preview, model.collisionFallback]) {
+            if (robot) {
+                this.arm.remove(robot.root)
+                robot.dispose()
+            }
+        }
+        // the URDF's meshes are the source's, kept for the next model
+        if (model.source === "hook") {
+            model.geometries.forEach((geometry) => geometry.dispose())
+        }
+        this.#model = null
+        this.#solved = null
+        this.#pathFor = "-"
+    }
+
+    /** `frame` in `parent` by TF, through the view's fixed frame (one fixed frame keeps the tree's lookup cache) */
+    #relative(frame: string, parent: string): THREE.Matrix4 | null {
+        const framePose = this.tf.lookup(frame, this.#fixedFrame), parentPose = this.tf.lookup(parent, this.#fixedFrame)
+        return framePose && parentPose ? parentPose.clone().invert().multiply(framePose) : null
+    }
+
+    /** A URDF model sits at its root link's TF frame, or in the planner's world when the planner (the hook) is there to take poses. */
+    #placeUrdf(model: Model) {
+        const root = model.kinematics.root
+        const inWorld = this.manipulation.state.get().hook ? this.#relative(root, "world") : null
+        model.baseFrame = inWorld ? "world" : root
+        const rootInBase = inWorld ?? new THREE.Matrix4()
+        if (!model.rootInBase.equals(rootInBase)) {
+            model.rootInBase.copy(rootInBase)
+            this.arm.matrix.copy(rootInBase)
+            this.arm.matrixWorldNeedsUpdate = true
+        }
     }
 
     #applyOptions() {
@@ -190,7 +272,13 @@ export class ArmManipView {
     }
 
     #measured(): JointPositions {
-        return urdfPositions(this.#model!.kinematics, this.armControl.state.get().joints, isGripperJoint)
+        const model = this.#model!
+        const fromJointState = urdfPositions(model.kinematics, this.armControl.state.get().joints, isGripperJoint)
+        if (model.source === "hook") {
+            return fromJointState
+        }
+        // a URDF's joints are all on TF (UrdfManager): what no joint state names (a torso, a head) comes from there
+        return { ...model.kinematics.positionsFrom((child, parent) => this.#relative(child, parent)), ...fromJointState }
     }
 
     #withJoints(base: JointPositions, joints: Record<string, number>): JointPositions {
@@ -280,7 +368,7 @@ export class ArmManipView {
         const orientation = new THREE.Quaternion()
         handle.matrix.decompose(position, orientation, new THREE.Vector3())
         const { target, selected, hook } = this.manipulation.state.get()
-        const pose: Pose = { position: position.toArray() as [number, number, number], orientation: [orientation.x, orientation.y, orientation.z, orientation.w], frame: model.description.base_frame }
+        const pose: Pose = { position: position.toArray() as [number, number, number], orientation: [orientation.x, orientation.y, orientation.z, orientation.w], frame: model.baseFrame }
         const next: ManipulationTarget = {
             groups: selected,
             joints: target?.joints ?? this.manipulation.currentJoints(),
@@ -417,16 +505,25 @@ export class ArmManipView {
         if (active !== this.#active) {
             this.#active = active
             this.manipulation.setActive(active)
+            this.#releaseUrdf?.()
+            this.#releaseUrdf = active ? this.urdf.acquire() : null
             if (active) {
                 this.#applyOptions()
                 this.#loadDescription()
                 this.#loadScene()
             }
         }
+        this.#fixedFrame = frame.fixedFrame
         const model = this.#model
-        const placed = model ? this.tf.lookup(model.description.base_frame, frame.fixedFrame) : null
+        if (model?.source === "urdf") {
+            this.#placeUrdf(model)
+        }
+        const placed = model ? this.tf.lookup(model.baseFrame, frame.fixedFrame) : null
         const show = active && !!model && !!placed
         this.root.visible = show
+        if (this.urdf.state.get().armDraws !== show) {
+            this.urdf.state.update({ armDraws: show })
+        }
         if (show) {
             this.#syncGizmos()
         }
@@ -497,12 +594,8 @@ export class ArmManipView {
         this.#labels.dispose()
         disposeChildren(this.obstacles)
         disposeChildren(this.grasps)
-        if (this.#model) {
-            for (const robot of [this.#model.real, this.#model.target, this.#model.preview, this.#model.collisionFallback]) {
-                robot?.dispose()
-            }
-            this.#model.geometries.forEach((geometry) => geometry.dispose())
-        }
+        this.#teardown()
+        this.#releaseUrdf?.()
     }
 }
 

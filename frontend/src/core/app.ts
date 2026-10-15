@@ -15,6 +15,7 @@ import { Drive } from "./drive.ts"
 import { JoyPublisher } from "./joy.ts"
 import { ArmControl } from "./arm.ts"
 import { ArmManipView } from "./armManipView.ts"
+import { urdfSource } from "./urdfSource.ts"
 import { Manipulation } from "./manipulation.ts"
 import { AgentLink } from "./agent.ts"
 import { LocationLabels } from "./labels.ts"
@@ -104,7 +105,7 @@ export class ViewerApp {
         this.drive = new Drive(this.connection, this.profile)
         this.joy = new JoyPublisher(this.connection)
         this.arm = new ArmControl(this.connection, this.drive, profileFor("arm").arm!)
-        this.manipView = new ArmManipView(this.viewer, this.tf, this.arm, this.manipulation, () => this.robot.get().type === "arm")
+        this.manipView = new ArmManipView(this.viewer, this.tf, this.arm, this.manipulation, urdfSource(this.connection), () => this.robot.get().type === "arm")
         feedTf(this.connection, this.tf, this.viewer)
         feedBattery(this.connection, () => this.profile.name)
         this.connection.status.subscribe(() => this.#updateDriveCandidates())
@@ -286,7 +287,8 @@ export class ViewerApp {
         if (!group) {
             return
         }
-        const visible = !!robot && this.settings.get().robotModel !== false
+        // the robot's own URDF model (layers/robotModel.tsx) replaces the stand-in while it's drawn
+        const visible = !!robot && this.settings.get().robotModel !== false && !urdfSource(this.connection).state.get().drawing
         if (visible && !group.matrix.equals(robot)) {
             group.matrix.copy(robot)
             group.matrixWorldNeedsUpdate = true

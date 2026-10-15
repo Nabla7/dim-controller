@@ -133,6 +133,32 @@ export class Kinematics {
         }
         return chain
     }
+
+    /** Each movable joint's position read back from its child link's pose in its parent's (`relative(child, parent)`, e.g. TF). */
+    positionsFrom(relative: (child: string, parent: string) => THREE.Matrix4 | null): JointPositions {
+        const positions: JointPositions = {}
+        const motion = new THREE.Matrix4()
+        const rotation = new THREE.Quaternion()
+        const translation = new THREE.Vector3()
+        for (const joint of this.joints.values()) {
+            if (joint.type !== "revolute" && joint.type !== "continuous" && joint.type !== "prismatic") {
+                continue
+            }
+            const pose = relative(joint.child, joint.parent)
+            if (!pose) {
+                continue
+            }
+            motion.copy(this.#origins.get(joint.name)!).invert().multiply(pose)
+            const axis = new THREE.Vector3(...joint.axis).normalize()
+            if (joint.type === "prismatic") {
+                positions[joint.name] = translation.setFromMatrixPosition(motion).dot(axis)
+            } else {
+                rotation.setFromRotationMatrix(motion)
+                positions[joint.name] = 2 * Math.atan2(new THREE.Vector3(rotation.x, rotation.y, rotation.z).dot(axis), rotation.w)
+            }
+        }
+        return positions
+    }
 }
 
 /** URDF names for the joint state's names: `arm/joint1` → `joint1`, a gripper joint → the joint others mimic. */
@@ -171,13 +197,12 @@ export class RobotModel {
     readonly materials: THREE.MeshStandardMaterial[] = []
 
     constructor(readonly kinematics: Kinematics, geometries: Map<string, THREE.BufferGeometry>, look: { color?: string; opacity?: number; collisionColor?: string } = {}) {
-        const opacity = look.opacity ?? 1
         const material = (color: THREE.ColorRepresentation, alpha: number) => {
             const made = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.1, transparent: alpha < 1, opacity: alpha, depthWrite: alpha >= 1 })
             this.materials.push(made)
             return made
         }
-        const shapeOf = (geometry: DescriptionGeometry): THREE.BufferGeometry | null => {
+        const shapeOf = (geometry: DescriptionGeometry, geometries: Map<string, THREE.BufferGeometry>): THREE.BufferGeometry | null => {
             switch (geometry.type) {
                 case "mesh":
                     return geometry.mesh ? geometries.get(geometry.mesh) ?? null : null
@@ -193,33 +218,60 @@ export class RobotModel {
                 }
             }
         }
+        this.#shapeOf = shapeOf
+        this.#material = material
+        this.#look = look
         for (const link of kinematics.description.links) {
             const group = new THREE.Group()
             group.name = link.name
             group.matrixAutoUpdate = false
             for (const [kind, items] of [["visual", link.visuals], ["collision", link.collisions]] as const) {
                 for (const item of items) {
-                    const shape = shapeOf(item)
-                    if (!shape) {
-                        continue
-                    }
-                    const color = kind === "collision"
-                        ? look.collisionColor ?? "#ff8a3d"
-                        : look.color ?? (item.color ? new THREE.Color(item.color[0], item.color[1], item.color[2]) : "#d9dde3")
-                    const mesh = new THREE.Mesh(shape, material(color, kind === "collision" ? Math.min(opacity, 0.45) : opacity * (item.color?.[3] ?? 1)))
-                    mesh.userData.kind = kind
-                    mesh.matrixAutoUpdate = false
-                    mesh.matrix.copy(originMatrix(item.origin))
-                    if (item.scale) {
-                        mesh.matrix.scale(new THREE.Vector3(...item.scale))
-                    }
-                    mesh.visible = kind === "visual"
-                    group.add(mesh)
+                    this.#pending.push({ group, kind, item })
                 }
             }
             this.links.set(link.name, group)
             this.root.add(group)
         }
+        this.fill(geometries)
+    }
+
+    readonly #pending: { group: THREE.Group; kind: "visual" | "collision"; item: DescriptionGeometry }[] = []
+    readonly #shapeOf: (geometry: DescriptionGeometry, geometries: Map<string, THREE.BufferGeometry>) => THREE.BufferGeometry | null
+    readonly #material: (color: THREE.ColorRepresentation, alpha: number) => THREE.MeshStandardMaterial
+    readonly #look: { color?: string; opacity?: number; collisionColor?: string }
+    #display: DisplayMode = "visual"
+    #tint: { color: THREE.ColorRepresentation; opacity: number } | null = null
+
+    /** Adds the meshes that have arrived since (a URDF's meshes load one by one); true if any was added. */
+    fill(geometries: Map<string, THREE.BufferGeometry>): boolean {
+        const opacity = this.#look.opacity ?? 1
+        let added = false
+        for (let index = this.#pending.length - 1; index >= 0; index--) {
+            const { group, kind, item } = this.#pending[index]
+            const shape = this.#shapeOf(item, geometries)
+            if (!shape) {
+                continue
+            }
+            this.#pending.splice(index, 1)
+            const color = kind === "collision"
+                ? this.#look.collisionColor ?? "#ff8a3d"
+                : this.#look.color ?? (item.color ? new THREE.Color(item.color[0], item.color[1], item.color[2]) : "#d9dde3")
+            const mesh = new THREE.Mesh(shape, this.#material(color, kind === "collision" ? Math.min(opacity, 0.45) : opacity * (item.color?.[3] ?? 1)))
+            mesh.userData.kind = kind
+            mesh.matrixAutoUpdate = false
+            mesh.matrix.copy(originMatrix(item.origin))
+            if (item.scale) {
+                mesh.matrix.scale(new THREE.Vector3(...item.scale))
+            }
+            mesh.visible = this.#display === "both" || this.#display === kind
+            group.add(mesh)
+            added = true
+        }
+        if (added && this.#tint) {
+            this.tint(this.#tint.color, this.#tint.opacity)
+        }
+        return added
     }
 
     /** Places every link for these joint positions. */
@@ -235,6 +287,7 @@ export class RobotModel {
 
     /** One color for every visual mesh (viser's target and preview ghosts). */
     tint(color: THREE.ColorRepresentation, opacity: number) {
+        this.#tint = { color, opacity }
         this.root.traverse((object) => {
             const mesh = object as THREE.Mesh
             if (mesh.isMesh && mesh.userData.kind === "visual") {
@@ -248,6 +301,7 @@ export class RobotModel {
     }
 
     setDisplay(mode: DisplayMode) {
+        this.#display = mode
         this.root.traverse((object) => {
             const kind = object.userData.kind as string | undefined
             if (kind) {
