@@ -1,8 +1,9 @@
-// The arm mode's 3D manipulation, as viser draws it: the arm from the robot's URDF (dimos's UrdfManager, core/urdfSource.ts)
-// when one is published, else the planner's own model (the hook's api/manipulation/description), posed by the joint state; the target ghost (orange when the planner finds the target
-// feasible, red when not); the preview ghost (blue) playing a plan; a gizmo (move / rotate) on each selected group's
-// tip; the plan's tip paths; the planning scene's obstacles with their shapes; the ranked grasp proposals; and the
-// ground grid. Only in the arm mode with the planner option `interact` on; placed in the view's fixed frame by TF.
+// The arm mode's 3D manipulation, as viser draws it: the arm from the robot's URDF (dimos's UrdfManager,
+// core/urdfSource.ts) when one is published, else the planner's own model (the hook's api/manipulation/description),
+// posed by the joint state; the target ghost (orange when the planner finds the target feasible, red when not); the
+// preview ghost (blue) playing a plan; a gizmo (move / rotate) on each selected group's tip; the plan's tip paths;
+// the planning scene's obstacles with their shapes; the ranked grasp proposals; and the ground grid. Only in the arm
+// mode with the planner option `interact` on; placed in the view's fixed frame by TF.
 import * as THREE from "three"
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js"
 import { LabelPool, type FrameInfo, type TfTree, type Viewer } from "dimos-react/three"
