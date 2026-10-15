@@ -5,7 +5,7 @@ use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// Where the running dimos writes its jsonl logs, from Desktop: each run's log dir (`GET /dimos-gateway/runs`), else (with
-/// `roots`) the logs roots (`GET /dimos-gateway/paths`, newer Desktops; the tailer follows run dirs that appear in them).
+/// `roots`) the logs roots (`GET /dimos-gateway/info`'s `paths.logsDirs`; the tailer follows run dirs that appear in them).
 /// Empty outside Desktop.
 pub async fn log_dirs(base: &str, roots: bool) -> crate::recorder::LogDirs {
     let mut dirs = crate::recorder::LogDirs::default();
@@ -29,8 +29,8 @@ pub async fn log_dirs(base: &str, roots: bool) -> crate::recorder::LogDirs {
         }
     }
     if dirs.log_dirs.is_empty() && roots {
-        if let Ok(paths) = get(base, "/dimos-gateway/paths").await {
-            dirs.log_roots = paths["logsDirs"]
+        if let Ok(info) = get(base, "/dimos-gateway/info").await {
+            dirs.log_roots = info["paths"]["logsDirs"]
                 .as_array()
                 .into_iter()
                 .flatten()
@@ -157,7 +157,7 @@ mod tests {
         let error = request(
             &format!("http://{address}"),
             "POST",
-            "/dimos-gateway/uploads",
+            "/dimos-gateway/cloud/uploads",
             Some(&serde_json::json!({ "path": "x" })),
         )
         .await

@@ -251,7 +251,7 @@ are saved in the backend (`lv.record.options`, `lv.record.topics`; `PUT api/reco
 written as ROS 2 CDR so Foxglove opens the file; anything else is kept as raw LCM bytes with its type name.
 
 The running dimos's own logs go into the same file. When recording starts the backend asks Desktop where they are
-(`GET /dimos-gateway/runs`: each run's `log_dir`; on newer Desktops `GET /dimos-gateway/paths` as a fallback) and the backend tails
+(`GET /dimos-gateway/runs`: each run's `log_dir`; else `GET /dimos-gateway/info`'s `paths.logsDirs`) and the backend tails
 every `*.jsonl` there, new lines only (plus new files, runs that start mid-recording, truncation). Each line becomes a
 `foxglove.Log` (JSON) on `/dimos/logs/<file stem>` (e.g. `/dimos/logs/main`), stamped with the line's own time, so
 Foxglove's Log panel shows it; the original record is kept whole in its `fields` key (and the file in `source`).
