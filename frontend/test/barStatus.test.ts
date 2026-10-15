@@ -1,7 +1,7 @@
 // The one bar's problem chips (ui/barStatus.ts): the link only when it's a problem, "Disengaged" when the link watch
 // stops driving, and the gamepad's state.
 import { assert, assertEquals } from "jsr:@std/assert@1"
-import { disengagedShort, disengagedText, gamepadChip, linkChip, linkProblem, rateText, SLOW_RTT_MS } from "../src/ui/barStatus.ts"
+import { disengagedShort, disengagedText, gamepadChip, linkChip, linkProblem, rateText, SLOW_RTT_MS, smoothed } from "../src/ui/barStatus.ts"
 
 const link = (state: "connecting" | "connected" | "degraded" | "lost", rttMs: number | null = 20, throughputBytesPerSec: number | null = 240000) => ({ state, rttMs, droppedPerSecond: 0, error: null, throughputBytesPerSec })
 
@@ -38,4 +38,12 @@ Deno.test("the gamepad chip: none without a pad; ready, waiting for rest, or sto
     assertEquals(gamepadChip({ connected: true, id: "x", ready: true, stopped: false })?.tone, "ok")
     assertEquals(gamepadChip({ connected: true, id: "x", ready: false, stopped: false })?.text, "center sticks")
     assert(/A/.test(gamepadChip({ connected: true, id: "x", ready: false, stopped: true })!.detail))
+})
+
+Deno.test("the link chip's average starts at the first sample, eases toward new ones, and clears with no data", () => {
+    assertEquals(smoothed(null, 100, 250), 100)
+    const eased = smoothed(100, 1100, 250, 3000)!
+    assertEquals(eased > 100 && eased < 200, true)
+    assertEquals(Math.round(smoothed(100, 1100, 3000, 3000)!), Math.round(100 + 1000 * (1 - Math.exp(-1))))
+    assertEquals(smoothed(100, null, 250), null)
 })

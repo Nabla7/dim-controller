@@ -4,17 +4,40 @@
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { splatFallback } from "../core/render/rendering.ts"
-import { gamepadChip, linkChip } from "./barStatus.ts"
+import { useEffect, useRef, useState } from "react"
+import { gamepadChip, LINK_REDRAW_MS, LINK_SAMPLE_MS, linkChip, smoothed } from "./barStatus.ts"
 import { Icon } from "./icons.tsx"
 import { gamepadStatus } from "./useGamepad.ts"
 import type { WorkspaceApi } from "./Workspace.tsx"
+
+/** The link's throughput and latency averaged over a few seconds and redrawn once a second, so the chip is readable; driving's latency gate still uses the raw round trip. */
+function useSmoothedLink(app: ViewerApp): { rate: number | null; latency: number | null } {
+    const average = useRef<{ rate: number | null; latency: number | null }>({ rate: null, latency: null })
+    const [shown, setShown] = useState(average.current)
+    useEffect(() => {
+        const sample = setInterval(() => {
+            const { rate, latency } = average.current
+            average.current = {
+                rate: smoothed(rate, app.connection.status.get().throughputBytesPerSec, LINK_SAMPLE_MS),
+                latency: smoothed(latency, app.connection.latencyMs(), LINK_SAMPLE_MS),
+            }
+        }, LINK_SAMPLE_MS)
+        const redraw = setInterval(() => setShown(average.current), LINK_REDRAW_MS)
+        return () => {
+            clearInterval(sample)
+            clearInterval(redraw)
+        }
+    }, [app])
+    return shown
+}
 
 export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
     const connection = useStore(app.connection.status)
     const { issues: tfIssues } = useStore(app.tfIssues)
     const fallback = useStore(splatFallback)
     const pad = gamepadChip(useStore(gamepadStatus))
-    const link = linkChip(connection, app.connection.latencyMs())
+    const average = useSmoothedLink(app)
+    const link = linkChip({ ...connection, throughputBytesPerSec: average.rate }, average.latency)
     return (
         <>
             <button type="button" className={`bar-chip tone-${link.tone} bar-button`} title={`${link.detail} (open Status)`} data-testid="bar-link" onClick={() => api.act("status", "show")}>

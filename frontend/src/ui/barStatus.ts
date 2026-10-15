@@ -27,6 +27,19 @@ export function linkProblem(connection: Pick<ConnectionState, "state" | "rttMs" 
     return null
 }
 
+/** the link chip's numbers: sampled every LINK_SAMPLE_MS into an average over ~LINK_SMOOTH_MS, redrawn every LINK_REDRAW_MS */
+export const LINK_SAMPLE_MS = 250
+export const LINK_SMOOTH_MS = 3000
+export const LINK_REDRAW_MS = 1000
+
+/** An exponential moving average with time constant `tauMs`; no sample (no data) clears it, a first sample starts it. */
+export function smoothed(previous: number | null, sample: number | null, elapsedMs: number, tauMs = LINK_SMOOTH_MS): number | null {
+    if (sample === null || previous === null) {
+        return sample
+    }
+    return previous + (1 - Math.exp(-elapsedMs / tauMs)) * (sample - previous)
+}
+
 // Figure spaces are digit-wide and never collapse, so the chip keeps one width as the numbers change.
 const padDigits = (text: string, width: number) => text.padStart(width, "\u2007")
 
