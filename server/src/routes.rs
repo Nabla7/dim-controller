@@ -31,12 +31,14 @@ impl<S: Clone + Send + Sync + 'static> Routes<S> {
         }
     }
 
-    /// An action: routed and listed. `params` is Desktop's shorthand (`{ name: { type, description, required } }`);
+    /// An action: routed and listed. `when` is when to use it (it reads after "If ", e.g. "you need to drive the
+    /// robot"); `description` how: what it does, its params, what comes back. `params` is Desktop's shorthand (`{ name: { type, description, required } }`);
     /// `{name}` path parts are added to it as required strings when it doesn't describe them.
     pub fn endpoint<H, T>(
         mut self,
         method: &str,
         path: &str,
+        when: &str,
         description: &str,
         params: Value,
         handler: H,
@@ -60,7 +62,7 @@ impl<S: Clone + Send + Sync + 'static> Routes<S> {
                 .entry(part.to_string())
                 .or_insert_with(|| json!({ "type": "string", "required": true }));
         }
-        let mut endpoint = json!({ "method": method, "path": path, "description": description });
+        let mut endpoint = json!({ "method": method, "path": path, "when": when, "description": description });
         if !params.is_empty() {
             endpoint["params"] = Value::Object(params);
         }
@@ -89,7 +91,7 @@ impl<S: Clone + Send + Sync + 'static> Routes<S> {
         self
     }
 
-    pub fn manifest(&self, description: &str) -> Value {
-        json!({ "description": description, "endpoints": self.endpoints })
+    pub fn manifest(&self, when: &str, description: &str) -> Value {
+        json!({ "when": when, "description": description, "endpoints": self.endpoints })
     }
 }

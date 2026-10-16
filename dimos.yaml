@@ -36,7 +36,7 @@ provides:
         - api/labels/*
         - api/topics/*
         - api/events/*
-    when: you need to drive a robot, watch it live in 3D, or record it
+    when: 'you need to drive a robot, watch it live in 3D, or record it'
     description: >-
         Controller: drive the running robot (keyboard / sticks, velocity commands, stop) while watching its live 3D view
         (point clouds, costmap, pose, planned path, TF) and cameras; recording to mcap, location labels, live 3D
@@ -58,7 +58,7 @@ provides:
         -
             method: GET
             path: api/view
-            when: you need to see what the user sees, or where the robot is
+            when: 'you need to see what the user sees, or where the robot is'
             description: >-
                 What the user sees: the rendered 3D view (with annotation labels) as an image, the 3D camera's pose and
                 intrinsics, the latest robot camera image (with a pixel grid) and its CameraInfo and pose, the robot's
@@ -69,9 +69,10 @@ provides:
             path: api/camera
             when: you want to point the user's 3D view at the robot or a place
             description: >-
-                Move the 3D camera in every open page: action=recenter (on the robot), topDown (straight down over the
-                robot), or lookAt (target [x, y, z], optional distance). Returns {ok, pages} (how many pages got it);
-                400 for an unknown action or lookAt without a target.
+                Move the 3D camera in every open page: action=recenter (follow the robot again, or reframe it if already
+                following), topDown (straight down over the robot), or lookAt (target [x, y, z], optional distance;
+                stops following). Returns {ok, pages} (how many pages got it); 400 for an unknown action or lookAt
+                without a target.
             params:
                 action:
                     description: recenter | topDown | lookAt
@@ -90,22 +91,24 @@ provides:
         -
             method: GET
             path: api/settings
-            when: you need the current value of a view, drive or recorder setting
+            when: 'you need the current value of a view, drive or recorder setting'
             description: >-
                 Every page setting by key: lv.view {profile (the robot type picked: dog, humanoid, wheeled, arm, drone;
-                "" = auto), robot (the type in use, written by the page), fixedFrame ("" = auto), follow, showStats,
-                robotModel}; lv.arm {linear, angular, jointSpeed} (arm jog speeds); lv.rendering.v2 {pointStyle,
-                cubeShade}; lv.layers.enabled {<topic key>: on/off}; lv.layer.<type>.<topic key> (that layer's style:
-                colors, sizes, ...); lv.drive.<robot type> {linear, angular, vertical, topics: [] = auto, else the
-                output topics, one per entry, "/name" or "/name TwistStamped"}; lv.joy {enabled} (the raw gamepad, drive
-                keys and thumb sticks as sensor_msgs/Joy on /joystick, default on); lv.record.topics {<topic key>:
-                record or not (default on)}; lv.record.options {recordNew, compression, image_format, directory ("" =
-                default), logs, rates {<topic key>: max messages/s}}; lv.cameras (the camera panels). Returns an object
-                of setting key -> its value.
+                "" = auto), robot (the type in use, written by the page), fixedFrame ("" = auto), follow, followFrame
+                (the TF frame the camera follows; "" = the robot's), showStats, robotModel, camerasIn3d (every camera
+                drawn in the 3D view), viewCube (the 3D view's view cube)}; lv.arm {linear, angular, jointSpeed} (arm
+                jog speeds); lv.gamepad {deadZone, invertY}; lv.rendering.v2 {pointStyle, cubeShade}; lv.layers.enabled
+                {<topic key>: on/off}; lv.layer.<type>.<topic key> (that layer's style: colors, sizes, ...);
+                lv.drive.<robot type> {linear, angular, vertical, topics: [] = auto, else the output topics, one per
+                entry, "/name" or "/name TwistStamped"}; lv.joy {enabled} (the raw gamepad, drive keys and thumb sticks
+                as sensor_msgs/Joy on /joystick, default on); lv.record.topics {<topic key>: record or not (default
+                on)}; lv.record.options {recordNew, compression, image_format, directory ("" = default), logs, rates
+                {<topic key>: max messages/s}}; lv.cameras (the camera panels). Returns an object of setting key -> its
+                value.
         -
             method: PATCH
             path: api/settings
-            when: you want to change layers, the view, drive speeds or topics
+            when: 'you want to change layers, the view, drive speeds or topics'
             description: >-
                 Change a page setting (merged into the key's object; a null field is removed); every open page applies
                 it at once. E.g. {key: "lv.layers.enabled", value: {"dimos/lidar/sensor_msgs.PointCloud2": false}} hides
@@ -123,7 +126,7 @@ provides:
         -
             method: GET
             path: api/recorder
-            when: you want to know if it's recording, or list the recordings
+            when: 'you want to know if it''s recording, or list the recordings'
             description: >-
                 The recorder: whether it's recording (messages, bytes, dropped, skipped by a max rate, seconds, path),
                 the keys and log dirs being recorded, the files in the recordings folder, the folder (and the default
@@ -192,7 +195,7 @@ provides:
         -
             method: PUT
             path: api/recorder/settings
-            when: you want to change the recording format, folder or topic rates
+            when: 'you want to change the recording format, folder or topic rates'
             description: >-
                 Recording options, saved (lv.record.options): image_format (raw | png | jpegxl | webp | jpeg),
                 compression (none | lz4 | zstd) and directory ("" = the default) not while recording; recordNew, logs
@@ -235,7 +238,7 @@ provides:
                 an attachment); 404 if there is no such file.
             params:
                 name:
-                    description: the file name, as GET api/recorder lists it under files
+                    description: 'the file name, as GET api/recorder lists it under files'
                     required: true
                     type: string
         -
@@ -247,7 +250,7 @@ provides:
                 the running recording, 404 if there is no such file.
             params:
                 name:
-                    description: the file name, as GET api/recorder lists it under files
+                    description: 'the file name, as GET api/recorder lists it under files'
                     required: true
                     type: string
         -
@@ -286,17 +289,17 @@ provides:
             method: DELETE
             path: 'api/labels/{id}'
             when: you want to remove a named place from the map
-            description: Remove a location label. Returns {ok, removed}; 404 if there is no such label.
+            description: 'Remove a location label. Returns {ok, removed}; 404 if there is no such label.'
             params:
                 id:
-                    description: the label's id, from GET api/labels
+                    description: 'the label''s id, from GET api/labels'
                     required: true
                     type: string
         -
             method: GET
             path: api/annotations
             when: you want the labeled 3D boxes shown in the view
-            description: The live annotations (id, label, center, size, yaw, frame, note). Returns {annotations [...]}.
+            description: 'The live annotations (id, label, center, size, yaw, frame, note). Returns {annotations [...]}.'
         -
             method: POST
             path: api/annotations
@@ -340,7 +343,7 @@ provides:
         -
             method: PATCH
             path: 'api/annotations/{id}'
-            when: you want to move, resize, relabel or rename a 3D box
+            when: 'you want to move, resize, relabel or rename a 3D box'
             description: >-
                 Change an annotation: label, note, center, size, yaw, color, or newId (to rename it). Only the fields
                 given change. Returns the updated annotation; 404 if there is no such id.
@@ -356,7 +359,7 @@ provides:
                     description: CSS color
                     type: string
                 id:
-                    description: the annotation's id (in the path), from GET api/annotations
+                    description: 'the annotation''s id (in the path), from GET api/annotations'
                     required: true
                     type: string
                 label:
@@ -376,23 +379,23 @@ provides:
                     minItems: 3
                     type: array
                 yaw:
-                    description: new rotation, radians about +z
+                    description: 'new rotation, radians about +z'
                     type: number
         -
             method: DELETE
             path: 'api/annotations/{id}'
             when: you want to remove one 3D box from the view
-            description: Remove an annotation by id. Returns {ok, removed}; 404 if there is no such id.
+            description: 'Remove an annotation by id. Returns {ok, removed}; 404 if there is no such id.'
             params:
                 id:
-                    description: the annotation's id, from GET api/annotations
+                    description: 'the annotation''s id, from GET api/annotations'
                     required: true
                     type: string
         -
             method: DELETE
             path: api/annotations
             when: you want to clear every 3D box from the view
-            description: Remove every annotation. Returns {removed} (how many were removed).
+            description: 'Remove every annotation. Returns {removed} (how many were removed).'
         -
             method: POST
             path: api/locate
@@ -482,7 +485,7 @@ provides:
                 api/drive does (a zero Twist); 400 for a bad topic.
             params:
                 dryRun:
-                    description: send nothing, say what would be sent
+                    description: 'send nothing, say what would be sent'
                     type: boolean
                 topic:
                     description: default as for api/drive
