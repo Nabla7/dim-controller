@@ -1,5 +1,5 @@
-// The arm target's gizmo: one thick arrow per axis (moves along it) and a short arc between each pair of arrow heads
-// (rotates about the third axis), in the handle's own axes. Each arrow points whichever way faces the camera, so the
+// The arm target's gizmo: one thick arrow per axis (moves along it), a square between each pair of arrows (moves in
+// their plane) and a short arc between each pair of arrow heads (rotates about the third axis), in the handle's own axes. Each arrow points whichever way faces the camera, so the
 // shown one is the visible one; the arcs follow the arrows. Drawn on top of the scene at a constant size on screen.
 import * as THREE from "three"
 
@@ -13,7 +13,7 @@ const ARC_SPAN = THREE.MathUtils.degToRad(40)
 /** an arrow flips only once the camera is clearly on the other side (no flicker when it's edge-on) */
 const FLIP_MARGIN = 0.08
 
-type Part = { kind: "move" | "rotate"; axis: number; visible: THREE.Mesh[]; pick: THREE.Mesh }
+type Part = { kind: "move" | "plane" | "rotate"; axis: number; visible: THREE.Mesh[]; pick: THREE.Mesh }
 
 export class PoseGizmo {
     readonly object = new THREE.Group()
@@ -21,6 +21,7 @@ export class PoseGizmo {
     #parts: Part[] = []
     #arrows: THREE.Group[] = []
     #arcs: THREE.Group[] = []
+    #squares: THREE.Group[] = []
     #signs = [1, 1, 1]
     #hovered: Part | null = null
     #drag: { part: Part; pointerId: number; startWorld: THREE.Vector3; startQuat: THREE.Quaternion; axis: THREE.Vector3; startAlong: number; startVector: THREE.Vector3 | null; startX: number } | null = null
@@ -36,6 +37,7 @@ export class PoseGizmo {
         for (let axis = 0; axis < 3; axis++) {
             this.#arrows.push(this.#arrow(axis))
             this.#arcs.push(this.#arc(axis))
+            this.#squares.push(this.#square(axis))
         }
         // capture: ahead of the orbit controls' own pointerdown on the same canvas
         canvas.addEventListener("pointerdown", this.#down, true)
@@ -71,6 +73,23 @@ export class PoseGizmo {
         group.add(along)
         this.object.add(group)
         this.#parts.push({ kind: "move", axis, visible: [shaft, head], pick })
+        return group
+    }
+
+    /** normal to `axis`, in the corner between the other two arrows */
+    #square(axis: number): THREE.Group {
+        const group = new THREE.Group()
+        const material = this.#material(COLORS[axis])
+        material.side = THREE.DoubleSide
+        material.opacity = 0.55
+        const square = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.2), material)
+        square.position.set(0.3, 0.3, 0)
+        const pick = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.26), this.#pickMaterial)
+        pick.position.copy(square.position)
+        group.add(square, pick)
+        group.matrixAutoUpdate = false
+        this.object.add(group)
+        this.#parts.push({ kind: "plane", axis, visible: [square], pick })
         return group
     }
 
@@ -121,8 +140,10 @@ export class PoseGizmo {
             const [b, c] = [(axis + 1) % 3, (axis + 2) % 3]
             const u = AXES[b].clone().multiplyScalar(this.#signs[b])
             const v = AXES[c].clone().multiplyScalar(this.#signs[c])
-            this.#arcs[axis].matrix.makeBasis(u, v, u.clone().cross(v))
-            this.#arcs[axis].matrixWorldNeedsUpdate = true
+            for (const group of [this.#arcs[axis], this.#squares[axis]]) {
+                group.matrix.makeBasis(u, v, u.clone().cross(v))
+                group.matrixWorldNeedsUpdate = true
+            }
         }
     }
 
@@ -140,8 +161,9 @@ export class PoseGizmo {
         this.object.updateMatrixWorld(true)
         this.#ray(event)
         const hits = this.#raycaster.intersectObjects(this.#parts.map((part) => part.pick), false)
-        // arrows win over arcs where they overlap
-        hits.sort((a, b) => Number(this.#partOf(a.object)?.kind === "rotate") - Number(this.#partOf(b.object)?.kind === "rotate") || a.distance - b.distance)
+        // arrows, then squares, then arcs where they overlap
+        const rank = (object: THREE.Object3D) => ["move", "plane", "rotate"].indexOf(this.#partOf(object)?.kind ?? "rotate")
+        hits.sort((a, b) => rank(a.object) - rank(b.object) || a.distance - b.distance)
         return hits.length ? this.#partOf(hits[0].object) : null
     }
 
@@ -159,7 +181,7 @@ export class PoseGizmo {
             }
         }
         this.#hovered = part
-        this.canvas.style.cursor = part ? (part.kind === "move" ? "move" : "grab") : ""
+        this.canvas.style.cursor = part ? (part.kind === "rotate" ? "grab" : "move") : ""
         this.events.render()
     }
 
@@ -226,6 +248,13 @@ export class PoseGizmo {
         const parent = this.handle.parent
         if (drag.part.kind === "move") {
             const world = drag.startWorld.clone().addScaledVector(drag.axis, this.#along(ray, drag.startWorld, drag.axis) - drag.startAlong)
+            this.handle.position.copy(parent ? parent.worldToLocal(world) : world)
+        } else if (drag.part.kind === "plane") {
+            const now = drag.startVector && this.#onPlane(ray, drag.startWorld, drag.axis)
+            if (!now) {
+                return
+            }
+            const world = drag.startWorld.clone().add(now).sub(drag.startVector!)
             this.handle.position.copy(parent ? parent.worldToLocal(world) : world)
         } else {
             const now = drag.startVector && this.#onPlane(ray, drag.startWorld, drag.axis)
