@@ -792,3 +792,6 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .camera-video > .panel-tools .quality-gear.dr-btn--icon { width: 28px; padding: 0; box-shadow: none; }
 .manipulating-note { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px;
     background: color-mix(in srgb, var(--card) 88%, transparent); border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px; color: var(--muted-fg); white-space: nowrap; }
+/* a busy action keeps its width: the spinner sits over the label instead of beside it */
+.manip-actions .dr-btn[aria-busy] { position: relative; color: transparent; }
+.manip-actions .dr-btn[aria-busy] .dr-spinner--inline { position: absolute; left: calc(50% - 6.5px); top: calc(50% - 6.5px); }
