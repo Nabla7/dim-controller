@@ -155,6 +155,9 @@ export class Manipulation {
     #checkAgain = false
     /** the target sequence this page edited last: only its own edits take the check's other half (and send it on) */
     #localSequence = -1
+    /** committed targets before the current one, newest last: undo steps back through them */
+    #history: (ManipulationTarget | null)[] = []
+    #committedTarget: ManipulationTarget | null = null
 
     #url(path: string): string {
         return new URL(path, location.href).href
@@ -269,7 +272,27 @@ export class Manipulation {
         this.#edited(true)
         this.#localSequence = this.state.get().targetSequence
         if (commit) {
+            this.#remember(target)
             this.#commit(target)
+        }
+    }
+
+    /** The target as it was before the last committed edit (a whole drag is one step). */
+    undo() {
+        if (!this.#history.length) {
+            return
+        }
+        const previous = this.#history.pop()!
+        this.setTarget(previous, false)
+        this.#uncommitted = false
+        this.#committedTarget = previous
+        this.#commit(previous)
+    }
+
+    #remember(target: ManipulationTarget | null) {
+        if (target !== this.#committedTarget) {
+            this.#history = [...this.#history, this.#committedTarget].slice(-50)
+            this.#committedTarget = target
         }
     }
 
@@ -350,6 +373,7 @@ export class Manipulation {
     async preset(name: "current" | "init" | "home") {
         try {
             const answer = await this.#call("POST", "api/manipulation/target", { preset: name, groups: this.state.get().selected })
+            this.#remember(answer.target as ManipulationTarget)
             this.state.update({ target: answer.target as ManipulationTarget, preview: null, reach: null })
             this.#uncommitted = false
             this.#edited(true)
@@ -461,6 +485,7 @@ export class Manipulation {
     applyEvent(event: Record<string, unknown>) {
         if ("target" in event && event.from !== "page") {
             const target = event.target as ManipulationTarget | null
+            this.#committedTarget = target
             this.state.update({ target, reach: null, ...(target?.groups.length ? { selected: target.groups } : {}) })
             this.#edited(true)
         }

@@ -3,7 +3,9 @@
 // Cancel / Clear plan), joint control, and the scene's obstacle and grasp-proposal toggles. Every action is an
 // api/manipulation endpoint (core/manipulation.ts); the planner is dimos's ManipulationModule, and what the RPCs
 // don't give (the model, feasibility, obstacle shapes, grasps) comes from dim-controller's hook in its process.
+import { useEffect } from "react"
 import type { ViewerApp } from "../core/app.ts"
+import { isTypingTarget } from "./keymap.ts"
 import { useStore } from "../core/store.ts"
 import { jointControl, type ManipulationTarget, type PlanningMode, wrapAngle } from "../core/manipulation.ts"
 import { Badge, Button, Field, Heading, NumberInput, Select, Slider, Toggle } from "dimos-react"
@@ -44,6 +46,18 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
     const { target, selected, hook, planner } = state
     const current = manipulation.currentJoints()
     const busy = state.busy !== null
+
+    // Ctrl+Z (Cmd+Z on a Mac) puts the target back where it was before its last edit
+    useEffect(() => {
+        const undo = (event: KeyboardEvent) => {
+            if (event.code === "KeyZ" && (event.metaKey || event.ctrlKey) && !event.shiftKey && !isTypingTarget(event.target)) {
+                event.preventDefault()
+                manipulation.undo()
+            }
+        }
+        addEventListener("keydown", undo)
+        return () => removeEventListener("keydown", undo)
+    }, [manipulation])
 
     if (state.available === false) {
         return (
