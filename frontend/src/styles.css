@@ -448,6 +448,9 @@ h3.dr-h3.first { margin-top: 4px; }
 .map-settings-menu { padding: 8px 10px 10px; background: var(--card); display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow-md); max-width: calc(100vw - 16px); box-sizing: border-box; }
 .map-setting { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 8px; font: 12px var(--sans); color: var(--muted-fg); }
 .map-setting .dr-select { width: 100%; }
+.map-slice-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.map-slice { display: inline-flex; align-items: center; gap: 4px; }
+.map-slice-row .number { width: 56px; }
 .map-source { min-width: 0; font: 10.5px var(--mono); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .map-fit.dr-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .map-body { overflow: hidden; background: var(--scene-bg, var(--bg)); }

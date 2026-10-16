@@ -34,13 +34,15 @@ import {
     pan,
     projectCloud,
     type ProjectedCloud,
+    RESLICE_METERS,
+    sliceRange,
     type Rgba,
     Trail,
     wheelGesture,
     worldToScreen,
     zoomAt,
 } from "../core/map2d.ts"
-import { Button, Card, Segmented, Select } from "dimos-react"
+import { Button, Card, NumberInput, Segmented, Select } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { mapLayout, updateMapLayout } from "./mapLayout.ts"
 import { Panel } from "./Panel.tsx"
@@ -133,6 +135,21 @@ export function MapChoiceFields({ app, frames }: { app: ViewerApp; frames: strin
                     )
                     : <span className="map-source">{label}</span>}
             </label>
+            {layout.source === "lidar" && (
+                <div className="map-setting" title="Keep only the lidar map between this far below and above the followed frame: one floor of a multi-level place">
+                    <span>Height</span>
+                    <div className="map-slice-row">
+                    <label className="map-slice">
+                        <input type="checkbox" checked={layout.slice.enabled} onChange={(event) => updateMapLayout({ slice: { ...layout.slice, enabled: event.currentTarget.checked } })} />
+                        slice
+                    </label>
+                    <NumberInput className="number map-slice-m" step={0.1} min={0} title="meters below the followed frame" aria-label="Meters below" value={layout.slice.below} onChange={(below) => below !== null && updateMapLayout({ slice: { ...layout.slice, below } })} />
+                    <span className="map-slice-m">m below,</span>
+                    <NumberInput className="number map-slice-m" step={0.1} min={0} title="meters above the followed frame" aria-label="Meters above" value={layout.slice.above} onChange={(above) => above !== null && updateMapLayout({ slice: { ...layout.slice, above } })} />
+                    <span className="map-slice-m">m above</span>
+                    </div>
+                </div>
+            )}
             {layout.source === "lidar" && grids.length > 0 && (
                 <label className="map-setting">
                     <span>Overlay</span>
@@ -353,6 +370,8 @@ class MapSource {
     /** the last cloud, kept to recolor it on a theme change */
     #cloudPositions: Float32Array | null = null
     #cloudMatrix: number[] | null = null
+    /** the followed frame's height the cloud was last sliced around (null: not sliced) */
+    #sliceZ: number | null = null
     info = ""
     problem = ""
     /** nothing from the topic yet (this page's life: a message from before counts) */
@@ -363,6 +382,16 @@ class MapSource {
         const connection = app.connection
         const kept = retainedFor(app, topic.key)
         this.problem = emptyText(topic)
+        // a new height slice re-projects the lidar map
+        let slice = mapLayout.get().slice
+        this.#stop.push(mapLayout.subscribe(() => {
+            const next = mapLayout.get().slice
+            if (next !== slice) {
+                slice = next
+                this.rebuild()
+                this.changed()
+            }
+        }))
         // the last message from before (a collapse, another pick, a discovery gap): drawn now, replaced by the next one
         if (kept.grid) {
             this.grid = kept.grid
@@ -448,9 +477,29 @@ class MapSource {
             this.gridImage = toCanvas(this.#gridPixels, this.grid.width, this.grid.height, this.gridImage)
         }
         if (this.#cloudPositions && this.#cloudMatrix) {
-            this.cloud = projectCloud(this.#cloudPositions, this.#cloudMatrix, this.lut())
+            this.#sliceZ = this.#robotZ()
+            this.cloud = projectCloud(this.#cloudPositions, this.#cloudMatrix, this.lut(), undefined, sliceRange(mapLayout.get().slice, this.#sliceZ))
             this.cloudImage = this.cloud ? toCanvas(this.cloud.pixels, this.cloud.width, this.cloud.height, this.cloudImage) : null
         }
+    }
+
+    /** the followed frame's height in the fixed frame, or null without TF */
+    #robotZ(): number | null {
+        const placed = this.app.tf.lookup(mapLayout.get().followFrame, this.app.viewer.fixedFrame)
+        return placed ? placed.elements[14] : null
+    }
+
+    /** every frame: the lidar map re-sliced once the followed frame has moved up or down past RESLICE_METERS; true when it was */
+    reslice(): boolean {
+        if (!this.#cloudPositions || !mapLayout.get().slice.enabled) {
+            return false
+        }
+        const z = this.#robotZ()
+        if (z === null || (this.#sliceZ !== null && Math.abs(z - this.#sliceZ) < RESLICE_METERS)) {
+            return false
+        }
+        this.rebuild()
+        return true
     }
 
     /** every 3D frame: the grid's TF placement; true when it moved */
@@ -654,7 +703,8 @@ class MapRenderer {
         // both run every frame (no short circuit): each keeps its own placement current
         const movedBase = this.#base?.place(fixedFrame) ?? false
         const movedOverlay = this.#overlay?.place(fixedFrame) ?? false
-        if (movedBase || movedOverlay) {
+        const resliced = this.#base?.reslice() ?? false
+        if (movedBase || movedOverlay || resliced) {
             this.requestDraw()
         }
     }

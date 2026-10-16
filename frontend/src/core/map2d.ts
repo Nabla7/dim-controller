@@ -218,8 +218,9 @@ export function heatLut(stops: Rgba[] = HEAT_STOPS): Uint8ClampedArray {
  * A point cloud seen from above, as a heatmap: each point placed by `elements` (cloud frame → fixed frame, column-major
  * 4×4) and binned into `cell`-meter pixels (coarser when the cloud is too big for MAX_CLOUD_PIXELS); a pixel takes
  * the heat of its highest point between the floor (cold) and the tallest (hot), so walls stand out from the floor.
+ * `zRange` keeps only points within [low, high] in the fixed frame (a slice around one floor of a multi-level place).
  */
-export function projectCloud(positions: Float32Array, elements: ArrayLike<number>, lut: Uint8ClampedArray, cell = 0.05): ProjectedCloud | null {
+export function projectCloud(positions: Float32Array, elements: ArrayLike<number>, lut: Uint8ClampedArray, cell = 0.05, zRange: [number, number] | null = null): ProjectedCloud | null {
     const count = Math.floor(positions.length / 3)
     if (!count) {
         return null
@@ -236,6 +237,9 @@ export function projectCloud(positions: Float32Array, elements: ArrayLike<number
         const x = e[0] * px + e[4] * py + e[8] * pz + e[12]
         const y = e[1] * px + e[5] * py + e[9] * pz + e[13]
         const z = e[2] * px + e[6] * py + e[10] * pz + e[14]
+        if (zRange && (z < zRange[0] || z > zRange[1])) {
+            continue
+        }
         xs[kept] = x
         ys[kept] = y
         zs[kept] = z
@@ -336,4 +340,14 @@ export const overlayCandidates = (topics: Topic[]): Topic[] => mapCandidates(top
 /** The overlay grid (a lidar base only): the picked one when it's on the bus; "" (the default) is none. */
 export function chooseOverlay(topics: Topic[], picked: string, source: MapBase): Topic | null {
     return picked && source === "lidar" ? overlayCandidates(topics).find((topic) => topic.key === picked) ?? null : null
+}
+
+/** the minimap's default height slice (3 ft below the robot to 12 ft above), meters */
+export const DEFAULT_SLICE = { enabled: true, below: 0.91, above: 3.66 }
+/** the robot moving this far up or down re-slices the map */
+export const RESLICE_METERS = 0.25
+
+/** The fixed-frame height band to keep around a robot at height `robotZ`, or null to keep everything. */
+export function sliceRange(slice: { enabled: boolean; below: number; above: number }, robotZ: number | null): [number, number] | null {
+    return slice.enabled && robotZ !== null && Number.isFinite(robotZ) ? [robotZ - slice.below, robotZ + slice.above] : null
 }

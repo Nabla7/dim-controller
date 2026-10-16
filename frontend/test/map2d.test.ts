@@ -22,6 +22,8 @@ import {
     Trail,
     worldToScreen,
     zoomAt,
+    DEFAULT_SLICE,
+    sliceRange,
 } from "../src/core/map2d.ts"
 import { parseKey, rememberTopics, type Topic } from "../src/core/transport.ts"
 import { LAYOUT_KEY, loadMapLayout, mapLayout, updateMapLayout } from "../src/ui/mapLayout.ts"
@@ -252,4 +254,26 @@ Deno.test("layout: one store for the map's choices (its cog and Settings → Map
     } finally {
         before === null ? localStorage.removeItem(LAYOUT_KEY) : localStorage.setItem(LAYOUT_KEY, before)
     }
+})
+
+Deno.test("the minimap's height slice: 0.91 m below to 3.66 m above the robot by default, off or without TF keeps everything", () => {
+    assertEquals(sliceRange(DEFAULT_SLICE, 10), [10 - 0.91, 10 + 3.66])
+    assertEquals(sliceRange({ ...DEFAULT_SLICE, enabled: false }, 10), null)
+    assertEquals(sliceRange(DEFAULT_SLICE, null), null)
+})
+
+Deno.test("projectCloud with a height range drops points outside it (another floor) and keeps the rest", () => {
+    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    const positions = new Float32Array([0, 0, 0.5, 1, 0, 1.0, 0, 1, 8.0])
+    const all = projectCloud(positions, identity, heatLut())!
+    const sliced = projectCloud(positions, identity, heatLut(), 0.05, [0, 4])!
+    const painted = (cloud: { pixels: Uint8ClampedArray }) => cloud.pixels.filter((_, index) => index % 4 === 3 && cloud.pixels[index] > 0).length
+    assertEquals(painted(all), 3)
+    assertEquals(painted(sliced), 2)
+    assertEquals(projectCloud(positions, identity, heatLut(), 0.05, [20, 30]), null)
+})
+
+Deno.test("a saved map layout without a slice gets the default one; a broken one falls back field by field", () => {
+    assertEquals(loadMapLayout({}).slice, DEFAULT_SLICE)
+    assertEquals(loadMapLayout({ slice: { enabled: false, below: -1, above: 2 } } as never).slice, { enabled: false, below: DEFAULT_SLICE.below, above: 2 })
 })
