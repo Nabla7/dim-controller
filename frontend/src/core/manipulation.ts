@@ -411,9 +411,24 @@ export class Manipulation {
         }
     }
 
-    preview() {
+    /** Plans first when the target has no fresh plan yet: one press, not Plan then Preview. */
+    async preview() {
+        if (!(await this.#planned())) {
+            return
+        }
         this.#act("preview", "api/manipulation/preview")
         this.startPreview()
+    }
+    /** Whether a fresh plan for the target exists, planning it now if it doesn't. */
+    async #planned(): Promise<boolean> {
+        if (!this.planIsFresh()) {
+            await this.plan()
+        }
+        return this.planIsFresh()
+    }
+    /** Preview or Execute can go: a fresh plan, or a target that can be planned. */
+    canRun(): boolean {
+        return this.planIsFresh() ? this.canExecute() : this.canPlan()
     }
 
     startPreview(id?: string) {
@@ -423,7 +438,11 @@ export class Manipulation {
         }
     }
 
-    execute() {
+    /** Plans first when the target has no fresh plan yet: one press, not Plan then Execute. */
+    async execute() {
+        if (!(await this.#planned())) {
+            return
+        }
         this.state.update({ preview: null })
         this.#act("execute", "api/manipulation/execute")
     }

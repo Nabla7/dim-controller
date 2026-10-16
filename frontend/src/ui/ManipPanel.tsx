@@ -1,5 +1,5 @@
 // The arm's planner panel, viser's Manipulation Panel in its order: status, scene grid, robot display, planning-group
-// toggles, target (preset, feasibility, the gizmo: arrows move, rings rotate), actions (next plan speed, planning mode, Plan / Preview / Execute /
+// toggles, target (preset, feasibility, the gizmo: arrows move, rings rotate), actions (next plan speed, planning mode, Preview / Execute, each planning first when needed /
 // Cancel / Clear plan), joint control, and the scene's obstacle and grasp-proposal toggles. Every action is an
 // api/manipulation endpoint (core/manipulation.ts); the planner is dimos's ManipulationModule, and what the RPCs
 // don't give (the model, feasibility, obstacle shapes, grasps) comes from dim-controller's hook in its process.
@@ -145,9 +145,8 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
                 />
             </Field>
             <div className="button-row manip-actions" data-testid="manip-actions">
-                <Button size="sm" variant="primary" disabled={!manipulation.canPlan()} loading={state.busy === "plan"} onClick={() => manipulation.plan()} data-testid="manip-plan">Plan</Button>
-                <Button size="sm" disabled={!manipulation.planIsFresh() || busy} onClick={() => manipulation.preview()} data-testid="manip-preview">Preview</Button>
-                <Button size="sm" disabled={!manipulation.canExecute()} loading={state.busy === "execute"} onClick={() => manipulation.execute()} data-testid="manip-execute">Execute</Button>
+                <Button size="sm" title="plans first if the target has no plan yet" disabled={!manipulation.canRun() || busy} loading={state.busy === "plan"} onClick={() => void manipulation.preview()} data-testid="manip-preview">Preview</Button>
+                <Button size="sm" variant="primary" title="plans first if the target has no plan yet" disabled={!manipulation.canRun()} loading={state.busy === "execute"} onClick={() => void manipulation.execute()} data-testid="manip-execute">Execute</Button>
                 {manipulation.canCancel() && <Button size="sm" variant="danger" onClick={() => manipulation.cancel()} data-testid="manip-cancel">Cancel</Button>}
                 <Button size="sm" variant="ghost" disabled={!state.plan} onClick={() => manipulation.clear()} data-testid="manip-clear">Clear plan</Button>
             </div>

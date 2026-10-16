@@ -335,10 +335,12 @@ export class ArmManipView {
             }
             const handle = new THREE.Object3D()
             this.root.add(handle)
-            // the rings a little larger than the arrows, so each sits clear of the other
             const all = (["translate", "rotate"] as const).map((mode) => {
                 const controls = new TransformControls(this.viewer.camera, this.viewer.canvas)
-                controls.setSize(mode === "rotate" ? 1.1 : 0.8)
+                controls.setSize(mode === "rotate" ? 0.6 : 0.8)
+                if (mode === "rotate") {
+                    withoutFreeRotation(controls)
+                }
                 controls.setSpace("local")
                 controls.setMode(mode)
                 controls.attach(handle)
@@ -663,4 +665,20 @@ function disposeChildren(group: THREE.Group) {
         material?.dispose?.()
     })
     group.clear()
+}
+
+
+/**
+ * The rotate gizmo's three axis rings only: its view-axis ring (E) and free-rotation ball (XYZE) are the largest
+ * shapes on screen and caught clicks meant for the arrows or the scene. Both drawn and pickable parts go.
+ */
+function withoutFreeRotation(controls: TransformControls) {
+    const gizmo = (controls as unknown as { _gizmo: { gizmo: Record<string, THREE.Object3D>; picker: Record<string, THREE.Object3D> } })._gizmo
+    for (const group of [gizmo.gizmo.rotate, gizmo.picker.rotate]) {
+        for (const handle of [...group.children]) {
+            if (handle.name === "E" || handle.name === "XYZE") {
+                group.remove(handle)
+            }
+        }
+    }
 }
