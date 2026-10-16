@@ -26,7 +26,9 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
     const view = useStore(app.settings)
     const render = useStore(rendering)
     const robot = useStore(app.robot)
-    const planner = plannerRunning(useStore(app.runs.state))
+    const runs = useStore(app.runs.state)
+    const manipulation = useStore(app.manipulation.state)
+    const planner = plannerRunning(runs) || manipulation.available === true
     const current = profiles.find((profile) => profile.type === robot.type)
     // the TF frames to offer for following (the map's and the 3D view's), refreshed while shown
     const frames = useTfFrames(app)

@@ -1,5 +1,7 @@
-// Keeps the TF tree fed: every tf2_msgs.TFMessage topic on the bridge, always (the tf layer only draws it).
-// A topic named like tf_static is treated as static (exempt from staleness).
+// Keeps the TF tree fed: every tf2_msgs.TFMessage topic named tf or tf_static (namespaced too: /robot/tf) on the bridge,
+// always (the tf layer only draws it); one named like tf_static is treated as static (exempt from staleness). Other
+// TFMessage topics are side channels, not the tree: a planner's own tip frames (manipulation_tf) would give links a
+// second parent.
 import { decode } from "./lcm/lcm.ts"
 import type { Connection } from "./transport.ts"
 import type { TfTree } from "dimos-react/three"
@@ -9,7 +11,7 @@ export function feedTf(connection: Connection, tf: TfTree, viewer: Viewer) {
     const subscribed = new Set<string>()
     const sync = () => {
         for (const topic of connection.status.get().topics) {
-            if (topic.type !== "tf2_msgs.TFMessage" || subscribed.has(topic.key)) {
+            if (topic.type !== "tf2_msgs.TFMessage" || !isTreeTopic(topic.name) || subscribed.has(topic.key)) {
                 continue
             }
             subscribed.add(topic.key)
@@ -35,4 +37,9 @@ export function feedTf(connection: Connection, tf: TfTree, viewer: Viewer) {
     }
     connection.status.subscribe(sync)
     sync()
+}
+
+/** A tf tree topic: its last path part is tf or tf_static. */
+export function isTreeTopic(name: string): boolean {
+    return /^tf(_static)?$/.test(name.split("/").filter(Boolean).pop() ?? "")
 }

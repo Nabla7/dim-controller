@@ -1,6 +1,7 @@
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
 import { Vector3 } from "three"
 import { TfTree } from "dimos-react/three"
+import { isTreeTopic } from "../src/core/tfFeed.ts"
 
 const yaw90: [number, number, number, number] = [0, 0, Math.SQRT1_2, Math.SQRT1_2]
 const none: [number, number, number, number] = [0, 0, 0, 1]
@@ -53,4 +54,13 @@ Deno.test("the default fixed frame prefers world-ish roots", () => {
     assertEquals(empty.defaultFixedFrame(), "world")
     // no tf at all: world and map stand in for each other
     assert(empty.lookup("map", "world"))
+})
+
+Deno.test("the tf tree is fed by topics named tf or tf_static only, not side channels like a planner's manipulation_tf", () => {
+    for (const name of ["/tf", "tf", "/tf_static", "/robot/tf", "/robot/tf_static"]) {
+        assert(isTreeTopic(name), name)
+    }
+    for (const name of ["/manipulation_tf", "/tf_debug", "/odom", "/robot/manipulation_tf"]) {
+        assert(!isTreeTopic(name), name)
+    }
 })

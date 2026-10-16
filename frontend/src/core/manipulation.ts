@@ -115,6 +115,7 @@ export interface ManipulationState {
 }
 
 const POLL_MS = 700
+const WATCH_MS = 5000
 const CHECKING_STATUSES: Record<string, Feasibility> = {
     FEASIBLE: "feasible",
     COLLISION: "collision",
@@ -170,6 +171,12 @@ export class Manipulation {
             throw new Error(String(answer.error ?? response.statusText))
         }
         return answer
+    }
+
+    /** Whether a planner answers at all, every few seconds while nothing shows it (the full poll is setActive's). */
+    watch() {
+        setInterval(() => this.#polling === null && this.refresh(), WATCH_MS)
+        this.refresh()
     }
 
     /** Polls the planner's state while the arm mode shows it. */
