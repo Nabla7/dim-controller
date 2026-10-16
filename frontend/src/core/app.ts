@@ -224,6 +224,27 @@ export class ViewerApp {
             .catch(() => {})
     }
 
+    /** A grabbed gizmo: the view orbits it (where it was when the drag began) until the arm panel's Done, or it's gone. */
+    #gizmoPivot(): THREE.Vector3 | null {
+        const { focused, dragging } = this.manipulation.gizmo.get()
+        const position = focused ? this.manipView.gizmoPosition(focused) : null
+        if (focused && !position) {
+            this.manipulation.doneManipulating()
+        }
+        if (focused !== this.#pivotGroup) {
+            this.#pivotGroup = focused
+            if (focused) {
+                this.viewer.resumeFollow()
+            }
+        }
+        if (position && (!dragging || !this.#pivot)) {
+            this.#pivot = position
+        }
+        return position ? this.#pivot : null
+    }
+    #pivotGroup: string | null = null
+    #pivot: THREE.Vector3 | null = null
+
     #eachFrame() {
         const chosen = this.settings.get().fixedFrame || this.profile.fixedFrame
         const fixedFrame = chosen || this.tf.defaultFixedFrame()
@@ -244,7 +265,7 @@ export class ViewerApp {
         const followFrame = this.followFrame
         const followed = followFrame === this.profile.baseFrame ? position : this.#framePosition(followFrame, fixedFrame)
         this.#followPosition = followed
-        this.viewer.followTarget = this.settings.get().follow ? followed : null
+        this.viewer.followTarget = this.#gizmoPivot() ?? (this.settings.get().follow ? followed : null)
         this.#placeModel(robot)
         const info = this.frameInfo.get()
         if (info.fixedFrame !== fixedFrame || info.robotFound !== !!position || info.followFound !== !!followed) {

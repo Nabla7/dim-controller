@@ -75,6 +75,7 @@ export function ScenePanel({ host, app, onTf }: { host: RefObject<HTMLDivElement
             {app?.viewer.webglError && !off && <Unavailable what="3D view" reason={app.viewer.webglError} />}
             {app && !off && !app.viewer.webglError && <SceneViewCube app={app} host={host} />}
             {app && !off && <ViewControls app={app} />}
+            {app && !off && <ManipulatingNote app={app} />}
             {app && !off && <TfFootnote app={app} onOpen={onTf} />}
             {app && menuOpen && !off && <CloudMenu app={app} anchor={cloudButton.current} onClose={() => setMenuOpen(false)} />}
         </Panel>
@@ -99,6 +100,28 @@ function SceneViewCube({ app, host }: { app: ViewerApp; host: RefObject<HTMLDivE
         return () => cube.dispose()
     }, [app, host, viewCube])
     return null
+}
+
+/** While the view orbits a grabbed arm gizmo: Done (or Esc) gives the view back its usual center. */
+function ManipulatingNote({ app }: { app: ViewerApp }) {
+    const { focused } = useStore(app.manipulation.gizmo)
+    useEffect(() => {
+        if (!focused) {
+            return
+        }
+        const escape = (event: KeyboardEvent) => event.key === "Escape" && app.manipulation.doneManipulating()
+        addEventListener("keydown", escape)
+        return () => removeEventListener("keydown", escape)
+    }, [app, focused])
+    if (!focused) {
+        return null
+    }
+    return (
+        <div className="manipulating-note" data-testid="manipulating-note">
+            <span>Orbiting {focused}'s gizmo</span>
+            <Button size="sm" onClick={() => app.manipulation.doneManipulating()} title="the view orbits what it did before (Esc)">Done manipulating</Button>
+        </div>
+    )
 }
 
 /** The 3D view's actions in the dock while it's the main view: follow the robot (again). */
