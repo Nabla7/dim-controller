@@ -3,7 +3,7 @@
 // main view by default). Its tools: a tab per image topic (a phone's main view: the top bar's view switch instead), a 2D detection overlay, the depth colormap and range; a gear
 // over the picture picks latency vs quality. Depth is drawn as a colormap. Collapsed (or off screen: a shut drawer, a
 // rail hidden by focus, a hidden browser tab) it holds no stream and no overlay subscription. As the main view it offers the dock fit / fill, the next camera and quality.
-import { useEffect, useRef, useState } from "react"
+import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import type { ViewerApp } from "../core/app.ts"
 import { persistentStore, useStore } from "../core/store.ts"
@@ -138,6 +138,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
     const tools = useRef<HTMLDivElement>(null)
     const video = useRef<HTMLVideoElement>(null)
     const depthHost = useRef<HTMLDivElement>(null)
+    const zoom = useHoldZoom()
     const depthRenderer = useRef<DepthCanvas | null>(null)
     const [depthError, setDepthError] = useState<string | null>(null)
     const depthLook = panel.depth ?? DEFAULT_DEPTH_LOOK
@@ -387,8 +388,8 @@ function CameraPanel({ app, panel, topics, onChange }: {
             }
         >
             {depth && depthError && <Unavailable what="Depth view" reason={depthError} />}
-            {depth ? <div ref={depthHost} className="camera-media depth-host" /> : <video ref={video} className="camera-media" muted playsInline autoPlay disablePictureInPicture disableRemotePlayback />}
-            <canvas ref={overlayCanvas} className="camera-overlay" />
+            {depth ? <div ref={depthHost} className="camera-media depth-host" style={zoom.style} {...zoom.handlers} /> : <video ref={video} className="camera-media" style={zoom.style} {...zoom.handlers} muted playsInline autoPlay disablePictureInPicture disableRemotePlayback />}
+            <canvas ref={overlayCanvas} className="camera-overlay" style={zoom.style} />
             {topic && takenOver && (
                 <div className="camera-takeover" data-testid="camera-takeover">
                     <span>{TAKEN_OVER_TEXT}</span>
@@ -413,6 +414,44 @@ const loadPanelFill = (id: number): boolean => readLocal<Record<string, boolean>
 const savePanelFill = (id: number, fill: boolean) => writeLocal(FILL_KEY, { ...readLocal<Record<string, boolean>>(FILL_KEY, {}), [id]: fill })
 
 /** The topic's quality preset as the shared source has it (changes in another panel of the same topic show here). */
+const HOLD_ZOOM = 3
+/** a press shorter than this is a click, not a zoom */
+const HOLD_ZOOM_DELAY_MS = 180
+
+/** Press and hold on a camera to zoom in on that spot; moving while held looks around, letting go zooms back out. */
+function useHoldZoom() {
+    const [origin, setOrigin] = useState<string | null>(null)
+    const hold = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const originOf = (event: ReactPointerEvent<HTMLElement>) => {
+        const box = event.currentTarget.getBoundingClientRect()
+        return `${(((event.clientX - box.left) / box.width) * 100).toFixed(1)}% ${(((event.clientY - box.top) / box.height) * 100).toFixed(1)}%`
+    }
+    const release = () => {
+        if (hold.current) {
+            clearTimeout(hold.current)
+            hold.current = null
+        }
+        setOrigin(null)
+    }
+    useEffect(() => release, [])
+    return {
+        style: origin ? { transform: `scale(${HOLD_ZOOM})`, transformOrigin: origin } : undefined,
+        handlers: {
+            onPointerDown: (event: ReactPointerEvent<HTMLElement>) => {
+                if (event.button !== 0) {
+                    return
+                }
+                event.currentTarget.setPointerCapture(event.pointerId)
+                const at = originOf(event)
+                hold.current = setTimeout(() => setOrigin(at), HOLD_ZOOM_DELAY_MS)
+            },
+            onPointerMove: (event: ReactPointerEvent<HTMLElement>) => origin && setOrigin(originOf(event)),
+            onPointerUp: release,
+            onPointerCancel: release,
+        },
+    }
+}
+
 function useQuality(app: ViewerApp, topic: Topic | null, depth: boolean): VideoQuality {
     const [quality, setQuality] = useState<VideoQuality>("balanced")
     useEffect(() => {

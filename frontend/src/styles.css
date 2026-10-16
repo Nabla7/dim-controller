@@ -421,11 +421,13 @@ h3.dr-h3.first { margin-top: 4px; }
 .camera-tab.gone { cursor: default; opacity: 0.6; }
 .camera-tabs { margin: 0; padding: 0; }
 .camera-body { background: var(--scene-bg, var(--bg)); }
-.camera-body { position: relative; flex: 1; min-height: 0; }
+.camera-body { position: relative; flex: 1; min-height: 0; overflow: hidden; }
 .camera-takeover { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 8px; background: rgba(0, 0, 0, 0.72); color: #fff; font-weight: 600; text-align: center; }
 .camera-stalled { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 6px 12px; border-radius: 6px; background: rgba(0, 0, 0, 0.65); color: #fff; font-weight: 600; pointer-events: none; }
 .camera-media, .camera-overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .camera-overlay { pointer-events: none; }
+/* press and hold to zoom (ui/CameraPanels.tsx useHoldZoom), eased in and out */
+.camera-media, .camera-overlay { transition: transform 0.12s ease-out; }
 /* fullscreen "fill": the picture (video, depth canvas) and its overlay crop alike, so boxes stay on what they mark */
 .camera-body.fill .camera-media, .camera-body.fill .camera-overlay, .camera-body.fill .depth-host canvas { object-fit: cover; }
 .camera-fit[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }

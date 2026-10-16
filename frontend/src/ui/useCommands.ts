@@ -1,11 +1,13 @@
 // The palette's commands for this page as it is now (ui/commands.ts has the shape and the filter): driving first (STOP,
-// Reconnect), then every panel's actions, the layout, cameras, the view, recording, the robot type and help.
+// Reconnect), then every panel's actions (its header's, and the ones it offers the bar's More), the layout, cameras, the
+// view, recording, the robot type and help.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { recorder } from "../core/recorder.ts"
 import { cameraTabs } from "../core/cameraChoice.ts"
 import { profiles } from "../profile/index.ts"
 import { type Command, panelCommands, panelTitle } from "./commands.ts"
+import { dockActions } from "./dockActions.ts"
 import { openOverlay } from "./overlay.ts"
 import { toggleRecording } from "./RecordControl.tsx"
 import type { WorkspaceApi } from "./Workspace.tsx"
@@ -26,6 +28,7 @@ export function useCommands(app: ViewerApp, api: WorkspaceApi, cameras: CameraAc
     const connection = useStore(app.connection.status)
     const arm = app.profile.type === "arm"
     const focused = api.view.hide.length === 2
+    const offered = useStore(dockActions)
     const commands: Command[] = [
         {
             id: "drive.stop",
@@ -63,6 +66,9 @@ export function useCommands(app: ViewerApp, api: WorkspaceApi, cameras: CameraAc
     ]
     for (const id of api.ids) {
         commands.push(...panelCommands(api.arrangement, id, panelTitle(id), { mobile: api.mobile }, (action) => api.act(id, action)))
+        for (const action of offered[id] ?? []) {
+            commands.push({ id: `panel.${id}.${action.id}`, label: `${panelTitle(id)}: ${action.label}`, group: isCamera(id) ? "Cameras" : "View", hint: action.title, run: action.run })
+        }
         if (isCamera(id) && id !== cameraId(1)) {
             commands.push({ id: `panel.${id}.remove`, label: `${panelTitle(id)}: remove`, group: "Cameras", words: "close delete panel", run: () => cameras.removeCamera(id) })
         }
