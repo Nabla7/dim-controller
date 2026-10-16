@@ -5,7 +5,7 @@
 // the planning scene's obstacles with their shapes; the ranked grasp proposals; and the ground grid. Only in the arm
 // mode with the planner option `interact` on; placed in the view's fixed frame by TF.
 import * as THREE from "three"
-import { TransformControls } from "three/examples/jsm/controls/TransformControls.js"
+import { PoseGizmo } from "./poseGizmo.ts"
 import { LabelPool, type FrameInfo, type TfTree, type Viewer } from "dimos-react/three"
 import type { ArmControl } from "./arm.ts"
 import { isGripperJoint } from "./armTopics.ts"
@@ -50,8 +50,8 @@ interface Model {
 }
 
 interface Gizmo {
-    /** arrows to move and rings to rotate, both on the handle at once: no mode to switch */
-    controls: TransformControls[]
+    /** arrows to move and arcs to rotate, both on the handle at once: no mode to switch */
+    control: PoseGizmo
     handle: THREE.Object3D
 }
 
@@ -320,11 +320,7 @@ export class ArmManipView {
         const wanted = this.manipulation.state.get().selected.filter((group) => this.#tip(group))
         for (const [group, gizmo] of this.gizmos) {
             if (!wanted.includes(group)) {
-                for (const controls of gizmo.controls) {
-                    controls.detach()
-                    controls.dispose()
-                    this.viewer.scene.remove(controls.getHelper())
-                }
+                gizmo.control.dispose()
                 this.root.remove(gizmo.handle)
                 this.gizmos.delete(group)
             }
@@ -335,26 +331,15 @@ export class ArmManipView {
             }
             const handle = new THREE.Object3D()
             this.root.add(handle)
-            const all = (["translate", "rotate"] as const).map((mode) => {
-                const controls = new TransformControls(this.viewer.camera, this.viewer.canvas)
-                controls.setSize(mode === "rotate" ? 0.6 : 0.8)
-                if (mode === "rotate") {
-                    withoutFreeRotation(controls)
-                }
-                controls.setSpace("local")
-                controls.setMode(mode)
-                controls.attach(handle)
-                this.viewer.scene.add(controls.getHelper())
-                return controls
-            })
-            for (const controls of all) {
-                controls.addEventListener("dragging-changed", (event) => {
-                    const dragging = Boolean((event as unknown as { value: boolean }).value)
+            const control = new PoseGizmo(this.viewer.camera, this.viewer.canvas, handle, {
+                change: () => this.#dragged(group, handle),
+                render: () => this.viewer.requestRender(),
+                dragging: (dragging) => {
                     this.viewer.controls.enabled = !dragging
-                    // one grab moves one of them
-                    for (const other of all) {
-                        if (other !== controls) {
-                            other.enabled = !dragging
+                    // one grab moves one gizmo
+                    for (const other of this.gizmos.values()) {
+                        if (other.control !== control) {
+                            other.control.enabled = !dragging
                         }
                     }
                     this.manipulation.gizmo.update({ dragging })
@@ -365,11 +350,10 @@ export class ArmManipView {
                             this.manipulation.setTarget(target, true)
                         }
                     }
-                })
-                controls.addEventListener("objectChange", () => this.#dragged(group, handle))
-                controls.addEventListener("change", () => this.viewer.requestRender())
-            }
-            this.gizmos.set(group, { controls: all, handle })
+                },
+            })
+            this.viewer.scene.add(control.object)
+            this.gizmos.set(group, { control, handle })
         }
     }
 
@@ -544,10 +528,8 @@ export class ArmManipView {
             this.#syncGizmos()
         }
         for (const gizmo of this.gizmos.values()) {
-            for (const controls of gizmo.controls) {
-                controls.enabled = show
-                controls.getHelper().visible = show
-            }
+            gizmo.control.enabled = show && !this.#otherDragging(gizmo)
+            gizmo.control.update()
         }
         this.#labels.begin()
         if (!show || !model || !placed) {
@@ -591,6 +573,9 @@ export class ArmManipView {
                 }
             }
         }
+        for (const gizmo of this.gizmos.values()) {
+            gizmo.control.update()
+        }
         // viser labels the three best grasps with their rank and score
         if (this.grasps.visible) {
             for (const [rank, grasp] of ((this.grasps.userData.leaders ?? []) as GraspProposal[]).entries()) {
@@ -600,15 +585,16 @@ export class ArmManipView {
         this.#labels.end()
     }
 
+    /** another group's gizmo is mid-drag: this one stays out of the way */
+    #otherDragging(gizmo: Gizmo): boolean {
+        return [...this.gizmos.values()].some((other) => other !== gizmo && other.control.dragging)
+    }
+
     dispose() {
         clearInterval(this.#descriptionTimer)
         clearInterval(this.#sceneTimer)
         for (const gizmo of this.gizmos.values()) {
-            for (const controls of gizmo.controls) {
-                controls.detach()
-                controls.dispose()
-                this.viewer.scene.remove(controls.getHelper())
-            }
+            gizmo.control.dispose()
         }
         this.viewer.scene.remove(this.root)
         this.#labels.dispose()
@@ -665,20 +651,4 @@ function disposeChildren(group: THREE.Group) {
         material?.dispose?.()
     })
     group.clear()
-}
-
-
-/**
- * The rotate gizmo's three axis rings only: its view-axis ring (E) and free-rotation ball (XYZE) are the largest
- * shapes on screen and caught clicks meant for the arrows or the scene. Both drawn and pickable parts go.
- */
-function withoutFreeRotation(controls: TransformControls) {
-    const gizmo = (controls as unknown as { _gizmo: { gizmo: Record<string, THREE.Object3D>; picker: Record<string, THREE.Object3D> } })._gizmo
-    for (const group of [gizmo.gizmo.rotate, gizmo.picker.rotate]) {
-        for (const handle of [...group.children]) {
-            if (handle.name === "E" || handle.name === "XYZE") {
-                group.remove(handle)
-            }
-        }
-    }
 }

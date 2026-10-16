@@ -1,5 +1,5 @@
 // The arm's planner panel, viser's Manipulation Panel in its order: status, scene grid, robot display, planning-group
-// toggles, target (preset, feasibility, the gizmo: arrows move, rings rotate), actions (next plan speed, planning mode, Preview / Execute, each planning first when needed /
+// toggles, target (preset, feasibility, the gizmo: arrows move, arcs rotate), actions (next plan speed, planning mode, Preview / Execute, each planning first when needed /
 // Cancel / Clear plan), joint control, and the scene's obstacle and grasp-proposal toggles. Every action is an
 // api/manipulation endpoint (core/manipulation.ts); the planner is dimos's ManipulationModule, and what the RPCs
 // don't give (the model, feasibility, obstacle shapes, grasps) comes from dim-controller's hook in its process.
