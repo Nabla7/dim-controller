@@ -1,5 +1,5 @@
 // The arm's planner panel, viser's Manipulation Panel in its order: status, scene grid, robot display, planning-group
-// toggles, target (preset, feasibility, gizmo mode), actions (next plan speed, planning mode, Plan / Preview / Execute /
+// toggles, target (preset, feasibility, the gizmo: arrows move, rings rotate), actions (next plan speed, planning mode, Plan / Preview / Execute /
 // Cancel / Clear plan), joint control, and the scene's obstacle and grasp-proposal toggles. Every action is an
 // api/manipulation endpoint (core/manipulation.ts); the planner is dimos's ManipulationModule, and what the RPCs
 // don't give (the model, feasibility, obstacle shapes, grasps) comes from dim-controller's hook in its process.
@@ -40,7 +40,6 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
     const manipulation = app.manipulation
     const state = useStore(manipulation.state)
     const options = useStore(manipulation.options)
-    const gizmo = useStore(manipulation.gizmo)
     const view = useStore(app.manipView.status)
     const { target, selected, hook, planner } = state
     const current = manipulation.currentJoints()
@@ -129,9 +128,7 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
                 {!hook && state.reach && <> · <Badge tone={state.reach.reachable ? "ok" : "warn"} data-testid="manip-reach">{state.reach.reachable ? "reachable" : `unreachable (${(state.reach.positionError * 100).toFixed(1)} cm off)`}</Badge></>}
             </p>
             <div className="button-row" data-testid="manip-gizmo">
-                <span className="hint">Gizmo:</span>
-                <Button size="sm" pressed={gizmo.mode === "translate"} onClick={() => manipulation.gizmo.update({ mode: "translate" })}>Move</Button>
-                <Button size="sm" pressed={gizmo.mode === "rotate"} onClick={() => manipulation.gizmo.update({ mode: "rotate" })}>Rotate</Button>
+                <span className="hint">Gizmo: drag an arrow to move, a ring to rotate</span>
                 <Button size="sm" variant="ghost" disabled={!target} onClick={() => manipulation.setTarget(null)}>Clear target</Button>
             </div>
 

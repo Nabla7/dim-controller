@@ -1,7 +1,7 @@
 // The arm mode's 3D manipulation, as viser draws it: the arm from the robot's URDF (dimos's UrdfManager,
 // core/urdfSource.ts) when one is published, else the planner's own model (the hook's api/manipulation/description),
 // posed by the joint state; the target ghost (orange when the planner finds the target feasible, red when not); the
-// preview ghost (blue) playing a plan; a gizmo (move / rotate) on each selected group's tip; the plan's tip paths;
+// preview ghost (blue) playing a plan; a gizmo (move arrows and rotate rings together) on each selected group's tip; the plan's tip paths;
 // the planning scene's obstacles with their shapes; the ranked grasp proposals; and the ground grid. Only in the arm
 // mode with the planner option `interact` on; placed in the view's fixed frame by TF.
 import * as THREE from "three"
@@ -50,7 +50,8 @@ interface Model {
 }
 
 interface Gizmo {
-    controls: TransformControls
+    /** arrows to move and rings to rotate, both on the handle at once: no mode to switch */
+    controls: TransformControls[]
     handle: THREE.Object3D
 }
 
@@ -113,8 +114,6 @@ export class ArmManipView {
         this.#descriptionTimer = setInterval(() => this.#loadDescription(), DESCRIPTION_EVERY_MS)
         this.#sceneTimer = setInterval(() => this.#loadScene(), SCENE_EVERY_MS)
         manipulation.options.subscribe(() => this.#applyOptions())
-        // only a changed mode: setting it on a gizmo mid-drag (the store also carries `dragging`) re-enters its events
-        manipulation.gizmo.subscribe(() => this.gizmos.forEach(({ controls }) => controls.mode !== manipulation.gizmo.get().mode && controls.setMode(manipulation.gizmo.get().mode)))
         manipulation.state.subscribe(() => viewer.requestRender())
         armControl.state.subscribe(() => this.#active && viewer.requestRender())
         viewer.onFrame((frame) => this.#frame(frame))
@@ -321,9 +320,11 @@ export class ArmManipView {
         const wanted = this.manipulation.state.get().selected.filter((group) => this.#tip(group))
         for (const [group, gizmo] of this.gizmos) {
             if (!wanted.includes(group)) {
-                gizmo.controls.detach()
-                gizmo.controls.dispose()
-                this.viewer.scene.remove(gizmo.controls.getHelper())
+                for (const controls of gizmo.controls) {
+                    controls.detach()
+                    controls.dispose()
+                    this.viewer.scene.remove(controls.getHelper())
+                }
                 this.root.remove(gizmo.handle)
                 this.gizmos.delete(group)
             }
@@ -334,27 +335,39 @@ export class ArmManipView {
             }
             const handle = new THREE.Object3D()
             this.root.add(handle)
-            const controls = new TransformControls(this.viewer.camera, this.viewer.canvas)
-            controls.setSize(0.8)
-            controls.setSpace("local")
-            controls.setMode(this.manipulation.gizmo.get().mode)
-            controls.attach(handle)
-            this.viewer.scene.add(controls.getHelper())
-            controls.addEventListener("dragging-changed", (event) => {
-                const dragging = Boolean((event as unknown as { value: boolean }).value)
-                this.viewer.controls.enabled = !dragging
-                this.manipulation.gizmo.update({ dragging })
-                if (!dragging) {
-                    // the drag ended: the backend (and every page) gets the target
-                    const target = this.manipulation.state.get().target
-                    if (target) {
-                        this.manipulation.setTarget(target, true)
-                    }
-                }
+            // the rings a little larger than the arrows, so each sits clear of the other
+            const all = (["translate", "rotate"] as const).map((mode) => {
+                const controls = new TransformControls(this.viewer.camera, this.viewer.canvas)
+                controls.setSize(mode === "rotate" ? 1.1 : 0.8)
+                controls.setSpace("local")
+                controls.setMode(mode)
+                controls.attach(handle)
+                this.viewer.scene.add(controls.getHelper())
+                return controls
             })
-            controls.addEventListener("objectChange", () => this.#dragged(group, handle))
-            controls.addEventListener("change", () => this.viewer.requestRender())
-            this.gizmos.set(group, { controls, handle })
+            for (const controls of all) {
+                controls.addEventListener("dragging-changed", (event) => {
+                    const dragging = Boolean((event as unknown as { value: boolean }).value)
+                    this.viewer.controls.enabled = !dragging
+                    // one grab moves one of them
+                    for (const other of all) {
+                        if (other !== controls) {
+                            other.enabled = !dragging
+                        }
+                    }
+                    this.manipulation.gizmo.update({ dragging })
+                    if (!dragging) {
+                        // the drag ended: the backend (and every page) gets the target
+                        const target = this.manipulation.state.get().target
+                        if (target) {
+                            this.manipulation.setTarget(target, true)
+                        }
+                    }
+                })
+                controls.addEventListener("objectChange", () => this.#dragged(group, handle))
+                controls.addEventListener("change", () => this.viewer.requestRender())
+            }
+            this.gizmos.set(group, { controls: all, handle })
         }
     }
 
@@ -528,9 +541,11 @@ export class ArmManipView {
         if (show) {
             this.#syncGizmos()
         }
-        for (const { controls } of this.gizmos.values()) {
-            controls.enabled = show
-            controls.getHelper().visible = show
+        for (const gizmo of this.gizmos.values()) {
+            for (const controls of gizmo.controls) {
+                controls.enabled = show
+                controls.getHelper().visible = show
+            }
         }
         this.#labels.begin()
         if (!show || !model || !placed) {
@@ -586,10 +601,12 @@ export class ArmManipView {
     dispose() {
         clearInterval(this.#descriptionTimer)
         clearInterval(this.#sceneTimer)
-        for (const { controls } of this.gizmos.values()) {
-            controls.detach()
-            controls.dispose()
-            this.viewer.scene.remove(controls.getHelper())
+        for (const gizmo of this.gizmos.values()) {
+            for (const controls of gizmo.controls) {
+                controls.detach()
+                controls.dispose()
+                this.viewer.scene.remove(controls.getHelper())
+            }
         }
         this.viewer.scene.remove(this.root)
         this.#labels.dispose()

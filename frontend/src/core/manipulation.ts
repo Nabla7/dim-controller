@@ -147,7 +147,7 @@ export class Manipulation {
     })
     readonly options = persistentStore<ManipulationOptions>("lv.manip", { mode: "joint", speed: 1, display: "visual", obstacles: true, grasps: true, grid: true, interact: true })
     /** a gizmo's drag is moving the target and it isn't committed yet: polls keep it */
-    readonly gizmo = new Store<{ mode: "translate" | "rotate"; dragging: boolean }>({ mode: "translate", dragging: false })
+    readonly gizmo = new Store<{ dragging: boolean }>({ dragging: false })
     #polling: ReturnType<typeof setInterval> | null = null
     #inFlight = false
     #uncommitted = false
