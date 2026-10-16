@@ -20,7 +20,8 @@ import { JointHud } from "./JointControl.tsx"
 function DisengagedNotice({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
     return (
         <div className="drive-halt" role="alert" data-testid="drive-halt">
-            <span>{disengagedText(halt)}</span>
+            {/* the short form keeps the dock narrow; the full reason is the tooltip, and the button says what to do */}
+            <span title={disengagedText(halt)}>{disengagedShort(halt)}</span>
             <Button className="reconnect-button" data-testid="reconnect-button" disabled={halt.reconnecting} onClick={() => app.reconnect()}>
                 {halt.reconnecting ? "Reconnecting…" : "Reconnect"}
             </Button>

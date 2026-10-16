@@ -14,6 +14,13 @@
     --lv-bar: color-mix(in srgb, var(--card) 92%, transparent);
 }
 
+/* Scrollbars hide until the pointer is over the area they scroll: thin and themed then, invisible otherwise. */
+* { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+*:hover { scrollbar-color: color-mix(in srgb, var(--fg) 30%, transparent) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; }
+*:hover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--fg) 30%, transparent); }
+
 html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 *, *::before, *::after { box-sizing: border-box; }
 code { font-family: var(--mono); font-size: 12.5px; color: var(--cyan); }
@@ -227,7 +234,7 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 .drive-topic-menu .quality-name { font-family: var(--mono); }
 .drive-topic-custom { display: flex; gap: 4px; padding: 6px 4px 2px; border-top: 1px solid var(--border); margin-top: 4px; }
 .drive-topic-custom .dr-input { flex: 1; min-width: 0; font: 12px var(--mono); }
-.drive-halt { display: flex; align-items: center; gap: 8px; flex-basis: 100%; font: 600 11px var(--sans); color: var(--lv-stop); }
+.drive-halt { display: flex; align-items: center; gap: 8px; flex-basis: 100%; font: 600 11px var(--sans); color: var(--lv-stop); white-space: nowrap; }
 .drive-halt .reconnect-button { margin-left: auto; font-weight: 700; color: var(--fg); background: var(--lv-stop); border-color: var(--lv-stop); }
 /* phone: one line across the top of the stick area, out of the grid, so it covers nothing and pushes nothing */
 .drive-halt-pill { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); z-index: 1; max-width: calc(100% - 24px); box-sizing: border-box;
@@ -417,7 +424,7 @@ h3.dr-h3.first { margin-top: 4px; }
 .camera-body.fill .camera-media, .camera-body.fill .camera-overlay, .camera-body.fill .depth-host canvas { object-fit: cover; }
 .camera-fit[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
 .camera-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--muted-fg); font-size: 12px; }
-.camera-quality { position: absolute; top: 40px; right: 6px; z-index: 3; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.camera-quality { display: flex; align-items: center; }
 .quality-gear.dr-btn--icon { width: 26px; height: 26px; padding: 0; color: var(--fg); background: color-mix(in srgb, var(--bg) 55%, transparent); border-color: var(--border-strong);
     transition: box-shadow 0.15s; }
 .quality-gear.dr-btn--icon:hover, .camera-quality.open .quality-gear { border-color: var(--fg); box-shadow: 0 0 8px var(--lv-over-video); background: color-mix(in srgb, var(--bg) 75%, transparent); }
@@ -673,12 +680,18 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .camera-video > .panel-tools { background: none; border-bottom: 0; pointer-events: none; padding: 6px 6px 0; }
 .camera-video > .panel-tools .camera-tools > *, .camera-video > .panel-tools .camera-tab { pointer-events: auto; }
 .camera-video > .panel-tools .camera-tabs { flex: 0 1 auto; gap: 4px; align-self: center; }
-.camera-video > .panel-tools .camera-tab,
+/* one height for the whole row; the tabs are one strip (the shown camera underlined), the buttons are separate boxes */
+.camera-video > .panel-tools .camera-tabs,
 .camera-video > .panel-tools .dr-select,
 .camera-video > .panel-tools .depth-range,
-.camera-video > .panel-tools .camera-fit {
-    height: 26px; border: 1px solid var(--border); border-radius: var(--radius); backdrop-filter: blur(6px);
+.camera-video > .panel-tools .camera-fit,
+.camera-video > .panel-tools .quality-gear.dr-btn--icon {
+    height: 28px; min-height: 28px; border: 1px solid var(--border); border-radius: var(--radius); backdrop-filter: blur(6px);
     background: color-mix(in srgb, var(--card) 72%, transparent);
 }
-.camera-video > .panel-tools .camera-tab.on { background: color-mix(in srgb, var(--accent) 85%, transparent); }
-.camera-video > .panel-tools .camera-fit { margin-left: auto; }
+.camera-video > .panel-tools .camera-tabs { gap: 0; overflow: hidden; }
+.camera-video > .panel-tools .camera-tab { height: 100%; border: 0; border-radius: 0; background: none; }
+.camera-video > .panel-tools .camera-tab + .camera-tab { border-left: 1px solid var(--border); }
+.camera-video > .panel-tools .camera-tab.on { color: var(--fg); background: color-mix(in srgb, var(--accent) 70%, transparent); box-shadow: inset 0 -2px 0 var(--primary); }
+.camera-video > .panel-tools .camera-fit { margin-left: auto; padding: 0 8px; }
+.camera-video > .panel-tools .quality-gear.dr-btn--icon { width: 28px; padding: 0; box-shadow: none; }

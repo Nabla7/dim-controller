@@ -351,6 +351,35 @@ function CameraPanel({ app, panel, topics, onChange }: {
                         <Icon name={fill ? "fill" : "fit"} size={15} />
                         <span className="icon-label">{fill ? "Fill" : "Fit"}</span>
                     </Button>
+                    {topic && !depth && (
+                        <div className={`camera-quality panel-chrome ${qualityOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
+                            <Button ref={gear} className="dr-btn--icon quality-gear" title={`Latency ↔ quality: ${presetFor(quality).label}`} aria-label="Latency or quality" aria-haspopup="menu" aria-expanded={qualityOpen} onClick={() => setQualityOpen(!qualityOpen)}>
+                                <Icon name="settings" size={14} />
+                            </Button>
+                            {qualityOpen && createPortal(
+                                <Card padded={false} className="quality-menu" role="menu" aria-label="Latency or quality" style={popoverPosition(gear.current, 236)} onClick={(event) => event.stopPropagation()}>
+                                    <div className="quality-title">Latency ↔ quality</div>
+                                    {QUALITY_PRESETS.map((preset) => (
+                                        <button
+                                            key={preset.id}
+                                            type="button"
+                                            role="menuitemradio"
+                                            aria-checked={quality === preset.id}
+                                            className={`quality-option ${quality === preset.id ? "on" : ""}`}
+                                            onClick={() => {
+                                                app.video.setQuality(topic, preset.id)
+                                                setQualityOpen(false)
+                                            }}
+                                        >
+                                            <span className="quality-name">{preset.label}</span>
+                                            <span className="quality-about">{preset.about}</span>
+                                        </button>
+                                    ))}
+                                </Card>,
+                                document.body,
+                            )}
+                        </div>
+                    )}
                 </div>
             }
         >
@@ -365,35 +394,6 @@ function CameraPanel({ app, panel, topics, onChange }: {
             )}
             {topic && open && stalled && !takenOver && <div className="camera-stalled" data-testid="camera-stalled">slow / stopped link</div>}
             {!topic && <div className="camera-placeholder"><Icon name="camera" size={28} /><span>{!tabs.length ? "No camera on the bus yet" : switched ? "Pick a camera from the view switch (top bar)" : "Pick a camera from this panel's topic tabs (shown on hover) or the palette (/)"}</span></div>}
-            {topic && !depth && (
-                <div className={`camera-quality panel-chrome ${qualityOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
-                    <Button ref={gear} className="dr-btn--icon quality-gear" title={`Latency ↔ quality: ${presetFor(quality).label}`} aria-label="Latency or quality" aria-haspopup="menu" aria-expanded={qualityOpen} onClick={() => setQualityOpen(!qualityOpen)}>
-                        <Icon name="settings" size={14} />
-                    </Button>
-                    {qualityOpen && createPortal(
-                        <Card padded={false} className="quality-menu" role="menu" aria-label="Latency or quality" style={popoverPosition(gear.current, 236)} onClick={(event) => event.stopPropagation()}>
-                            <div className="quality-title">Latency ↔ quality</div>
-                            {QUALITY_PRESETS.map((preset) => (
-                                <button
-                                    key={preset.id}
-                                    type="button"
-                                    role="menuitemradio"
-                                    aria-checked={quality === preset.id}
-                                    className={`quality-option ${quality === preset.id ? "on" : ""}`}
-                                    onClick={() => {
-                                        app.video.setQuality(topic, preset.id)
-                                        setQualityOpen(false)
-                                    }}
-                                >
-                                    <span className="quality-name">{preset.label}</span>
-                                    <span className="quality-about">{preset.about}</span>
-                                </button>
-                            ))}
-                        </Card>,
-                        document.body,
-                    )}
-                </div>
-            )}
         </Panel>
     )
 }
