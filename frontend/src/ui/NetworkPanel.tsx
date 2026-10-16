@@ -10,7 +10,7 @@ import { type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject,
 import { assignSlots, averageOf, breakdown, CONTROL, HEARTBEAT, type NetSample, nearestIndex, netSummary, niceCeil, OTHER, RESENT, RTP_HEADERS, stackOf, type StreamShare, streamTable } from "../core/netHistory.ts"
 import { useStore } from "../core/store.ts"
 import { type Consumer, parseKey } from "../core/transport.ts"
-import { bandwidthOverrides, DEFAULT_PRIORITY, DEFAULT_TRADEOFF, heatOf, priorityLabel, setOverride, stepPriority, type StreamOverride } from "../core/bandwidth.ts"
+import { bandwidthOverrides, DEFAULT_PRIORITY, DEFAULT_TRADEOFF, heatOf, levelOf, PRIORITY_LAST, PRIORITY_MAX, priorityLabel, setOverride, stepPriority, type StreamOverride } from "../core/bandwidth.ts"
 import { Button, NumberInput, Segmented, Slider, Toggle } from "dimos-react"
 import { Icon } from "./icons.tsx"
 
@@ -175,19 +175,20 @@ function effectiveOf(consumer: Consumer | undefined, override: StreamOverride | 
     const video = !!consumer?.video
     return {
         video,
-        priority: override?.bandwidthPriority ?? base.bandwidthPriority ?? DEFAULT_PRIORITY,
+        // the viewer's levels on top of the page's own priority for it (0: as the page set it)
+        offset: override?.priorityOffset ?? 0,
         // the gateway reserves a reliable stream at its measured rate and never shrinks it, so its priority does nothing
         reliable: !video && (override?.delivery ?? base.delivery) === "reliable",
     }
 }
 
-function PriorityStepper({ streamKey, priority, overridden, disabled }: { streamKey: string; priority: number; overridden: boolean; disabled: boolean }) {
+function PriorityStepper({ streamKey, offset, disabled }: { streamKey: string; offset: number; disabled: boolean }) {
     const name = streamName(streamKey)
     return (
-        <span className={`net-priority ${overridden ? "set" : ""}`} title={disabled ? "reliable: the gateway never shrinks it, so priority doesn't apply" : `priority ${priorityLabel(priority)} (0 is the default; when the link is short, each step up halves what a stream gives up, each step down doubles it; "last" gives up first)`}>
-            <button type="button" className="net-step" aria-label={`Lower ${name}'s priority`} disabled={disabled || priority <= 0} onClick={() => setOverride(streamKey, { bandwidthPriority: stepPriority(priority, -1) })}>−</button>
-            <span className="net-priority-value" data-testid="net-priority">{priorityLabel(priority)}</span>
-            <button type="button" className="net-step" aria-label={`Raise ${name}'s priority`} disabled={disabled || priority >= 8} onClick={() => setOverride(streamKey, { bandwidthPriority: stepPriority(priority, 1) })}>+</button>
+        <span className={`net-priority ${offset !== 0 ? "set" : ""}`} title={disabled ? "reliable: the gateway never shrinks it, so priority doesn't apply" : `priority ${priorityLabel(offset)} on top of what the page gives it (0: as set; when the link is short, each step up halves what it gives up, each step down doubles it; "last" gives up first)`}>
+            <button type="button" className="net-step" aria-label={`Lower ${name}'s priority`} disabled={disabled || offset <= PRIORITY_LAST} onClick={() => setOverride(streamKey, { priorityOffset: stepPriority(offset, -1) })}>−</button>
+            <span className="net-priority-value" data-testid="net-priority">{priorityLabel(offset)}</span>
+            <button type="button" className="net-step" aria-label={`Raise ${name}'s priority`} disabled={disabled || offset >= PRIORITY_MAX} onClick={() => setOverride(streamKey, { priorityOffset: stepPriority(offset, 1) })}>+</button>
         </span>
     )
 }
@@ -195,7 +196,7 @@ function PriorityStepper({ streamKey, priority, overridden, disabled }: { stream
 /** One stream's advanced options, over the table (it doesn't move anything): what it runs with, the app's value shown as the default. */
 function StreamSettings({ streamKey, consumer, override, onClose }: { streamKey: string; consumer: Consumer | undefined; override: StreamOverride | undefined; onClose: () => void }) {
     const base = consumer?.base ?? {}
-    const { video, priority, reliable } = effectiveOf(consumer, override)
+    const { video, offset, reliable } = effectiveOf(consumer, override)
     const tradeoff = override?.qualityToHzTradeoff ?? base.qualityToHzTradeoff ?? DEFAULT_TRADEOFF
     const [draft, setDraft] = useState(tradeoff)
     useEffect(() => setDraft(tradeoff), [tradeoff])
@@ -209,8 +210,8 @@ function StreamSettings({ streamKey, consumer, override, onClose }: { streamKey:
             </div>
             <div className="net-settings-body">
                 <label className="net-field">
-                    <span className="net-field-name">Priority {appText(priorityLabel(base.bandwidthPriority ?? DEFAULT_PRIORITY))}</span>
-                    <PriorityStepper streamKey={streamKey} priority={priority} overridden={override?.bandwidthPriority !== undefined} disabled={reliable} />
+                    <span className="net-field-name">Priority {appText(`${priorityLabel(levelOf(base.bandwidthPriority ?? DEFAULT_PRIORITY))} from the default`)}</span>
+                    <PriorityStepper streamKey={streamKey} offset={offset} disabled={reliable} />
                 </label>
                 <div className="net-field wide">
                     <span className="net-field-name">Quality ↔ frequency {appText(String(base.qualityToHzTradeoff ?? DEFAULT_TRADEOFF))}</span>
@@ -251,7 +252,7 @@ function StreamSettings({ streamKey, consumer, override, onClose }: { streamKey:
                 )}
             </div>
             <div className="net-settings-foot">
-                <Button size="sm" onClick={() => setOverride(streamKey, override?.paused ? { paused: true, bandwidthPriority: undefined, qualityToHzTradeoff: undefined, delivery: undefined, maxHz: undefined, maxBitrate: undefined } : null)}>Reset to defaults</Button>
+                <Button size="sm" onClick={() => setOverride(streamKey, override?.paused ? { paused: true, priorityOffset: undefined, qualityToHzTradeoff: undefined, delivery: undefined, maxHz: undefined, maxBitrate: undefined } : null)}>Reset to defaults</Button>
                 <Button size="sm" variant="primary" onClick={onClose}>Done</Button>
             </div>
         </div>
@@ -275,7 +276,7 @@ function ConsumersTable({ table, slots, consumers }: { table: StreamShare[]; slo
                             const override = overrides[row.key]
                             const controllable = !!consumer || !!override
                             const paused = !!override?.paused
-                            const { video, priority, reliable } = effectiveOf(consumer, override)
+                            const { video, offset, reliable } = effectiveOf(consumer, override)
                             const heat = paused ? 0 : heatOf(row.bytesPerSec, busiest)
                             const tags = [paused ? "paused" : "", video ? "video" : reliable ? "reliable" : "", override && Object.keys(override).some((name) => name !== "paused") ? "tuned" : ""].filter(Boolean)
                             return (
@@ -290,7 +291,7 @@ function ConsumersTable({ table, slots, consumers }: { table: StreamShare[]; slo
                                         <span className="net-heat" style={{ width: `${heat * 100}%`, background: heatColor(heat) }} />
                                         <span className="net-rate" title={paused ? "paused: not subscribed" : `${Math.round(row.share * 100)}% of the link`}>{paused ? "0.00" : mbps(row.bytesPerSec).toFixed(2)}</span>
                                     </td>
-                                    <td className="net-col-priority">{controllable ? <PriorityStepper streamKey={row.key} priority={priority} overridden={override?.bandwidthPriority !== undefined} disabled={reliable} /> : <span className="net-priority" title="not a subscription this page makes: zenoh-gateway's default priority"><span className="net-step-spacer" /><span className="net-priority-value" data-testid="net-priority">{priorityLabel(DEFAULT_PRIORITY)}</span><span className="net-step-spacer" /></span>}</td>
+                                    <td className="net-col-priority">{controllable ? <PriorityStepper streamKey={row.key} offset={offset} disabled={reliable} /> : <span className="net-priority" title="not a subscription this page makes: zenoh-gateway's default priority"><span className="net-step-spacer" /><span className="net-priority-value" data-testid="net-priority">{priorityLabel(0)}</span><span className="net-step-spacer" /></span>}</td>
                                     <td className="net-col-gear">{controllable && <button type="button" className={`net-icon-button ${tags.includes("tuned") ? "set" : ""}`} aria-label={`${streamName(row.key)} settings`} onClick={() => setEditing(row.key)}><Icon name="settings" size={15} /></button>}</td>
                                 </tr>
                             )
@@ -415,8 +416,9 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
                     All counted by this browser (WebRTC stats), each second: throughput is the wire's bytes, a stream its data channel's
                     payload or its video track's. Protocol overhead is the wire beyond everything named (DTLS/SCTP framing, acks and
                     SCTP resends, which the browser doesn't count on their own). Latency is the heartbeat's round trip. A
-                    stream switched off is unsubscribed until switched back on; priority (0 is the default; when the
-                    link is short each step up halves what a stream gives up, each step down doubles it, and "last" gives up first) and the gear's options are the gateway's, kept by this browser.{" "}
+                    stream switched off is unsubscribed until switched back on; priority (0 is what the page gives the stream: small state above
+                    the main camera above other cameras above maps; when the link is short each step up halves what it gives up, each step down
+                    doubles it, and "last" gives up first) and the gear's options are the gateway's, kept by this browser.{" "}
                     <button type="button" className="net-link" onClick={onStatus}>Open Status</button>
                 </p>
             </details>

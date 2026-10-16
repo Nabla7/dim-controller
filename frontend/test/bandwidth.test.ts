@@ -2,7 +2,7 @@
 // overrides go on top of the app's options; a pause closes the gateway subscription and a resume opens it again; what
 // the gateway changes in place goes as an update, the rest (delivery) as a new subscription.
 import { assert, assertEquals } from "jsr:@std/assert@1"
-import { applyOverride, heatOf, isVideoOptions, normalizeOverride, optionDiff, patchOverrides, priorityLabel, stepPriority, withChanges } from "../src/core/bandwidth.ts"
+import { applyOverride, defaultBandwidthPriority, heatOf, isVideoOptions, levelOf, migrateOverrides, normalizeOverride, optionDiff, patchOverrides, PRIORITY_LAST, priorityLabel, stepPriority, withChanges } from "../src/core/bandwidth.ts"
 import { LiveSubscription, type SubscribeOptions, type SubscriptionUpdate } from "../src/core/transport.ts"
 import { streamTable } from "../src/core/netHistory.ts"
 
@@ -11,7 +11,7 @@ Deno.test("an override goes on top of the app's options; delivery only off video
     assert(isVideoOptions(camera))
     assert(!isVideoOptions({ encoding: "dimos_lcm_depth" }))
     assert(isVideoOptions({}, "video-h264"))
-    assertEquals(applyOverride(camera, { paused: true, bandwidthPriority: 4, delivery: "reliable", maxBitrate: 2e6 }), { ...camera, bandwidthPriority: 4, maxBitrate: 2e6 })
+    assertEquals(applyOverride(camera, { paused: true, priorityOffset: 2, delivery: "reliable", maxBitrate: 2e6 }), { ...camera, bandwidthPriority: 4, maxBitrate: 2e6 })
     assertEquals(applyOverride({ delivery: "latest", maxHz: 2 }, { delivery: "reliable", maxBitrate: 2e6, maxHz: 10, qualityToHzTradeoff: 0 }), { delivery: "reliable", maxHz: 10, qualityToHzTradeoff: 0 })
     assertEquals(applyOverride({ maxHz: 2 }, undefined), { maxHz: 2 })
 })
@@ -25,23 +25,29 @@ Deno.test("what changes in place is an update (null back to the default); delive
     assertEquals(withChanges({ maxHz: 2, encodeOptions: { quality: 1 } }, { maxHz: null, encodeOptions: { quality: 0.5 } }), { encodeOptions: { quality: 0.5 } })
 })
 
-Deno.test("priority steps − / + from any value, labels say how much of the cut a stream takes", () => {
-    assertEquals(stepPriority(1, 1), 2)
-    assertEquals(stepPriority(1, -1), 0.5)
-    assertEquals(stepPriority(0.2, 1), 0.25)
-    assertEquals(stepPriority(0.2, -1), 0)
-    assertEquals(stepPriority(8, 1), 8)
-    assertEquals(stepPriority(0, -1), 0)
-    assertEquals([0, 0.25, 0.5, 1, 2, 8, 0.2].map(priorityLabel), ["last", "-2", "-1", "0", "+1", "+3", "-2"])
+Deno.test("a priority offset is levels on top of the page's own priority: +1 doubles it, last gives up first", () => {
+    assertEquals([stepPriority(0, 1), stepPriority(0, -1), stepPriority(3, 1), stepPriority(PRIORITY_LAST, -1)], [1, -1, 3, PRIORITY_LAST])
+    assertEquals([PRIORITY_LAST, -2, 0, 1, 3].map(priorityLabel), ["last", "-2", "0", "+1", "+3"])
+    // the main camera (the default 1) at +1 runs at 2; a side camera (0.5) at +1 runs at the main camera's 1
+    assertEquals(applyOverride({ bandwidthPriority: 1 }, { priorityOffset: 1 }).bandwidthPriority, 2)
+    assertEquals(applyOverride({ bandwidthPriority: 0.5 }, { priorityOffset: 1 }).bandwidthPriority, 1)
+    assertEquals(applyOverride({}, { priorityOffset: PRIORITY_LAST }).bandwidthPriority, 0)
+    assertEquals([levelOf(0), levelOf(0.25), levelOf(4)], [PRIORITY_LAST, -2, 2])
+    // saved before offsets: an absolute priority becomes levels from the default
+    assertEquals(migrateOverrides({ a: { bandwidthPriority: 2, maxHz: 3 }, b: { bandwidthPriority: 1 } }), { a: { maxHz: 3, priorityOffset: 1 } })
+})
+
+Deno.test("streams the page sets no priority for: small state above the default, maps below", () => {
+    assertEquals(["sensor_msgs.JointState", "nav_msgs.Odometry", "geometry_msgs.PoseStamped", "nav_msgs.OccupancyGrid", "sensor_msgs.PointCloud2"].map(defaultBandwidthPriority), [4, 4, 4, 0.25, undefined])
 })
 
 Deno.test("overrides drop unset fields and empty streams; heat is against the busiest", () => {
     assertEquals(normalizeOverride({ paused: false, maxHz: undefined }), null)
     let overrides = patchOverrides({}, "k", { paused: true })
     assertEquals(overrides, { k: { paused: true } })
-    overrides = patchOverrides(overrides, "k", { bandwidthPriority: 2 })
-    assertEquals(overrides, { k: { paused: true, bandwidthPriority: 2 } })
-    overrides = patchOverrides(overrides, "k", { paused: undefined, bandwidthPriority: undefined })
+    overrides = patchOverrides(overrides, "k", { priorityOffset: 1 })
+    assertEquals(overrides, { k: { paused: true, priorityOffset: 1 } })
+    overrides = patchOverrides(overrides, "k", { paused: undefined, priorityOffset: 0 })
     assertEquals(overrides, {})
     assertEquals(patchOverrides({ k: { maxHz: 3 } }, "k", null), {})
     assertEquals([heatOf(0, 10), heatOf(10, 10), heatOf(2.5, 10), heatOf(20, 10), heatOf(5, 0)], [0, 1, 0.5, 1, 0])
@@ -83,10 +89,10 @@ Deno.test("a pause closes the gateway subscription and a resume opens it again, 
     const subscription = new LiveSubscription("dimos/lidar/sensor_msgs.PointCloud2", { delivery: "latest", maxHz: 1 }, () => {}, () => {}, () => client)
     subscription.open(client)
     assertEquals(opened.length, 1)
-    subscription.setOverride({ paused: true, bandwidthPriority: 2 })
+    subscription.setOverride({ paused: true, priorityOffset: 1 })
     await settle()
     assert(opened[0].closed && !subscription.isOpen)
-    subscription.setOverride({ bandwidthPriority: 2 })
+    subscription.setOverride({ priorityOffset: 1 })
     await settle()
     assertEquals(opened.length, 2)
     assertEquals(opened[1].options, { delivery: "latest", maxHz: 1, bandwidthPriority: 2 })
@@ -110,10 +116,10 @@ Deno.test("priority and tradeoff change in place; delivery resubscribes; a refus
     const { client, opened } = fakeClient()
     const subscription = new LiveSubscription("dimos/tf/tf2_msgs.TFMessage", { delivery: "reliable" }, () => {}, () => {}, () => client)
     subscription.open(client)
-    subscription.setOverride({ bandwidthPriority: 4, qualityToHzTradeoff: 0 })
+    subscription.setOverride({ priorityOffset: 2, qualityToHzTradeoff: 0 })
     await settle()
     assertEquals(opened[0].updates, [{ bandwidthPriority: 4, qualityToHzTradeoff: 0 }])
-    subscription.setOverride({ bandwidthPriority: 4, qualityToHzTradeoff: 0, delivery: "latest" })
+    subscription.setOverride({ priorityOffset: 2, qualityToHzTradeoff: 0, delivery: "latest" })
     await settle()
     assert(opened[0].closed)
     assertEquals(opened[1].options, { delivery: "latest", bandwidthPriority: 4, qualityToHzTradeoff: 0 })

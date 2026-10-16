@@ -92,6 +92,10 @@ export function CameraPanels({ app }: { app: ViewerApp }) {
     const layout = useStore(cameraLayout)
     const panels = cameraPanels(layout)
     const { topics } = useStore(app.connection.status)
+    // the main view's camera keeps the default bandwidth priority; the others yield before it
+    const stage = useWorkspaceApi().arrangement.stage
+    const mainKey = panels.find((panel) => cameraId(panel.id) === stage)?.key ?? null
+    useEffect(() => app.video.setMain(mainKey), [app, mainKey])
 
     // a camera panel with no topic yet takes the profile's preferred camera as soon as one is on the bus
     const imageKeys = topics.filter(isImage).map((topic) => topic.key).join("|")

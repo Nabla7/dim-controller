@@ -72,7 +72,7 @@ export function App() {
 
     return (
         <WorkspaceContext.Provider value={api}>
-            <div className={`app ${mobile ? "mobile" : "desktop"}`} onPointerDownCapture={takeKeyboard}>
+            <div className={`app ${mobile ? "mobile" : "desktop"} ${!mobile && api.view.hide.length === 2 ? "focused" : ""}`} onPointerDownCapture={takeKeyboard}>
                 {app && mobile && <PhoneCorners app={app} api={api} />}
                 <div className="workspace">
                     <ContainCrash what="3D view"><ScenePanel host={host} app={app} onTf={() => api.act("tf", "show")} /></ContainCrash>

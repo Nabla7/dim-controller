@@ -12,6 +12,7 @@ import { Icon } from "./icons.tsx"
 import { panelActions, type PanelAction } from "./commands.ts"
 import { useWorkspaceApi } from "./Workspace.tsx"
 import { arrange, clampFloat, FLOAT_MIN, movePanel, normalizeArrangement, homeOf } from "./workspace.ts"
+import { DRAG_SLOP } from "./panelDrag.ts"
 import { startPointerDrag } from "./panelDrag.ts"
 
 const ACTION_ICONS: Record<PanelAction, (state: { collapsed: boolean; floating: boolean; zone: string; home: string }) => string> = {
@@ -43,6 +44,7 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
 }) {
     const api = useWorkspaceApi()
     const element = useRef<HTMLDivElement>(null)
+    const pressedAt = useRef<{ x: number; y: number } | null>(null)
     // touch has no hover: a tap on the panel shows its in-panel buttons (.panel-chrome) for a few seconds
     const [touched, setTouched] = useState(false)
     const untouch = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -77,8 +79,19 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
         >
             {!headless && <header
                 className="panel-head"
-                onPointerDown={(event) => !fromControl(event.target) && element.current && api.startDrag(id, event, element.current)}
-                onDoubleClick={(event) => !fromControl(event.target) && (onStage ? api.toggleFocus() : api.act(id, "collapse"))}
+                onPointerDown={(event) => {
+                    pressedAt.current = { x: event.clientX, y: event.clientY }
+                    return !fromControl(event.target) && element.current && api.startDrag(id, event, element.current)
+                }}
+                // a click (not the end of a drag) folds or unfolds a rail or floating panel; the main view's double-click focuses
+                onClick={(event) => {
+                    const press = pressedAt.current
+                    const moved = !press || Math.hypot(event.clientX - press.x, event.clientY - press.y) >= DRAG_SLOP
+                    if (!onStage && !moved && !fromControl(event.target)) {
+                        api.act(id, "collapse")
+                    }
+                }}
+                onDoubleClick={(event) => onStage && !fromControl(event.target) && api.toggleFocus()}
                 title={api.mobile ? undefined : "Drag to move: into a rail, onto the main view's middle, or anywhere to float"}
             >
                 <span className="panel-title"><Icon name={icon} size={14} /><span>{title}</span></span>

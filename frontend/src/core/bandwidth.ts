@@ -1,5 +1,5 @@
 // The Network modal's "Bandwidth Consumers" controls: this viewer's override of any stream's subscription options, by
-// topic key: paused (no subscription at all), its bandwidth priority, and the advanced ones (quality ↔ Hz tradeoff,
+// topic key: paused (no subscription at all), its bandwidth priority (levels on top of the page's own), and the advanced ones (quality ↔ Hz tradeoff,
 // delivery, max Hz, max bitrate). core/transport.ts applies them under every subscription the page makes (the app's own
 // options, then these on top), in place where zenoh-gateway's Subscription.update can (>= 0.5.1), by resubscribing
 // where it can't (delivery). Per viewer like the camera and cloud presets (a phone on cellular and a desktop on the LAN
@@ -12,8 +12,11 @@ import { readLocal, writeLocal } from "./videoQuality.ts"
 export interface StreamOverride {
     /** force-unsubscribed: closed (or never opened) while set, opened again when cleared */
     paused?: boolean
-    /** zenoh-gateway's bandwidthPriority (default 1): a short link's cut is split in proportion to demand / priority; 0 gives up everything first */
-    bandwidthPriority?: number
+    /**
+     * Levels on top of the priority the page gives the stream (PRIORITY_TIERS): each +1 doubles zenoh-gateway's
+     * bandwidthPriority (a short link's cut is split by demand / priority), each −1 halves it; PRIORITY_LAST gives up first.
+     */
+    priorityOffset?: number
     /** 0 keeps quality and drops Hz, 1 keeps Hz and drops quality (gateway default 0.5) */
     qualityToHzTradeoff?: number
     /** "latest" (most recent: newest only, never resent) or "reliable" (every message, in order, never shrunk) */
@@ -24,33 +27,56 @@ export interface StreamOverride {
 }
 
 /** the overridable subscription options (all but paused) */
-export const OVERRIDE_OPTIONS = ["bandwidthPriority", "qualityToHzTradeoff", "delivery", "maxHz", "maxBitrate"] as const
+export const OVERRIDE_OPTIONS = ["qualityToHzTradeoff", "delivery", "maxHz", "maxBitrate"] as const
 
 /** what zenoh-gateway's Subscription.update changes in place (SubscriptionUpdate); anything else takes a new subscription */
 export const UPDATABLE_OPTIONS = new Set(["maxHz", "minQuality", "qualityToHzTradeoff", "bandwidthPriority", "maxBitrate", "minResolutionScale", "maxResolution", "playoutDelay", "encodeOptions"])
 
 /** the gateway's default when a subscription doesn't set one */
 export const DEFAULT_PRIORITY = 1
+
+/**
+ * This page's default bandwidthPriority tiers (levels +2 / 0 / −1 / −2): when the link is short, small control-critical
+ * state keeps flowing, what you're looking at comes next, then the other views, then bulk.
+ */
+export const PRIORITY_TIERS = { state: 4, viewed: 1, background: 0.5, bulk: 0.25 } as const
+
+/** small messages you can't control the robot without */
+const STATE_TYPES = /^(sensor_msgs\.(JointState|BatteryState|Imu)|nav_msgs\.(Odometry|Path)|geometry_msgs\.\w+|std_msgs\.\w+)$/
+
+/** The priority a subscription to a topic of `type` gets when its code sets none: small state high, maps bulk. */
+export function defaultBandwidthPriority(type: string): number | undefined {
+    if (STATE_TYPES.test(type)) {
+        return PRIORITY_TIERS.state
+    }
+    if (type === "nav_msgs.OccupancyGrid") {
+        return PRIORITY_TIERS.bulk
+    }
+    return undefined
+}
 export const DEFAULT_TRADEOFF = 0.5
 
-/** the − / + steps of bandwidthPriority: "last" yields everything before any other stream gives up anything, ×N takes 1/N of the cut */
-export const PRIORITY_STEPS = [0, 0.25, 0.5, 1, 2, 4, 8]
+/** the − / + range of an override's priorityOffset; PRIORITY_LAST yields everything before any other stream gives up anything */
+export const PRIORITY_LAST = -4
+export const PRIORITY_MAX = 3
 
-/** The priority as a level: 0 is the gateway's default, each + / − step doubles or halves the stream's share (log2 of bandwidthPriority). */
-export function priorityLabel(priority: number): string {
-    if (priority <= 0) {
+/** A bandwidthPriority as a level (log2): the default 1 is 0, 0 is PRIORITY_LAST. */
+export const levelOf = (priority: number) => (priority <= 0 ? PRIORITY_LAST : Math.round(Math.log2(priority)))
+
+/** A level as the Network tab shows it: 0, +1, −2 or "last". */
+export function priorityLabel(level: number): string {
+    if (level <= PRIORITY_LAST) {
         return "last"
     }
-    const level = Math.round(Math.log2(priority))
     return level > 0 ? `+${level}` : `${level}`
 }
 
-/** The next step up (+1) or down (−1) from `priority` (which may sit between steps, e.g. an app's 0.2); the end steps stay. */
-export function stepPriority(priority: number, direction: 1 | -1): number {
-    if (direction > 0) {
-        return PRIORITY_STEPS.find((step) => step > priority + 1e-9) ?? PRIORITY_STEPS.at(-1)!
-    }
-    return [...PRIORITY_STEPS].reverse().find((step) => step < priority - 1e-9) ?? PRIORITY_STEPS[0]
+/** One step up (+1) or down (−1) from an offset, kept within PRIORITY_LAST..PRIORITY_MAX. */
+export const stepPriority = (offset: number, direction: 1 | -1) => Math.max(PRIORITY_LAST, Math.min(PRIORITY_MAX, offset + direction))
+
+/** The bandwidthPriority a stream runs with: the page's, moved by the viewer's offset. */
+export function offsetPriority(base: number | undefined, offset: number): number {
+    return offset <= PRIORITY_LAST ? 0 : (base ?? DEFAULT_PRIORITY) * 2 ** offset
 }
 
 /** Whether options make a video channel (where delivery must stay "latest" and maxBitrate applies). */
@@ -75,6 +101,9 @@ export function applyOverride(base: SubscribeOptions, override: StreamOverride |
             continue
         }
         ;(options as Record<string, unknown>)[name] = value
+    }
+    if (override.priorityOffset !== undefined) {
+        options.bandwidthPriority = offsetPriority(base.bandwidthPriority, override.priorityOffset)
     }
     return options
 }
@@ -130,7 +159,7 @@ export function optionDiff(from: SubscribeOptions, to: SubscribeOptions): { upda
 export function normalizeOverride(override: StreamOverride): StreamOverride | null {
     const kept: StreamOverride = {}
     for (const [name, value] of Object.entries(override)) {
-        if (value !== undefined && value !== null && !(name === "paused" && value === false)) {
+        if (value !== undefined && value !== null && !(name === "paused" && value === false) && !(name === "priorityOffset" && value === 0)) {
             ;(kept as Record<string, unknown>)[name] = value
         }
     }
@@ -160,7 +189,20 @@ export function heatOf(bytesPerSec: number, busiestBytesPerSec: number): number 
 const STORAGE_KEY = "lv.bandwidth"
 
 /** topic key → this viewer's override */
-export const bandwidthOverrides = new Store<Record<string, StreamOverride>>(readLocal<Record<string, StreamOverride>>(STORAGE_KEY, {}))
+export const bandwidthOverrides = new Store<Record<string, StreamOverride>>(migrateOverrides(readLocal<Record<string, unknown>>(STORAGE_KEY, {})))
+
+/** Saved before offsets: an absolute bandwidthPriority, taken as levels from the default. */
+export function migrateOverrides(saved: Record<string, unknown>): Record<string, StreamOverride> {
+    const overrides: Record<string, StreamOverride> = {}
+    for (const [key, value] of Object.entries(saved ?? {})) {
+        const { bandwidthPriority, ...rest } = (value ?? {}) as StreamOverride & { bandwidthPriority?: number }
+        const migrated = normalizeOverride(typeof bandwidthPriority === "number" && rest.priorityOffset === undefined ? { ...rest, priorityOffset: levelOf(bandwidthPriority) } : rest)
+        if (migrated) {
+            overrides[key] = migrated
+        }
+    }
+    return overrides
+}
 
 export function setOverride(key: string, patch: Partial<StreamOverride> | null) {
     bandwidthOverrides.set(patchOverrides(bandwidthOverrides.get(), key, patch))

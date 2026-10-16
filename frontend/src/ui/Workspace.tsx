@@ -69,7 +69,8 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
         }
     }, [arrangement, saved])
     const view = useStore(workspaceView)
-    const frame = useFrame(mobile)
+    // focus (desktop): the main view runs to the window's true bottom, under the bar, which goes see-through over it
+    const frame = useFrame(mobile, !mobile && view.hide.length === 2)
     const layout = layoutWorkspace(arrangement, frame, view)
 
     const normalized = (change: (current: Arrangement) => Arrangement) => arrange((current) => change(normalizeArrangement(current, ids)))
@@ -147,7 +148,7 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
 }
 
 /** The window as the workspace sees it: above the bar (a phone: above the thumb sticks). */
-function useFrame(mobile: boolean): Frame {
+function useFrame(mobile: boolean, underBar: boolean): Frame {
     const [, setTick] = useState(0)
     useEffect(() => {
         const again = () => setTick((tick) => tick + 1)
@@ -183,7 +184,7 @@ function useFrame(mobile: boolean): Frame {
     // desktop: above the action dock; a phone: above the thumb sticks, so the main view is never under a thumb, except
     // on its side, where the sticks lie over a full-screen main view (a game pad's look)
     const underSticks = mobile && matchMedia(PHONE_LANDSCAPE).matches
-    const dock = underSticks ? undefined : document.querySelector(mobile ? ".drive-hud.mobile" : ".action-dock")?.getBoundingClientRect().top
+    const dock = underSticks || underBar ? undefined : document.querySelector(mobile ? ".drive-hud.mobile" : ".action-dock")?.getBoundingClientRect().top
     return {
         width: innerWidth,
         height,

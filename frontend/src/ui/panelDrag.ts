@@ -6,7 +6,7 @@ import type { CSSProperties } from "react"
 import type { DropTarget, Rect } from "./workspace.ts"
 
 /** a press has to move this far before it's a drag (a click or double-click stays one) */
-const DRAG_SLOP = 5
+export const DRAG_SLOP = 5
 
 export interface DragPlan {
     /** the box it has while dragged */

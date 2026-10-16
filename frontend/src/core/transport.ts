@@ -6,7 +6,7 @@ import { getZenoh } from "dimos-react/dim-app/zenoh.js"
 import { Store } from "./store.ts"
 import { NetHistory, wireCounts, type WireCounts } from "./netHistory.ts"
 import { isLeasedKey, isLeaseRejection, LeaseKeeper, type LeaseClient } from "./lease.ts"
-import { applyOverride, bandwidthOverrides, isVideoOptions, optionDiff, type StreamOverride, withChanges } from "./bandwidth.ts"
+import { applyOverride, bandwidthOverrides, defaultBandwidthPriority, isVideoOptions, optionDiff, type StreamOverride, withChanges } from "./bandwidth.ts"
 
 export { Priority }
 export type { Message, Publisher, SubscribeOptions, SubscriptionUpdate }
@@ -268,6 +268,10 @@ export class Connection {
      * applies on top of `options`, now and whenever it changes.
      */
     subscribe(key: string, options: SubscribeOptions, onMessage: (message: Message) => void): LiveHandle {
+        const tier = options.bandwidthPriority === undefined ? defaultBandwidthPriority(parseKey(key)?.type ?? "") : undefined
+        if (tier !== undefined) {
+            options = { ...options, bandwidthPriority: tier }
+        }
         const subscription: LiveSubscription = new LiveSubscription(key, options, onMessage, (reason) => this.#rejected(subscription, reason), () => this.#openable(key), bandwidthOverrides.get()[key])
         this.#subscriptions.add(subscription)
         const client = this.#openable(key)

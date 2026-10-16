@@ -2,7 +2,8 @@
 // panel shows it, a small slow preview while only the 3D view does).
 // Color images arrive as the bridge's H.264 track, sized and paced by the viewer's latency/quality preset (core/videoQuality.ts); depth arrives lossless as fields (16UC1 mm / 32FC1 m).
 import { Store } from "./store.ts"
-import type { Connection, LiveHandle, SubscribeOptions, SubscriptionUpdate, Topic } from "./transport.ts"
+import { PRIORITY_TIERS } from "./bandwidth.ts"
+import { type Connection, type LiveHandle, parseKey, type SubscribeOptions, type SubscriptionUpdate, type Topic } from "./transport.ts"
 import { loadQuality, presetFor, saveQuality, type VideoQuality } from "./videoQuality.ts"
 
 export interface VideoState {
@@ -49,13 +50,16 @@ export const PREVIEW_OPTIONS: SubscribeOptions = { maxResolution: [320, 240], ma
 export const DEPTH_OPTIONS: SubscribeOptions = { maxHz: 15 }
 export const DEPTH_PREVIEW_OPTIONS: SubscribeOptions = { maxHz: 3 }
 
-/** The options a stream runs with for its users now: any panel on screen → the full stream, else the 3D preview. */
-export function streamOptions(depth: boolean, uses: Record<StreamUse, number>, quality: VideoQuality): SubscribeOptions {
+/**
+ * The options a stream runs with for its users now: any panel on screen → the full stream, else the 3D preview. The
+ * main view's camera keeps the default bandwidth priority, other cameras and depth yield before it (core/bandwidth.ts).
+ */
+export function streamOptions(depth: boolean, uses: Record<StreamUse, number>, quality: VideoQuality, main = false): SubscribeOptions {
     const viewed = uses.view > 0
     if (depth) {
-        return viewed ? DEPTH_OPTIONS : DEPTH_PREVIEW_OPTIONS
+        return { ...(viewed ? DEPTH_OPTIONS : DEPTH_PREVIEW_OPTIONS), bandwidthPriority: PRIORITY_TIERS.bulk }
     }
-    return viewed ? presetFor(quality).options : PREVIEW_OPTIONS
+    return { ...(viewed ? presetFor(quality).options : PREVIEW_OPTIONS), bandwidthPriority: main ? PRIORITY_TIERS.viewed : PRIORITY_TIERS.background }
 }
 
 /** What `Subscription.update` needs to go from one set of options to another (null for what only `from` set). */
@@ -121,7 +125,25 @@ export class VideoSources {
     }
 
     #wanted(topic: Topic, source: Source): SubscribeOptions {
-        return streamOptions(isDepthTopic(topic), source.uses, source.quality.get().quality)
+        return streamOptions(isDepthTopic(topic), source.uses, source.quality.get().quality, topic.key === this.#main)
+    }
+
+    #main: string | null = null
+
+    /** The camera in the main view (its key, or null): it keeps the default priority, the others yield first. */
+    setMain(key: string | null) {
+        if (key === this.#main) {
+            return
+        }
+        const before = this.#main
+        this.#main = key
+        for (const changed of [before, key]) {
+            const source = changed === null ? undefined : this.#sources.get(changed)
+            const topic = changed === null ? null : parseKey(changed)
+            if (source && topic) {
+                this.#retune(topic, source)
+            }
+        }
     }
 
     /** Subscribes with the source's options: the color track, or the lossless depth encoding. */
