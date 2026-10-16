@@ -193,7 +193,10 @@ export class Manipulation {
             if (answer.available) {
                 const groups = (answer.groups as PlanningGroup[]) ?? []
                 const hadHook = this.state.get().hook !== null
-                const target = this.#uncommitted ? this.state.get().target : (answer.target as ManipulationTarget | null) ?? null
+                const known = new Set(groups.map((group) => group.id))
+                const served = (answer.target as ManipulationTarget | null) ?? null
+                // a target left from another blueprint's planner (its groups aren't this one's) is no target
+                const target = this.#uncommitted ? this.state.get().target : served && served.groups.every((group) => known.has(group)) ? served : null
                 const changed = JSON.stringify(target) !== JSON.stringify(this.state.get().target)
                 this.state.update({
                     available: true,
@@ -203,7 +206,7 @@ export class Manipulation {
                     hook: (answer.hook as HookInfo | null) ?? null,
                     target,
                     plan: (answer.plan as ManipulationPlan | null) ?? null,
-                    ...(this.state.get().selected.length ? {} : { selected: defaultSelection(groups) }),
+                    ...(this.state.get().selected.length && this.state.get().selected.every((group) => known.has(group)) ? {} : { selected: defaultSelection(groups) }),
                 })
                 if (target && target.groups.length && !this.#uncommitted) {
                     this.state.update({ selected: target.groups })

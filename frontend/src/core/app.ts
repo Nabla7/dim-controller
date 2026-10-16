@@ -22,7 +22,7 @@ import { AgentLink } from "./agent.ts"
 import { LocationLabels } from "./labels.ts"
 import { robotPose } from "./robot.ts"
 import { disposeTree, robotModel } from "dimos-react/three"
-import { RunWatch } from "./runs.ts"
+import { plannerRunning, RunWatch } from "./runs.ts"
 import { persistentStore, Store } from "./store.ts"
 import { profileFor } from "../profile/index.ts"
 import type { RobotProfile, RobotType } from "../profile/types.ts"
@@ -110,7 +110,7 @@ export class ViewerApp {
         leasePublish()
         this.drive.state.subscribe(leasePublish)
         this.arm = new ArmControl(this.connection, this.drive, profileFor("arm").arm!)
-        this.manipView = new ArmManipView(this.viewer, this.tf, this.arm, this.manipulation, urdfSource(this.connection), () => this.robot.get().type === "arm")
+        this.manipView = new ArmManipView(this.viewer, this.tf, this.arm, this.manipulation, urdfSource(this.connection), () => this.robot.get().type === "arm" || plannerRunning(this.runs.state.get()))
         feedTf(this.connection, this.tf, this.viewer)
         feedBattery(this.connection, () => this.profile.name)
         this.connection.status.subscribe(() => this.#updateDriveCandidates())

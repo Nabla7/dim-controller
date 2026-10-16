@@ -7,6 +7,7 @@ import { RobotIcon } from "./RobotIcon.tsx"
 import { armShading } from "./armShading.ts"
 import { ArmPanel } from "./ArmPanel.tsx"
 import { ManipPanel } from "./ManipPanel.tsx"
+import { plannerRunning } from "../core/runs.ts"
 import { Field, Heading, NumberInput, Segmented, Select, Slider, Toggle } from "dimos-react"
 import { gamepadSettings } from "../core/gamepad.ts"
 import { JOY_HZ, JOY_TOPIC, JOY_TYPE, joySettings } from "../core/joy.ts"
@@ -25,6 +26,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
     const view = useStore(app.settings)
     const render = useStore(rendering)
     const robot = useStore(app.robot)
+    const planner = plannerRunning(useStore(app.runs.state))
     const current = profiles.find((profile) => profile.type === robot.type)
     // the TF frames to offer for following (the map's and the 3D view's), refreshed while shown
     const frames = useTfFrames(app)
@@ -60,6 +62,13 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     </>
                 )
                 : (
+                    <>
+                    {planner && (
+                        <section className="settings-section" data-section="manipulation">
+                            <Heading level={3}>Plan and move (arms)</Heading>
+                            <ManipPanel app={app} />
+                        </section>
+                    )}
                     <section className="settings-section" data-section="drive">
                         <Heading level={3}>Drive</Heading>
                         <DrivePanel app={app} />
@@ -69,6 +78,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                         <GamepadSettingsFields />
                         <JoySettingsFields />
                     </section>
+                    </>
                 )}
             <section className="settings-section" data-section="map">
                 <Heading level={3}>Map</Heading>

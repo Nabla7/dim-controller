@@ -107,3 +107,9 @@ export class RunWatch {
         }
     }
 }
+
+/** A running blueprint has dimos's ManipulationModule (the arm planner viser sits on): the controller's Plan and move
+ * shows whatever the controller format, since a robot that drives can have arms too (an R1 Pro's nav). */
+export function plannerRunning(state: RunState): boolean {
+    return Object.values(state.blueprints).some((modules) => (modules ?? []).some((module) => module.name?.toLowerCase() === "manipulationmodule"))
+}
