@@ -260,7 +260,7 @@ function StreamSettings({ streamKey, consumer, override, onClose }: { streamKey:
 }
 
 /** The Bandwidth Consumers table: every stream (paused ones at 0), ordered without jumping; the page's own subscriptions have controls, the rest (overhead, heartbeat, control, other apps') are shown only. */
-function ConsumersTable({ table, slots, consumers }: { table: StreamShare[]; slots: Map<string, number>; consumers: Record<string, Consumer> }) {
+function ConsumersTable({ table, slots, consumers, drops }: { table: StreamShare[]; slots: Map<string, number>; consumers: Record<string, Consumer>; drops: Record<string, { perSecond: number; total: number }> }) {
     const overrides = useStore(bandwidthOverrides)
     const [editing, setEditing] = useState<string | null>(null)
     const busiest = Math.max(0, ...table.map((row) => row.bytesPerSec))
@@ -269,7 +269,7 @@ function ConsumersTable({ table, slots, consumers }: { table: StreamShare[]; slo
             <h4>Bandwidth Consumers <span className="dim">· {TABLE_AVERAGE_SAMPLES} s average, every {TABLE_REFRESH_MS / 1000} s</span></h4>
             <div className="net-table-scroll">
                 <table className="net-streams">
-                    <thead><tr><th className="net-col-on" title="off: unsubscribed until switched back on">on</th><th>stream</th><th className="net-col-rate" title="bar: how much it uses, against the busiest">Mbps</th><th className="net-col-priority" title="bandwidth priority when the link is short">priority</th><th className="net-col-gear" /></tr></thead>
+                    <thead><tr><th className="net-col-on" title="off: unsubscribed until switched back on">on</th><th>stream</th><th className="net-col-rate" title="bar: how much it uses, against the busiest">Mbps</th><th className="net-col-drops" title="messages the gateway dropped for this stream in the last second because the link couldn't keep up (queue full or too old); not its own max Hz">dropped/s</th><th className="net-col-priority" title="bandwidth priority when the link is short">priority</th><th className="net-col-gear" /></tr></thead>
                     <tbody>
                         {table.map((row) => {
                             const consumer = consumers[row.key]
@@ -291,12 +291,13 @@ function ConsumersTable({ table, slots, consumers }: { table: StreamShare[]; slo
                                         <span className="net-heat" style={{ width: `${heat * 100}%`, background: heatColor(heat) }} />
                                         <span className="net-rate" title={paused ? "paused: not subscribed" : `${Math.round(row.share * 100)}% of the link`}>{paused ? "0.00" : mbps(row.bytesPerSec).toFixed(2)}</span>
                                     </td>
+                                    <td className={`net-col-drops ${(drops[row.key]?.perSecond ?? 0) > 0 ? "dropping" : ""}`} title={drops[row.key] ? `${drops[row.key].total} dropped since subscribing` : "no gateway counts for it"}>{drops[row.key]?.perSecond ?? "·"}</td>
                                     <td className="net-col-priority">{controllable ? <PriorityStepper streamKey={row.key} offset={offset} disabled={reliable} /> : <span className="net-priority" title="not a subscription this page makes: zenoh-gateway's default priority"><span className="net-step-spacer" /><span className="net-priority-value" data-testid="net-priority">{priorityLabel(0)}</span><span className="net-step-spacer" /></span>}</td>
                                     <td className="net-col-gear">{controllable && <button type="button" className={`net-icon-button ${tags.includes("tuned") ? "set" : ""}`} aria-label={`${streamName(row.key)} settings`} onClick={() => setEditing(row.key)}><Icon name="settings" size={15} /></button>}</td>
                                 </tr>
                             )
                         })}
-                        {!table.length && <tr className="net-empty"><td colSpan={5}>nothing received in the last minute</td></tr>}
+                        {!table.length && <tr className="net-empty"><td colSpan={6}>nothing received in the last minute</td></tr>}
                     </tbody>
                 </table>
             </div>
@@ -313,6 +314,7 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
     const slots = useRef(new Map<string, number>()).current
     const [hover, setHover] = useState<Hover | null>(null)
     const consumers = useStore(app.connection.consumers)
+    const drops = useStore(app.connection.drops)
     // the page's subscriptions and every paused stream are listed even without traffic
     const listed = () => [...new Set([...Object.keys(app.connection.consumers.get()), ...Object.entries(bandwidthOverrides.get()).filter(([, override]) => override.paused).map(([key]) => key)])]
     const [table, setTable] = useState(() => streamTable(history.samples.toArray(), [], TABLE_AVERAGE_SAMPLES, ORDER_SAMPLES, listed()))
@@ -409,7 +411,7 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
                     }}
                 />
             </div>
-            <ConsumersTable table={table} slots={slots} consumers={consumers} />
+            <ConsumersTable table={table} slots={slots} consumers={consumers} drops={drops} />
             <details className="net-about">
                 <summary>About these numbers</summary>
                 <p>

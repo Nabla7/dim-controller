@@ -603,6 +603,8 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .net-streams .net-col-rate { width: 84px; position: relative; text-align: right; padding-right: 6px; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .net-streams th.net-col-rate { text-align: right; }
 .net-streams .net-col-priority { width: 112px; text-align: center; }
+.net-streams .net-col-drops { width: 64px; text-align: right; font: 11px var(--mono); color: var(--muted-fg); }
+.net-streams .net-col-drops.dropping { color: var(--warn); font-weight: 600; }
 .net-streams .net-col-gear { width: 40px; text-align: center; padding-left: 2px; }
 .net-streams tr.paused td { color: var(--muted-fg); }
 .net-streams tr.paused .net-stream-name { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted-fg) 60%, transparent); }

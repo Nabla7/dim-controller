@@ -120,6 +120,8 @@ export class Connection {
     #takingBack = false
     /** topic key → the page's subscriptions on it (core/bandwidth.ts's overrides apply under each) */
     readonly consumers = new Store<Record<string, Consumer>>({})
+    /** topic key → messages the gateway dropped for the link in the last second (queue full, too old, part-sent), and since subscribing */
+    readonly drops = new Store<Record<string, { perSecond: number; total: number }>>({})
 
     /**
      * Makes the page's shared connection (the first getZenoh() call: its options win), with the heartbeat drive needs;
@@ -196,6 +198,7 @@ export class Connection {
             lastWire = bytes === null ? null : { bytes, at: now }
             this.status.update({ droppedPerSecond: dropped - this.#lastDropped, rttMs: client.rttMs ?? null, throughputBytesPerSec: wire ?? throughputOf(client.gatewayStats) })
             this.#lastDropped = dropped
+            this.#sampleDrops(client)
             this.network.sample(now, counts, this.latencyMs(now))
         }, 1000)
         this.#lastRtt = { value: client.rttMs ?? null, at: performance.now() }
@@ -287,6 +290,23 @@ export class Connection {
         // the app's own option changes show in Bandwidth Consumers as its defaults
         const update = (changes: SubscriptionUpdate) => subscription.update(changes).finally(() => this.#refreshConsumers())
         return Object.assign(unsubscribe, { update })
+    }
+
+    /** Each stream's link drops from the gateway's own counts: not its maxHz thinning, which is asked for. */
+    #sampleDrops(client: ZenohGateway) {
+        const previous = this.drops.get()
+        const next: Record<string, { perSecond: number; total: number }> = {}
+        for (const [key, stats] of Object.entries(client.stats as Record<string, { gateway?: { stats?: Record<string, unknown> } | null }>)) {
+            const counts = stats.gateway?.stats
+            if (!counts) {
+                continue
+            }
+            const total = ["droppedQueue", "droppedAge", "abandonedPartial"].reduce((sum, name) => sum + Number(counts[name] ?? 0), 0)
+            next[key] = { total, perSecond: Math.max(0, total - (previous[key]?.total ?? total)) }
+        }
+        if (JSON.stringify(next) !== JSON.stringify(previous)) {
+            this.drops.set(next)
+        }
     }
 
     /** A subscription the gateway ended or refused: another viewer's lease means that viewer took over. */
