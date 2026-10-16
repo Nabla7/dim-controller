@@ -85,7 +85,7 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
             <p className="hint" data-testid="manip-hook">
                 {hook
                     ? <>Planner's process (pid {hook.pid}): model, feasibility, obstacles and grasps from dim-controller's hook{hook.visualization ? `, beside ${hook.visualization}` : ""}.</>
-                    : <>No dim-controller hook in the planner's process: no 3D arm, feasibility, obstacle shapes or grasps. <HookInstall app={app} /></>}
+                    : <>No dim-controller hook in the planner's process: {view.model ? "no live collision check, obstacle shapes or grasps" : "no 3D arm, live collision check, obstacle shapes or grasps"}. <HookInstall app={app} /></>}
             </p>
             {view.model ? <p className="hint" data-testid="manip-model">3D arm: {view.model}</p> : view.problem && <p className="hint">3D arm: {view.problem}</p>}
 
