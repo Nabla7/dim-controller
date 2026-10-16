@@ -1,6 +1,6 @@
-// The arm's planner panel, viser's Manipulation Panel in its order: status, scene grid, robot display, planning-group
-// toggles, target (preset, feasibility, the gizmo: arrows move, arcs rotate), actions (next plan speed, planning mode, Preview / Execute, each planning first when needed /
-// Cancel / Clear plan), joint control, and the scene's obstacle and grasp-proposal toggles. Every action is an
+// The arm's planner panel. At the top: Preview / Execute (each planning first when needed) / Cancel / Clear plan. Then
+// viser's Manipulation Panel in its order: status, scene grid, robot display, planning-group
+// toggles, target (preset, feasibility, the gizmo: arrows move, arcs rotate), planning (next plan speed, planning mode), joint control, and the scene's obstacle and grasp-proposal toggles. Every action is an
 // api/manipulation endpoint (core/manipulation.ts); the planner is dimos's ManipulationModule, and what the RPCs
 // don't give (the model, feasibility, obstacle shapes, grasps) comes from dim-controller's hook in its process.
 import { useEffect } from "react"
@@ -86,6 +86,14 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
 
     return (
         <div className="manip-panel" data-testid="manip-panel">
+            <div className="button-row manip-actions" data-testid="manip-actions">
+                <Button size="sm" title="plans first if the target has no plan yet" disabled={!manipulation.canRun() || busy} loading={state.busy === "plan"} onClick={() => void manipulation.preview()} data-testid="manip-preview">Preview</Button>
+                <Button size="sm" variant="primary" title="plans first if the target has no plan yet" disabled={!manipulation.canRun()} loading={state.busy === "execute"} onClick={() => void manipulation.execute()} data-testid="manip-execute">Execute</Button>
+                {manipulation.canCancel() && <Button size="sm" variant="danger" onClick={() => manipulation.cancel()} data-testid="manip-cancel">Cancel</Button>}
+                <Button size="sm" variant="ghost" disabled={!state.plan} onClick={() => manipulation.clear()} data-testid="manip-clear">Clear plan</Button>
+            </div>
+            {state.plan && <p className="hint" data-testid="manip-plan-info">Plan {state.plan.id.slice(0, 8)} ({state.plan.mode}): {state.plan.duration.toFixed(2)} s, {state.plan.positions.length} points{state.preview ? " · previewing" : ""}</p>}
+
             <Heading level={3}>Status</Heading>
             <div className="manip-status" data-testid="manip-status">
                 <span className="hint">State</span> <Badge tone={statusTone(planner?.operation_status.name)} dot data-testid="manip-state">{moduleState}</Badge>
@@ -146,7 +154,7 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
                 <Button size="sm" variant="ghost" disabled={!target} onClick={() => manipulation.setTarget(null)}>Clear target</Button>
             </div>
 
-            <Heading level={3}>Actions</Heading>
+            <Heading level={3}>Planning</Heading>
             <Field inline label="Next plan speed">
                 <Slider min={0.05} max={1} step={0.05} value={options.speed} disabled={busy} format={(speed: number) => `${Math.round(speed * 100)}%`} onChange={(speed: number) => manipulation.options.update({ speed })} />
             </Field>
@@ -158,14 +166,6 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
                     onChange={(mode: PlanningMode) => manipulation.options.update({ mode })}
                 />
             </Field>
-            <div className="button-row manip-actions" data-testid="manip-actions">
-                <Button size="sm" title="plans first if the target has no plan yet" disabled={!manipulation.canRun() || busy} loading={state.busy === "plan"} onClick={() => void manipulation.preview()} data-testid="manip-preview">Preview</Button>
-                <Button size="sm" variant="primary" title="plans first if the target has no plan yet" disabled={!manipulation.canRun()} loading={state.busy === "execute"} onClick={() => void manipulation.execute()} data-testid="manip-execute">Execute</Button>
-                {manipulation.canCancel() && <Button size="sm" variant="danger" onClick={() => manipulation.cancel()} data-testid="manip-cancel">Cancel</Button>}
-                <Button size="sm" variant="ghost" disabled={!state.plan} onClick={() => manipulation.clear()} data-testid="manip-clear">Clear plan</Button>
-            </div>
-            {state.plan && <p className="hint" data-testid="manip-plan-info">Plan {state.plan.id.slice(0, 8)} ({state.plan.mode}): {state.plan.duration.toFixed(2)} s, {state.plan.positions.length} points{state.preview ? " · previewing" : ""}</p>}
-
             <details className="manip-joint-control" data-testid="manip-joint-control">
                 <summary>Joint Control</summary>
                 <div className="manip-joints" data-testid="manip-joints">
