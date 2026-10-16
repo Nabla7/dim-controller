@@ -410,7 +410,8 @@ export class ArmManipView {
             }
             const points: THREE.Vector3[] = []
             for (const row of plan.positions) {
-                const pose = model.kinematics.linkPoses({ ...measured, ...Object.fromEntries(plan.jointNames.map((name, index) => [name, row[index]])) }).get(tip)
+                // through #withJoints, as the preview ghost: a planner's names ("r1pro/left_arm_joint1") are the URDF's short ones
+                const pose = model.kinematics.linkPoses(this.#withJoints(measured, Object.fromEntries(plan.jointNames.map((name, index) => [name, row[index]])))).get(tip)
                 if (pose) {
                     points.push(new THREE.Vector3().setFromMatrixPosition(pose))
                 }
