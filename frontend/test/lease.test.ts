@@ -1,7 +1,7 @@
 // The page's lease (core/lease.ts): taken before the heavy streams, taken again after the link drops it, renewed with the
 // drive topics, and "takenOver" (with a way back) when a newer viewer takes it.
 import { assert, assertEquals } from "jsr:@std/assert@1"
-import { afterLost, isLeasedKey, isLeaseRejection, LEASE_GROUP, LEASE_TIMEOUT_MS, LEASED_SUBSCRIBE_KEYS, LeaseKeeper, supportsLeaseTimeout, type LeaseClient } from "../src/core/lease.ts"
+import { afterLost, isLeasedKey, isLeaseRejection, LEASE_GROUP, LEASE_TIMEOUT_MS, LEASED_SUBSCRIBE_KEYS, LeaseKeeper, type LeaseClient } from "../src/core/lease.ts"
 import { leaseChip, TAKE_BACK_TEXT, TAKEN_OVER_TEXT } from "../src/ui/barStatus.ts"
 
 type Asked = Parameters<LeaseClient["lease"]>[0]
@@ -64,8 +64,8 @@ Deno.test("takes the lease with takeover allowed, the drive keys and the leased 
     const client = fakeClient()
     keeper.setPublish(["dimos/cmd_vel/geometry_msgs.Twist", "dimos/joystick/sensor_msgs.Joy"])
     assert(await keeper.take(client))
-    assertEquals(keeper.state.get(), { status: "held", reason: null })
-    assertEquals(client.asked[0], { group: LEASE_GROUP, publish: ["dimos/cmd_vel/geometry_msgs.Twist", "dimos/joystick/sensor_msgs.Joy"], subscribe: LEASED_SUBSCRIBE_KEYS, allowTakeover: true })
+    assertEquals(keeper.state.get(), { status: "held", reason: null, timeoutMs: null })
+    assertEquals(client.asked[0], { group: LEASE_GROUP, publish: ["dimos/cmd_vel/geometry_msgs.Twist", "dimos/joystick/sensor_msgs.Joy"], subscribe: LEASED_SUBSCRIBE_KEYS, allowTakeover: true, timeoutMs: LEASE_TIMEOUT_MS })
     keeper.setPublish(["dimos/joystick/sensor_msgs.Joy", "dimos/cmd_vel/geometry_msgs.Twist"])
     assertEquals(client.asked.length, 1, "same keys in another order: no renewal")
     keeper.setPublish(["dimos/tele_cmd_vel/geometry_msgs.Twist"])
@@ -150,20 +150,16 @@ Deno.test("a lapsed lease isn't taken again when a viewer that leased meanwhile 
     assertEquals(keeper.state.get(), { status: "takenOver", reason: rejected })
 })
 
-Deno.test("timeoutMs (zenoh-gateway 0.5.17) only to a client that sends it", async () => {
+Deno.test("timeoutMs 5000 always asked; a 0.5.17 gateway echoes it, an older one leaves the lease on the connection's deadline", async () => {
     const old = fakeClient()
-    assert(!supportsLeaseTimeout(old))
-    await new LeaseKeeper().take(old)
-    assertEquals("timeoutMs" in old.asked[0], false)
+    const oldKeeper = new LeaseKeeper()
+    await oldKeeper.take(old)
+    assertEquals(old.asked[0].timeoutMs, LEASE_TIMEOUT_MS)
+    assertEquals(oldKeeper.state.get(), { status: "held", reason: null, timeoutMs: null })
     const newer = fakeClient()
-    const asked: Asked[] = []
-    // a 0.5.17 client's lease() names timeoutMs in its request
-    newer.lease = function (options: Asked & { timeoutMs?: number }) {
-        const request = { op: "lease", ...options, timeoutMs: options.timeoutMs }
-        asked.push(request)
-        return Promise.resolve({ onLost: () => {} })
-    } as typeof newer.lease
-    assert(supportsLeaseTimeout(newer))
-    await new LeaseKeeper().take(newer)
-    assertEquals(asked[0].timeoutMs, LEASE_TIMEOUT_MS)
+    const plain = newer.lease
+    newer.lease = (options: Asked) => plain(options).then((lease) => ({ ...lease, timeoutMs: options.timeoutMs }))
+    const keeper = new LeaseKeeper()
+    await keeper.take(newer)
+    assertEquals(keeper.state.get(), { status: "held", reason: null, timeoutMs: LEASE_TIMEOUT_MS })
 })

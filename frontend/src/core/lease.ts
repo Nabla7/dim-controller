@@ -17,10 +17,8 @@ const RETRY_MS = 2000
  */
 export const LEASE_TIMEOUT_MS = 5000
 
-/** Whether the client sends a per-lease `timeoutMs` (0.5.17+); an older one would drop it silently. */
-export function supportsLeaseTimeout(client: { lease: unknown }): boolean {
-    return typeof client.lease === "function" && /\btimeoutMs\b/.test(String(client.lease))
-}
+/** Said once when the gateway doesn't apply `timeoutMs` (before 0.5.17: the lease ends with the connection's deadline). */
+export const NO_LEASE_TIMEOUT_NOTE = "lease follows the 0.4 s heartbeat on this gateway (zenoh-gateway < 0.5.17), so a wifi stall can lapse it"
 
 /** Whether a subscription key is one the lease covers (a dimos key of a leased type). */
 export function isLeasedKey(key: string): boolean {
@@ -52,11 +50,15 @@ export interface LeaseState {
     status: LeaseStatus
     /** why it was taken over, or why the gateway refused it */
     reason: string | null
+    /** the heartbeat silence the gateway lets the lease outlive (ms; 0.5.17+ echoes it), null: the connection's deadline */
+    timeoutMs?: number | null
 }
 
 /** The part of zenoh-gateway's Lease this uses. */
 export interface LeaseHandle {
     onLost(listener: (reason: string) => void): unknown
+    /** zenoh-gateway 0.5.17+: the timeoutMs it applies; absent or null on an older gateway */
+    timeoutMs?: number | null
 }
 
 /** The part of the zenoh-gateway client this uses. */
@@ -78,6 +80,7 @@ export class LeaseKeeper {
     /** a take asked for while one was in flight (new drive keys, a drop): runs once that one ends */
     #again = false
     #retry: ReturnType<typeof setTimeout> | undefined
+    #notedNoTimeout = false
 
     /**
      * `rejection()`: why one of our leased subscriptions was ended or refused for another client's lease, else null.
@@ -127,11 +130,16 @@ export class LeaseKeeper {
 
     async #takeOnce(client: LeaseClient): Promise<boolean> {
         try {
-            const timeout = supportsLeaseTimeout(client) ? { timeoutMs: LEASE_TIMEOUT_MS } : {}
-            const handle = await client.lease({ group: LEASE_GROUP, publish: this.#publish, subscribe: LEASED_SUBSCRIBE_KEYS, allowTakeover: true, ...timeout })
+            // an older client or gateway ignores timeoutMs; 0.5.17 echoes it on the lease when it applies it
+            const handle = await client.lease({ group: LEASE_GROUP, publish: this.#publish, subscribe: LEASED_SUBSCRIBE_KEYS, allowTakeover: true, timeoutMs: LEASE_TIMEOUT_MS })
             this.#handle = handle
             handle.onLost((reason) => this.#lost(handle, reason))
-            this.state.set({ status: "held", reason: null })
+            const timeoutMs = typeof handle.timeoutMs === "number" ? handle.timeoutMs : null
+            if (timeoutMs === null && !this.#notedNoTimeout) {
+                this.#notedNoTimeout = true
+                console.info(`[lease] ${NO_LEASE_TIMEOUT_NOTE}`)
+            }
+            this.state.set({ status: "held", reason: null, timeoutMs })
             return true
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error)
