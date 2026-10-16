@@ -24,7 +24,9 @@ import { InfoPanels } from "./ui/InfoPanels.tsx"
 import { EmptyLayer, useOnboarding } from "./ui/Onboarding.tsx"
 import { Overlays } from "./ui/Overlays.tsx"
 import { rectStyle, useWorkspace, type WorkspaceApi, WorkspaceContext, WorkspaceSurface } from "./ui/Workspace.tsx"
-import { cameraId, FIXED_PANELS } from "./ui/workspace.ts"
+import { ARMS_PANEL, cameraId, FIXED_PANELS } from "./ui/workspace.ts"
+import { armsPanelShown } from "./ui/ArmsPanel.tsx"
+import type { RunState } from "./core/runs.ts"
 import { openOverlay } from "./ui/overlay.ts"
 import { ContainCrash } from "./ui/Unavailable.tsx"
 
@@ -55,10 +57,13 @@ export function App() {
     }, [])
 
     const cameras = useStore(cameraLayout)
-    const ids = [...cameras.panels.map((panel) => cameraId(panel.id)), ...FIXED_PANELS]
+    const robot = useStore(app?.robot ?? placeholderRobot)
+    const runs = useStore(app?.runs.state ?? placeholderRuns)
+    const manipulation = useStore(app?.manipulation.state ?? placeholderManipulation)
+    const arms = app !== null && armsPanelShown(robot.type, runs, manipulation.available)
+    const ids = [...cameras.panels.map((panel) => cameraId(panel.id)), ...FIXED_PANELS, ...(arms ? [ARMS_PANEL] : [])]
     const cameraActions = useCameraActions(app)
     const api = useWorkspace(ids, mobile)
-    const robot = useStore(app?.robot ?? placeholderRobot)
     // the profile changes with the robot type: keys follow it
     const profile = app && robot ? app.profile : null
     useKeyboard(profile?.type === "arm" ? null : app?.drive ?? null, profile?.type === "arm" ? null : profile, api, app?.joy ?? null, profile?.joint ? app?.arm ?? null : null)
@@ -91,6 +96,8 @@ export function App() {
 }
 
 const placeholderRobot = new Store({ type: "dog" as const, auto: true, reason: "" })
+const placeholderRuns = new Store<RunState>({ known: false, desktop: false, dimosInstalled: null, running: [], starting: null, blueprints: {} })
+const placeholderManipulation = new Store({ available: null as boolean | null })
 
 function EmptyStage() {
     return (

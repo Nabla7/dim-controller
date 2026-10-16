@@ -1,13 +1,10 @@
-// Settings: the controller format (the robot type: how it's driven, not what it is), then driving (or the arm panel, for an arm; it was its own tab), the map's choices (the same
+// Settings: the controller format (the robot type: how it's driven, not what it is), then driving (not for an arm: arms have their own panel, ArmsPanel.tsx), the map's choices (the same
 // setting as the map's cog), the 3D view's follow frame (the same as its follow button follows), then rendering.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { profiles } from "../profile/index.ts"
 import { RobotIcon } from "./RobotIcon.tsx"
 import { armShading } from "./armShading.ts"
-import { ArmPanel } from "./ArmPanel.tsx"
-import { ManipPanel } from "./ManipPanel.tsx"
-import { plannerRunning } from "../core/runs.ts"
 import { Field, Heading, NumberInput, Segmented, Select, Slider, Toggle } from "dimos-react"
 import { gamepadSettings } from "../core/gamepad.ts"
 import { JOY_HZ, JOY_TOPIC, JOY_TYPE, joySettings } from "../core/joy.ts"
@@ -26,9 +23,6 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
     const view = useStore(app.settings)
     const render = useStore(rendering)
     const robot = useStore(app.robot)
-    const runs = useStore(app.runs.state)
-    const manipulation = useStore(app.manipulation.state)
-    const planner = plannerRunning(runs) || manipulation.available === true
     const current = profiles.find((profile) => profile.type === robot.type)
     // the TF frames to offer for following (the map's and the 3D view's), refreshed while shown
     const frames = useTfFrames(app)
@@ -50,38 +44,17 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     {robot.auto ? `Auto: picked from the blueprint (${robot.reason}).` : "Picked here; Auto picks from the blueprint."} How you control it: the keys, speeds, the drive or arm controls and the model in the view. Choose any format, e.g. Dog for an RC car.
                 </p>
             </div>
-            {robot.type === "arm"
-                ? (
-                    <>
-                        <section className="settings-section" data-section="manipulation">
-                            <Heading level={3}>Plan and move</Heading>
-                            <ManipPanel app={app} />
-                        </section>
-                        <section className="settings-section" data-section="arm">
-                            <Heading level={3}>Arm</Heading>
-                            <ArmPanel app={app} />
-                        </section>
-                    </>
-                )
-                : (
-                    <>
-                    {planner && (
-                        <section className="settings-section" data-section="manipulation">
-                            <Heading level={3}>Plan and move (arms)</Heading>
-                            <ManipPanel app={app} />
-                        </section>
-                    )}
-                    <section className="settings-section" data-section="drive">
-                        <Heading level={3}>Drive</Heading>
-                        <DrivePanel app={app} />
-                        <Field inline label="Max latency (ms)" title="Over this (or when the link drops), driving disengages until you press Reconnect.">
-                            <MaxLatencyInput app={app} />
-                        </Field>
-                        <GamepadSettingsFields />
-                        <JoySettingsFields />
-                    </section>
-                    </>
-                )}
+            {robot.type !== "arm" && (
+                <section className="settings-section" data-section="drive">
+                    <Heading level={3}>Drive</Heading>
+                    <DrivePanel app={app} />
+                    <Field inline label="Max latency (ms)" title="Over this (or when the link drops), driving disengages until you press Reconnect.">
+                        <MaxLatencyInput app={app} />
+                    </Field>
+                    <GamepadSettingsFields />
+                    <JoySettingsFields />
+                </section>
+            )}
             <section className="settings-section" data-section="map">
                 <Heading level={3}>Map</Heading>
                 <div className="map-settings-fields">

@@ -54,6 +54,7 @@ const HOMES: Record<string, { side: Side; collapsed?: boolean; weight: number; f
     scene: { side: "left", weight: 1.15, float: { width: 420, height: 320 } },
     status: { side: "right", weight: 0.75, float: { width: 320, height: 300 } },
     settings: { side: "right", weight: 1.5, float: { width: 360, height: 520 } },
+    arms: { side: "right", weight: 1.5, float: { width: 360, height: 560 } },
     layers: { side: "right", collapsed: true, weight: 1.2, float: { width: 360, height: 480 } },
     tf: { side: "right", collapsed: true, weight: 1, float: { width: 340, height: 420 } },
 }
@@ -61,8 +62,10 @@ const CAMERA_HOME = { side: "left" as Side, weight: 1, float: { width: 480, heig
 export const isCamera = (id: string) => id.startsWith("camera:")
 export const cameraId = (n: number) => `camera:${n}`
 export const homeOf = (id: string) => HOMES[id] ?? CAMERA_HOME
-/** the panels that always exist (cameras come and go: camera:<n>) */
-export const FIXED_PANELS = Object.keys(HOMES)
+/** shown only while there are arms to control (ui/ArmsPanel.tsx) */
+export const ARMS_PANEL = "arms"
+/** the panels that always exist (cameras come and go: camera:<n>, and so do the arms) */
+export const FIXED_PANELS = Object.keys(HOMES).filter((id) => id !== ARMS_PANEL)
 
 export function defaultArrangement(ids: string[]): Arrangement {
     return normalizeArrangement(null, ids)

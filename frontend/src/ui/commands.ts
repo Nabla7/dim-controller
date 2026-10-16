@@ -88,5 +88,5 @@ export function panelTitle(id: string): string {
         const n = Number(id.split(":")[1])
         return n > 1 ? `Camera ${n}` : "Camera"
     }
-    return ({ map: "Map", scene: "3D view", status: "Status", settings: "Settings", layers: "Layers", tf: "Transforms (TF)" } as Record<string, string>)[id] ?? id
+    return ({ map: "Map", scene: "3D view", status: "Status", settings: "Settings", arms: "Arms", layers: "Layers", tf: "Transforms (TF)" } as Record<string, string>)[id] ?? id
 }
