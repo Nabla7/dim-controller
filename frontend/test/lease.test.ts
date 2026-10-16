@@ -1,7 +1,7 @@
 // The page's lease (core/lease.ts): taken before the heavy streams, taken again after the link drops it, renewed with the
 // drive topics, and "takenOver" (with a way back) when a newer viewer takes it.
 import { assert, assertEquals } from "jsr:@std/assert@1"
-import { afterLost, isLeasedKey, isLeaseRejection, LEASE_GROUP, LEASED_SUBSCRIBE_KEYS, LeaseKeeper, type LeaseClient } from "../src/core/lease.ts"
+import { afterLost, isLeasedKey, isLeaseRejection, LEASE_GROUP, LEASE_TIMEOUT_MS, LEASED_SUBSCRIBE_KEYS, LeaseKeeper, supportsLeaseTimeout, type LeaseClient } from "../src/core/lease.ts"
 import { leaseChip, TAKE_BACK_TEXT, TAKEN_OVER_TEXT } from "../src/ui/barStatus.ts"
 
 type Asked = Parameters<LeaseClient["lease"]>[0]
@@ -136,4 +136,34 @@ Deno.test("the bar's lease chip: only when taken over, a button back", () => {
     assertEquals(chip?.text, `${TAKEN_OVER_TEXT} · ${TAKE_BACK_TEXT}`)
     assertEquals(chip?.tone, "bad")
     assertEquals(leaseChip({ status: "takenOver", reason: null }, true)?.text, TAKE_BACK_TEXT)
+})
+
+Deno.test("a lapsed lease isn't taken again when a viewer that leased meanwhile already ended our streams", async () => {
+    let rejected: string | null = null
+    const keeper = new LeaseKeeper(() => rejected)
+    const client = fakeClient()
+    await keeper.take(client)
+    rejected = 'dimos/cam/sensor_msgs.Image is leased by another client (group "dim-controller")'
+    client.lose("heartbeat")
+    await settle()
+    assertEquals(client.asked.length, 1, "not retaken")
+    assertEquals(keeper.state.get(), { status: "takenOver", reason: rejected })
+})
+
+Deno.test("timeoutMs (zenoh-gateway 0.5.17) only to a client that sends it", async () => {
+    const old = fakeClient()
+    assert(!supportsLeaseTimeout(old))
+    await new LeaseKeeper().take(old)
+    assertEquals("timeoutMs" in old.asked[0], false)
+    const newer = fakeClient()
+    const asked: Asked[] = []
+    // a 0.5.17 client's lease() names timeoutMs in its request
+    newer.lease = function (options: Asked & { timeoutMs?: number }) {
+        const request = { op: "lease", ...options, timeoutMs: options.timeoutMs }
+        asked.push(request)
+        return Promise.resolve({ onLost: () => {} })
+    } as typeof newer.lease
+    assert(supportsLeaseTimeout(newer))
+    await new LeaseKeeper().take(newer)
+    assertEquals(asked[0].timeoutMs, LEASE_TIMEOUT_MS)
 })

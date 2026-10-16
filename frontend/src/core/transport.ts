@@ -103,7 +103,7 @@ export class Connection {
     /** the last few minutes of throughput, latency and each stream's rate (the Network panel), sampled from start */
     readonly network = new NetHistory()
     /** the page's lease on the cameras, point clouds and drive topics (core/lease.ts) */
-    readonly lease = new LeaseKeeper()
+    readonly lease = new LeaseKeeper(() => this.#leaseRejection())
     /** leased subscriptions wait for the first lease attempt (a page without the lease is refused there) */
     #leaseTried = false
     /** while taking control back, our old rejected subscriptions don't mean a new takeover */
@@ -153,7 +153,6 @@ export class Connection {
             this.status.update({ droppedPerSecond: dropped - this.#lastDropped, rttMs: client.rttMs ?? null, throughputBytesPerSec: wire ?? throughputOf(client.gatewayStats) })
             this.#lastDropped = dropped
             this.network.sample(now, counts, this.latencyMs(now))
-            this.#checkRejected()
         }, 1000)
         this.#lastRtt = { value: client.rttMs ?? null, at: performance.now() }
         const lastSeen = new Map<string, { topic: Topic; at: number }>()
@@ -240,14 +239,15 @@ export class Connection {
         }
     }
 
-    /** A subscription ended after it opened has no event of its own (the gateway's `rejected` only sets its state). */
-    #checkRejected() {
+    /** Why one of our leased subscriptions was ended or refused for another viewer's lease, else null. */
+    #leaseRejection(): string | null {
         for (const subscription of this.#subscriptions) {
             const reason = subscription.rejection
-            if (reason !== null) {
-                this.#rejected(subscription, reason)
+            if (reason !== null && isLeasedKey(subscription.key) && isLeaseRejection(reason)) {
+                return reason
             }
         }
+        return null
     }
 
     /**
@@ -289,7 +289,7 @@ class LiveSubscription {
     open(client: ZenohGateway) {
         const handle = client.subscribe(this.key, this.options, this.onMessage)
         this.#handle = handle
-        // refused when it opens (another viewer holds the lease); ended later, it is found by `rejection`
+        // refused when it opens (another viewer holds the lease); one ended later comes with the lease's onLost("takenOver")
         handle.ready().catch(() => handle === this.#handle && handle.rejectionReason !== null && this.onRejected(handle.rejectionReason))
     }
     /** why the gateway refused or ended it, else null */

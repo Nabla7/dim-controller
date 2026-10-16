@@ -11,6 +11,16 @@ export const LEASED_TYPES = ["sensor_msgs.Image", "sensor_msgs.CompressedImage",
 export const LEASED_SUBSCRIBE_KEYS = LEASED_TYPES.map((type) => `dimos/**/${type}`)
 /** a lease request that timed out on a stalled link is asked again after this long */
 const RETRY_MS = 2000
+/**
+ * How long the lease outlives a silent heartbeat (zenoh-gateway >= 0.5.17's per-lease `timeoutMs`; the server caps it at
+ * 60 s): wifi stalls of a few seconds keep it, while driving's deadman keeps the connection's tight 0.4 s deadline.
+ */
+export const LEASE_TIMEOUT_MS = 5000
+
+/** Whether the client sends a per-lease `timeoutMs` (0.5.17+); an older one would drop it silently. */
+export function supportsLeaseTimeout(client: { lease: unknown }): boolean {
+    return typeof client.lease === "function" && /\btimeoutMs\b/.test(String(client.lease))
+}
 
 /** Whether a subscription key is one the lease covers (a dimos key of a leased type). */
 export function isLeasedKey(key: string): boolean {
@@ -52,7 +62,7 @@ export interface LeaseHandle {
 /** The part of the zenoh-gateway client this uses. */
 export interface LeaseClient {
     state: string
-    lease(options: { group: string; publish: string[]; subscribe: string[]; allowTakeover: boolean }): Promise<LeaseHandle>
+    lease(options: { group: string; publish: string[]; subscribe: string[]; allowTakeover: boolean; timeoutMs?: number }): Promise<LeaseHandle>
 }
 
 /**
@@ -68,6 +78,12 @@ export class LeaseKeeper {
     /** a take asked for while one was in flight (new drive keys, a drop): runs once that one ends */
     #again = false
     #retry: ReturnType<typeof setTimeout> | undefined
+
+    /**
+     * `rejection()`: why one of our leased subscriptions was ended or refused for another client's lease, else null.
+     * Asked before taking a lapsed lease again (a viewer that leased in the gap isn't taken over by itself).
+     */
+    constructor(readonly rejection: () => string | null = () => null) {}
 
     /** The drive's publish keys; a held lease is renewed with them. */
     setPublish(keys: string[]) {
@@ -111,7 +127,8 @@ export class LeaseKeeper {
 
     async #takeOnce(client: LeaseClient): Promise<boolean> {
         try {
-            const handle = await client.lease({ group: LEASE_GROUP, publish: this.#publish, subscribe: LEASED_SUBSCRIBE_KEYS, allowTakeover: true })
+            const timeout = supportsLeaseTimeout(client) ? { timeoutMs: LEASE_TIMEOUT_MS } : {}
+            const handle = await client.lease({ group: LEASE_GROUP, publish: this.#publish, subscribe: LEASED_SUBSCRIBE_KEYS, allowTakeover: true, ...timeout })
             this.#handle = handle
             handle.onLost((reason) => this.#lost(handle, reason))
             this.state.set({ status: "held", reason: null })
@@ -122,7 +139,7 @@ export class LeaseKeeper {
                 // the link dropped or stalled mid-request: tried again once it's back (onConnected), or in a moment
                 this.state.update({ status: "taking" })
                 clearTimeout(this.#retry)
-                this.#retry = setTimeout(() => client.state !== "lost" && this.state.get().status === "taking" && void this.take(client), RETRY_MS)
+                this.#retry = setTimeout(() => client.state !== "lost" && this.state.get().status === "taking" && void this.#retake(client), RETRY_MS)
             } else {
                 console.warn("[lease] the gateway refused the lease; every viewer pulls the streams", message)
                 this.state.set({ status: "unsupported", reason: message })
@@ -143,10 +160,20 @@ export class LeaseKeeper {
         if (action === "takenOver") {
             this.state.set({ status: "takenOver", reason })
         } else if (this.#client && this.#client.state !== "lost") {
-            void this.take(this.#client)
+            void this.#retake(this.#client)
         } else {
             this.state.update({ status: "taking" })
         }
+    }
+
+    /** Takes a lapsed lease again, unless a viewer that leased meanwhile has already ended our subscriptions. */
+    #retake(client: LeaseClient): Promise<boolean> {
+        const rejected = this.rejection()
+        if (rejected !== null) {
+            this.subscriptionRejected(rejected)
+            return Promise.resolve(false)
+        }
+        return this.take(client)
     }
 
     /** One of our leased subscriptions was ended or refused for another client's lease: that viewer has them now. */
@@ -161,7 +188,7 @@ export class LeaseKeeper {
     onConnected(client: LeaseClient) {
         this.#client = client
         if (this.state.get().status === "taking" && !this.#taking) {
-            void this.take(client)
+            void this.#retake(client)
         }
     }
 
