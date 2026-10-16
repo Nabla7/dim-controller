@@ -5,7 +5,6 @@ import * as THREE from "three"
 
 const AXES = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)]
 const COLORS = [0xe5484d, 0x30a46c, 0x3e63dd]
-const HOVER = 0xffd60a
 /** the arrow's length on screen (CSS px) */
 const SCREEN_PX = 110
 const ARC_RADIUS = 0.72
@@ -13,7 +12,7 @@ const ARC_SPAN = THREE.MathUtils.degToRad(40)
 /** an arrow flips only once the camera is clearly on the other side (no flicker when it's edge-on) */
 const FLIP_MARGIN = 0.08
 
-type Part = { kind: "move" | "plane" | "rotate"; axis: number; visible: THREE.Mesh[]; pick: THREE.Mesh }
+type Part = { kind: "move" | "plane" | "rotate"; axis: number; outlines: THREE.Mesh[]; pick: THREE.Mesh }
 
 export class PoseGizmo {
     readonly object = new THREE.Group()
@@ -54,15 +53,28 @@ export class PoseGizmo {
         return new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false, transparent: true, opacity: 0.95, toneMapped: false })
     }
 
-    #pickMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthTest: false, depthWrite: false, colorWrite: false })
+    // both sides: a square is grabbed from either face
+    #pickMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthTest: false, depthWrite: false, colorWrite: false, side: THREE.DoubleSide })
+    #outlineMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, depthWrite: false, transparent: true, side: THREE.DoubleSide, toneMapped: false })
+
+    /** `geometry` with a white, slightly larger `outline` drawn behind it while hovered */
+    #outlined(geometry: THREE.BufferGeometry, outline: THREE.BufferGeometry, material: THREE.Material): [THREE.Mesh, THREE.Mesh] {
+        const mesh = new THREE.Mesh(geometry, material)
+        mesh.renderOrder = 1001
+        const shell = new THREE.Mesh(outline, this.#outlineMaterial)
+        shell.renderOrder = 1000
+        shell.visible = false
+        mesh.add(shell)
+        return [mesh, shell]
+    }
 
     /** along +x, turned onto its axis; its sign is the group's scale */
     #arrow(axis: number): THREE.Group {
         const group = new THREE.Group()
         const material = this.#material(COLORS[axis])
-        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.78, 12), material)
+        const [shaft, shaftOutline] = this.#outlined(new THREE.CylinderGeometry(0.035, 0.035, 0.78, 12), new THREE.CylinderGeometry(0.058, 0.058, 0.8, 12), material)
         shaft.position.y = 0.39
-        const head = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.24, 16), material)
+        const [head, headOutline] = this.#outlined(new THREE.ConeGeometry(0.1, 0.24, 16), new THREE.ConeGeometry(0.135, 0.31, 16), material)
         head.position.y = 0.9
         const pick = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.05, 8), this.#pickMaterial)
         pick.position.y = 0.52
@@ -72,7 +84,7 @@ export class PoseGizmo {
         along.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), AXES[axis])
         group.add(along)
         this.object.add(group)
-        this.#parts.push({ kind: "move", axis, visible: [shaft, head], pick })
+        this.#parts.push({ kind: "move", axis, outlines: [shaftOutline, headOutline], pick })
         return group
     }
 
@@ -82,14 +94,14 @@ export class PoseGizmo {
         const material = this.#material(COLORS[axis])
         material.side = THREE.DoubleSide
         material.opacity = 0.55
-        const square = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.2), material)
+        const [square, squareOutline] = this.#outlined(new THREE.PlaneGeometry(0.2, 0.2), new THREE.PlaneGeometry(0.24, 0.24), material)
         square.position.set(0.3, 0.3, 0)
         const pick = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.26), this.#pickMaterial)
         pick.position.copy(square.position)
         group.add(square, pick)
         group.matrixAutoUpdate = false
         this.object.add(group)
-        this.#parts.push({ kind: "plane", axis, visible: [square], pick })
+        this.#parts.push({ kind: "plane", axis, outlines: [squareOutline], pick })
         return group
     }
 
@@ -99,21 +111,26 @@ export class PoseGizmo {
         const start = Math.PI / 4 - ARC_SPAN / 2
         const tube = new THREE.TorusGeometry(ARC_RADIUS, 0.028, 8, 24, ARC_SPAN)
         tube.rotateZ(start)
-        const arc = new THREE.Mesh(tube, this.#material(COLORS[axis]))
+        const tubeOutline = new THREE.TorusGeometry(ARC_RADIUS, 0.05, 8, 24, ARC_SPAN)
+        tubeOutline.rotateZ(start)
+        const material = this.#material(COLORS[axis])
+        const [arc, arcOutline] = this.#outlined(tube, tubeOutline, material)
         const pickTube = new THREE.TorusGeometry(ARC_RADIUS, 0.1, 6, 16, ARC_SPAN + 0.15)
         pickTube.rotateZ(start - 0.075)
         const pick = new THREE.Mesh(pickTube, this.#pickMaterial)
         // a small arrowhead at each end, along the arc: it turns both ways
         const heads = [[start, -1], [start + ARC_SPAN, 1]].map(([angle, way]) => {
-            const head = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.13, 12), arc.material)
+            const [head, headOutline] = this.#outlined(new THREE.ConeGeometry(0.055, 0.13, 12), new THREE.ConeGeometry(0.085, 0.19, 12), material)
+            head.userData.outline = headOutline
             head.position.set(ARC_RADIUS * Math.cos(angle), ARC_RADIUS * Math.sin(angle), 0)
             head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(-Math.sin(angle) * way, Math.cos(angle) * way, 0))
             return head
         })
         group.add(arc, ...heads, pick)
+        const outlines = [arcOutline, ...heads.map((head) => head.userData.outline as THREE.Mesh)]
         group.matrixAutoUpdate = false
         this.object.add(group)
-        this.#parts.push({ kind: "rotate", axis, visible: [arc, ...heads], pick })
+        this.#parts.push({ kind: "rotate", axis, outlines, pick })
         return group
     }
 
@@ -182,10 +199,11 @@ export class PoseGizmo {
         if (part === this.#hovered) {
             return
         }
-        for (const [shown, color] of [[this.#hovered, null], [part, HOVER]] as const) {
-            for (const mesh of shown?.visible ?? []) {
-                ;(mesh.material as THREE.MeshBasicMaterial).color.setHex(color ?? COLORS[shown!.axis])
-            }
+        for (const outline of this.#hovered?.outlines ?? []) {
+            outline.visible = false
+        }
+        for (const outline of part?.outlines ?? []) {
+            outline.visible = true
         }
         this.#hovered = part
         this.canvas.style.cursor = part ? (part.kind === "rotate" ? "grab" : "move") : ""
