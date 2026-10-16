@@ -482,9 +482,13 @@ export class Manipulation {
         this.#act("cancel", "api/manipulation/cancel")
     }
 
+    /** The plan, its preview and the target the gizmo moved: the arm's gizmo goes back to its tip (undo brings the target back). */
     clear() {
         this.state.update({ plan: null, planSequence: null, preview: null })
         this.#act("clear", "api/manipulation/clear")
+        if (this.state.get().target) {
+            this.setTarget(null)
+        }
     }
 
     /** The backend's `manipulation` event: another page's or the agent's target, plan, preview or execute. */

@@ -90,7 +90,7 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
                 <Button size="sm" title="plans first if the target has no plan yet" disabled={!manipulation.canRun() || busy} loading={state.busy === "plan"} onClick={() => void manipulation.preview()} data-testid="manip-preview">Preview</Button>
                 <Button size="sm" variant="primary" title="plans first if the target has no plan yet" disabled={!manipulation.canRun()} loading={state.busy === "execute"} onClick={() => void manipulation.execute()} data-testid="manip-execute">Execute</Button>
                 {manipulation.canCancel() && <Button size="sm" variant="danger" onClick={() => manipulation.cancel()} data-testid="manip-cancel">Cancel</Button>}
-                <Button size="sm" variant="ghost" disabled={!state.plan} onClick={() => manipulation.clear()} data-testid="manip-clear">Clear plan</Button>
+                <Button size="sm" variant="ghost" disabled={!state.plan && !target} title="drops the plan and the target: the gizmo goes back to the arm (Ctrl+Z brings the target back)" onClick={() => manipulation.clear()} data-testid="manip-clear">Clear plan</Button>
             </div>
             {state.plan && <p className="hint" data-testid="manip-plan-info">Plan {state.plan.id.slice(0, 8)} ({state.plan.mode}): {state.plan.duration.toFixed(2)} s, {state.plan.positions.length} points{state.preview ? " · previewing" : ""}</p>}
 
