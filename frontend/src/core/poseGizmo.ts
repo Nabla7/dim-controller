@@ -103,10 +103,17 @@ export class PoseGizmo {
         const pickTube = new THREE.TorusGeometry(ARC_RADIUS, 0.1, 6, 16, ARC_SPAN + 0.15)
         pickTube.rotateZ(start - 0.075)
         const pick = new THREE.Mesh(pickTube, this.#pickMaterial)
-        group.add(arc, pick)
+        // a small arrowhead at each end, along the arc: it turns both ways
+        const heads = [[start, -1], [start + ARC_SPAN, 1]].map(([angle, way]) => {
+            const head = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.13, 12), arc.material)
+            head.position.set(ARC_RADIUS * Math.cos(angle), ARC_RADIUS * Math.sin(angle), 0)
+            head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(-Math.sin(angle) * way, Math.cos(angle) * way, 0))
+            return head
+        })
+        group.add(arc, ...heads, pick)
         group.matrixAutoUpdate = false
         this.object.add(group)
-        this.#parts.push({ kind: "rotate", axis, visible: [arc], pick })
+        this.#parts.push({ kind: "rotate", axis, visible: [arc, ...heads], pick })
         return group
     }
 
