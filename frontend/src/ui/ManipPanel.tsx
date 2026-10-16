@@ -1,6 +1,6 @@
-// The arm's planner panel. At the top: Preview / Execute (each planning first when needed) / Cancel / Clear plan. Then
-// viser's Manipulation Panel in its order: status, scene grid, robot display, planning-group
-// toggles, target (preset, feasibility, the gizmo: arrows move, arcs rotate), planning (next plan speed, planning mode), joint control, and the scene's obstacle and grasp-proposal toggles. Every action is an
+// The arm's planner panel. At the top: Preview / Execute (each planning first when needed) / Cancel / Clear plan, and the planning-group
+// toggles. Then
+// viser's Manipulation Panel in its order: status, scene grid, robot display, target (preset, feasibility, the gizmo: arrows move, arcs rotate), planning (next plan speed, planning mode), joint control, and the scene's obstacle and grasp-proposal toggles. Every action is an
 // api/manipulation endpoint (core/manipulation.ts); the planner is dimos's ManipulationModule, and what the RPCs
 // don't give (the model, feasibility, obstacle shapes, grasps) comes from dim-controller's hook in its process.
 import { useEffect } from "react"
@@ -94,6 +94,14 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
             </div>
             {state.plan && <p className="hint" data-testid="manip-plan-info">Plan {state.plan.id.slice(0, 8)} ({state.plan.mode}): {state.plan.duration.toFixed(2)} s, {state.plan.positions.length} points{state.preview ? " · previewing" : ""}</p>}
 
+            <Heading level={3}>Planning Groups</Heading>
+            <p className="hint">Active planning groups for pose goals, planning, and joint edits.</p>
+            <div className="button-row" data-testid="manip-groups">
+                {state.groups.map((group) => (
+                    <Button key={group.id} size="sm" pressed={selected.includes(group.id)} onClick={() => manipulation.toggleGroup(group.id)} title="Toggle this planning group in the target set" data-group={group.id}>{group.id}</Button>
+                ))}
+            </div>
+
             <Heading level={3}>Status</Heading>
             <div className="manip-status" data-testid="manip-status">
                 <span className="hint">State</span> <Badge tone={statusTone(planner?.operation_status.name)} dot data-testid="manip-state">{moduleState}</Badge>
@@ -121,14 +129,6 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
             </Field>
             {options.display !== "visual" && view.collisionMissing && <p className="warn-text" data-testid="manip-collision-warning"><b>Collision meshes unavailable.</b> Showing visual geometry with collision styling.</p>}
             <Field inline label="Arm in 3D"><Toggle value={options.interact} onChange={(interact: boolean) => manipulation.options.update({ interact })} /></Field>
-
-            <Heading level={3}>Planning Groups</Heading>
-            <p className="hint">Active planning groups for pose goals, planning, and joint edits.</p>
-            <div className="button-row" data-testid="manip-groups">
-                {state.groups.map((group) => (
-                    <Button key={group.id} size="sm" pressed={selected.includes(group.id)} onClick={() => manipulation.toggleGroup(group.id)} title="Toggle this planning group in the target set" data-group={group.id}>{group.id}</Button>
-                ))}
-            </div>
 
             <Heading level={3}>Target</Heading>
             <Field inline label="Preset">
