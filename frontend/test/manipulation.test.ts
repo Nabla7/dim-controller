@@ -4,7 +4,7 @@ import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
 import * as THREE from "three"
 import { Kinematics, meshGeometries, type RobotDescription, RobotModel, urdfPositions } from "../src/core/robotDescription.ts"
 import { solveIk } from "../src/core/ik.ts"
-import { defaultSelection, jointControl, Manipulation, type ManipulationPlan, wrapAngle } from "../src/core/manipulation.ts"
+import { defaultSelection, jointControl, Manipulation, type ManipulationPlan, wholePlan, wrapAngle } from "../src/core/manipulation.ts"
 import { obstacleObject } from "../src/core/armManipView.ts"
 
 const I = { xyz: [0, 0, 0] as [number, number, number], quat: [0, 0, 0, 1] as [number, number, number, number] }
@@ -150,4 +150,12 @@ Deno.test("obstacles are drawn as their shapes, in their pose; an unreadable one
     assertEquals(octree.geometry.getAttribute("position").count, 2)
     assertEquals(obstacleObject({ name: "e", type: "mesh", pose, error: "no file" }).userData.obstacle, "mesh")
     assert((obstacleObject({ name: "p", type: "marker", pose }) as THREE.AxesHelper).isLineSegments)
+})
+
+Deno.test("a plan lasts until its last point, so a preview reaches the target even when the planner's duration falls short", () => {
+    const plan = { id: "p", groups: ["arm"], mode: "joint", duration: 1.6, jointNames: ["j"], times: [0, 1, 2], positions: [[0], [0.5], [1]] } as unknown as ManipulationPlan
+    const whole = wholePlan(plan)!
+    assertEquals(whole.duration, 2)
+    assertEquals(Manipulation.sample(whole, whole.duration), { j: 1 })
+    assertEquals(wholePlan(null), null)
 })

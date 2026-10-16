@@ -407,7 +407,7 @@ export class Manipulation {
         const { target, targetSequence } = this.state.get()
         const answer = await this.#act("plan", "api/manipulation/plan", target ? { ...target, mode: this.options.get().mode, speed: this.options.get().speed } : {})
         if (answer) {
-            this.state.update({ plan: (answer.plan as ManipulationPlan | null) ?? null, planSequence: answer.plan ? targetSequence : null, preview: null })
+            this.state.update({ plan: wholePlan(answer.plan as ManipulationPlan | null), planSequence: answer.plan ? targetSequence : null, preview: null })
         }
     }
 
@@ -446,7 +446,7 @@ export class Manipulation {
             this.#edited(true)
         }
         if ("plan" in event) {
-            const plan = event.plan as ManipulationPlan | null
+            const plan = wholePlan(event.plan as ManipulationPlan | null)
             // a plan made elsewhere for the target just set is fresh for it
             this.state.update({ plan, planSequence: plan ? this.state.get().targetSequence : null, preview: null })
         }
@@ -471,6 +471,16 @@ export class Manipulation {
         const fraction = index === 0 || span <= 0 ? 1 : Math.min(1, Math.max(0, (seconds - times[index - 1]) / span))
         return Object.fromEntries(jointNames.map((name, joint) => [name, before[joint] + (after[joint] - before[joint]) * fraction]))
     }
+}
+
+/** A plan whose duration reaches its last point: a planner's speed scaling can stretch the points' times past the
+ * duration it reports, and a preview stopped at that duration never got to the target. */
+export function wholePlan(plan: ManipulationPlan | null | undefined): ManipulationPlan | null {
+    if (!plan) {
+        return null
+    }
+    const last = plan.times.at(-1) ?? 0
+    return last > plan.duration ? { ...plan, duration: last } : plan
 }
 
 /** viser's first selection: the first group with a tip, else the first group. */

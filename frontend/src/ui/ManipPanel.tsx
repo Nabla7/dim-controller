@@ -146,9 +146,6 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
             </Field>
             <div className="button-row manip-actions" data-testid="manip-actions">
                 <Button size="sm" variant="primary" disabled={!manipulation.canPlan()} loading={state.busy === "plan"} onClick={() => manipulation.plan()} data-testid="manip-plan">Plan</Button>
-            </div>
-            <p className="hint">Plan controls</p>
-            <div className="button-row manip-actions">
                 <Button size="sm" disabled={!manipulation.planIsFresh() || busy} onClick={() => manipulation.preview()} data-testid="manip-preview">Preview</Button>
                 <Button size="sm" disabled={!manipulation.canExecute()} loading={state.busy === "execute"} onClick={() => manipulation.execute()} data-testid="manip-execute">Execute</Button>
                 {manipulation.canCancel() && <Button size="sm" variant="danger" onClick={() => manipulation.cancel()} data-testid="manip-cancel">Cancel</Button>}
