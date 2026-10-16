@@ -543,21 +543,56 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
    palette checked for colour-blind separation; the only non-theme colours in this file, stepped for each mode) ── */
 :root { --net-1: #2a78d6; --net-2: #eb6834; --net-3: #1baf7a; --net-4: #eda100; --net-5: #e87ba4; --net-6: #008300; --net-7: #4a3aa7; --net-other: color-mix(in srgb, var(--muted-fg) 45%, transparent); }
 :root[data-dr-dark] { --net-1: #3987e5; --net-2: #d95926; --net-3: #199e70; --net-4: #c98500; --net-5: #d55181; --net-6: #008300; --net-7: #9085e9; }
-.net-panel { display: grid; gap: 8px; }
-.net-now { display: flex; gap: 14px; align-items: baseline; font-size: 11px; color: var(--muted-fg); }
-.net-now b { font: 600 13px var(--mono); color: var(--fg); }
-.net-now .dim { margin-left: auto; }
-.net-chart svg { display: block; width: 100%; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--fg) 3%, transparent); touch-action: none; }
-.net-chart polygon { stroke: var(--card); stroke-width: 0.5; }
-.net-axis { display: flex; justify-content: space-between; font: 10px var(--mono); color: var(--muted-fg); }
-.net-latency { fill: none; stroke: var(--net-1); stroke-width: 2; stroke-linejoin: round; }
-.net-cursor { stroke: var(--fg); stroke-width: 1; opacity: 0.6; }
-.net-streams { width: 100%; border-collapse: collapse; font-size: 11px; }
-.net-streams th { text-align: right; font: 10px var(--mono); color: var(--muted-fg); font-weight: 400; border-bottom: 1px solid var(--border); padding: 2px 0 2px 8px; }
-.net-streams th:first-child, .net-streams td:first-child { text-align: left; }
-.net-streams td { text-align: right; padding: 3px 0 3px 8px; font-family: var(--mono); border-bottom: 1px solid var(--hair, var(--border)); white-space: nowrap; }
-.net-streams td:first-child { padding-left: 0; font-family: var(--sans); overflow: hidden; text-overflow: ellipsis; max-width: 0; width: 100%; }
-.net-swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.net-panel { display: grid; gap: 14px; container-type: inline-size; min-width: 0; }
+.net-panel .dim { color: var(--muted-fg); }
+.net-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@container (min-width: 560px) { .net-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.net-tile { padding: 8px 10px; border: 1px solid var(--hair, var(--border)); border-radius: 8px; background: var(--card); min-width: 0; }
+.net-tile-label { font-size: 11px; color: var(--muted-fg); }
+.net-tile-value { display: flex; align-items: center; gap: 6px; font: 600 20px/1.25 var(--sans); font-variant-numeric: tabular-nums; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.net-tile-unit { font-size: 12px; font-weight: 400; color: var(--muted-fg); }
+.net-tile-detail { font-size: 11px; color: var(--muted-fg); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.net-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted-fg); }
+.net-dot.tone-ok { background: var(--ok); }
+.net-dot.tone-warn { background: var(--warn); }
+.net-dot.tone-bad { background: var(--danger); }
+.net-charts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+@container (min-width: 620px) { .net-charts { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); } }
+.net-chart { margin: 0; min-width: 0; }
+.net-chart figcaption { font-size: 12px; font-weight: 600; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.net-chart figcaption .dim { font-weight: 400; }
+.net-plot { position: relative; width: 100%; }
+.net-plot svg { position: absolute; inset: 0; display: block; touch-action: pan-y; cursor: crosshair; user-select: none; -webkit-user-select: none; }
+.net-grid line { stroke: var(--hair, var(--border)); stroke-width: 1; }
+.net-grid text { font: 10px var(--mono); fill: var(--muted-fg); font-variant-numeric: tabular-nums; }
+.net-band { stroke: var(--raised, var(--card)); stroke-width: 1; stroke-linejoin: round; }
+.net-latency { fill: none; stroke: var(--net-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.net-latency-end { fill: var(--net-1); stroke: var(--raised, var(--card)); stroke-width: 2; }
+.net-cursor { stroke: var(--fg); stroke-width: 1; opacity: 0.55; pointer-events: none; }
+.net-readout { position: absolute; top: 4px; width: 172px; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--raised, var(--card)); box-shadow: var(--shadow-md, 0 2px 8px rgb(0 0 0 / 0.2)); font-size: 11px; line-height: 16px; pointer-events: none; z-index: 1; }
+.net-readout-head { color: var(--muted-fg); }
+.net-readout-row { display: flex; align-items: center; gap: 5px; height: 16px; font-variant-numeric: tabular-nums; }
+.net-readout-row > span:last-child { margin-left: auto; font-family: var(--mono); }
+.net-readout-row.strong { font-weight: 600; justify-content: space-between; }
+.net-readout-row.strong > span { font-family: var(--mono); }
+.net-readout .net-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-fg); }
+.net-key { width: 10px; height: 2px; border-radius: 1px; flex: none; }
+.net-readout-close { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border: 0; padding: 0; background: none; color: var(--muted-fg); font-size: 15px; line-height: 1; cursor: pointer; pointer-events: auto; }
+.net-streams { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+.net-table h4 { margin: 0 0 4px; font-size: 12px; font-weight: 600; }
+.net-table h4 .dim { font-weight: 400; }
+/* a fixed height (about 6 rows) that scrolls on its own, so the modal never grows or shrinks with the stream count */
+.net-table-scroll { height: 186px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.net-streams th { position: sticky; top: 0; z-index: 1; background: var(--raised, var(--card)); text-align: right; font: 10px var(--mono); color: var(--muted-fg); font-weight: 400; border-bottom: 1px solid var(--border); padding: 2px 0 2px 8px; width: 64px; height: 24px; box-sizing: border-box; }
+.net-streams th:last-child { width: 48px; }
+.net-streams th:first-child, .net-streams td:first-child { text-align: left; width: auto; padding-left: 0; }
+.net-streams td { height: 26px; box-sizing: border-box; text-align: right; padding: 0 0 0 8px; font-family: var(--mono); font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--hair, var(--border)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.net-streams td:first-child { font-family: var(--sans); }
+.net-streams tr.net-empty td { color: var(--muted-fg); border-bottom-color: transparent; }
+.net-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.net-about { font-size: 11px; color: var(--muted-fg); }
+.net-about summary { cursor: pointer; }
+.net-about p { margin: 6px 0 0; }
 .net-link { border: 0; padding: 0; background: none; color: var(--primary); font: inherit; cursor: pointer; text-decoration: underline; }
 
 /* point-style picker */

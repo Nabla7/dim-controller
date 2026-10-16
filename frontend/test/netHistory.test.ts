@@ -1,7 +1,7 @@
 // The Network panel's history (core/netHistory.ts): a ring of samples, the wire's parts from the page's WebRTC stats,
 // and who's using the link.
 import { assertEquals } from "jsr:@std/assert@1"
-import { assignSlots, averageOf, breakdown, CONTROL, HEARTBEAT, NetHistory, OTHER, partRates, RESENT, Ring, RTP_HEADERS, wireCounts } from "../src/core/netHistory.ts"
+import { assignSlots, averageOf, breakdown, CONTROL, HEARTBEAT, NetHistory, nearestIndex, netSummary, niceCeil, OTHER, partRates, percentile, RESENT, Ring, RTP_HEADERS, stableOrder, stackOf, streamTable, wireCounts } from "../src/core/netHistory.ts"
 
 
 Deno.test("the ring keeps the newest items, oldest first", () => {
@@ -75,4 +75,48 @@ Deno.test("the table's average: the wire and each stream averaged over the sampl
     assertEquals(average.bytesPerSec, 200)
     assertEquals(average.streams, { a: 40, b: 40 / 3 })
     assertEquals(averageOf([]), { bytesPerSec: null, streams: {} })
+})
+
+Deno.test("axis tops round up to a few round steps × 10^n; nothing gets 1", () => {
+    assertEquals([0.3, 1, 1.2, 4.9, 5, 7, 270, 0, NaN].map(niceCeil), [0.3, 1, 1.5, 5, 5, 8, 300, 1, 1])
+})
+
+Deno.test("percentile by nearest rank", () => {
+    assertEquals([percentile([], 0.95), percentile([5], 0.95), percentile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 0.95), percentile([3, 1, 2], 0.5)], [null, 5, 10, 2])
+})
+
+Deno.test("the dashboard's numbers: the newest, the last minute's mean, the peak; latency's p95 and max; gaps skipped", () => {
+    const samples = [
+        { at: 0, bytesPerSec: 9000, latencyMs: 100, streams: {} },
+        { at: 70_000, bytesPerSec: 1000, latencyMs: 20, streams: {} },
+        { at: 71_000, bytesPerSec: null, latencyMs: null, streams: {} },
+        { at: 72_000, bytesPerSec: 3000, latencyMs: 30, streams: {} },
+    ]
+    assertEquals(netSummary(samples), { rateNow: 3000, rateAverage: 2000, ratePeak: 9000, latencyNow: 30, latencyP95: 100, latencyMax: 100 })
+    assertEquals(netSummary([]), { rateNow: null, rateAverage: null, ratePeak: null, latencyNow: null, latencyP95: null, latencyMax: null })
+})
+
+Deno.test("the table's order holds until a row clearly passes the one above; gone rows drop, new ones join at the bottom and climb", () => {
+    assertEquals(stableOrder([], { a: 1, b: 3, c: 2 }), ["b", "c", "a"])
+    assertEquals(stableOrder(["b", "c", "a"], { a: 1, b: 2, c: 2.4 }), ["b", "c", "a"])
+    assertEquals(stableOrder(["b", "c", "a"], { a: 1, b: 2, c: 2.6 }), ["c", "b", "a"])
+    assertEquals(stableOrder(["b", "c", "a"], { a: 1, c: 2, d: 9 }), ["d", "c", "a"])
+    assertEquals(stableOrder(["b", "a"], { a: 0, b: 0 }), ["b", "a"])
+})
+
+Deno.test("the sample nearest a moment", () => {
+    assertEquals([nearestIndex([], 5), nearestIndex([{ at: 0 }, { at: 1000 }, { at: 2000 }], 1400), nearestIndex([{ at: 0 }, { at: 1000 }], 9e9)], [-1, 1, 1])
+})
+
+Deno.test("a sample's stack: each slot's streams, the unslotted and the wire's remainder on top", () => {
+    const slots = new Map([["a", 0], ["b", 1]])
+    assertEquals(stackOf({ bytesPerSec: 1000, streams: { a: 100, b: 200, c: 50 } }, slots, 2), [100, 200, 700])
+    assertEquals(stackOf({ bytesPerSec: null, streams: { a: 100 } }, slots, 2), [100, 0, 0])
+})
+
+Deno.test("the streams table: the short average's values in the long average's stable order; a stream gone quiet stays at 0", () => {
+    const sample = (at: number, streams: Record<string, number>) => ({ at, bytesPerSec: null, latencyMs: null, streams })
+    const samples = [sample(0, { a: 100, quiet: 900 }), sample(1000, { a: 100, b: 120 }), sample(2000, { a: 100, b: 120 })]
+    assertEquals(streamTable(samples, [], 2, 3).map((row) => [row.key, row.bytesPerSec]), [["quiet", 0], ["a", 100], ["b", 120]])
+    assertEquals(streamTable(samples, ["a", "b"], 2, 2).map((row) => row.key), ["a", "b"])
 })
