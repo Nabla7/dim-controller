@@ -32,7 +32,7 @@ Deno.test("priority steps − / + from any value, labels say how much of the cut
     assertEquals(stepPriority(0.2, -1), 0)
     assertEquals(stepPriority(8, 1), 8)
     assertEquals(stepPriority(0, -1), 0)
-    assertEquals([0, 0.25, 0.5, 1, 2, 8, 0.2].map(priorityLabel), ["last", "4", "2", "1", "½", "⅛", "5"])
+    assertEquals([0, 0.25, 0.5, 1, 2, 8, 0.2].map(priorityLabel), ["last", "-2", "-1", "0", "+1", "+3", "-2"])
 })
 
 Deno.test("overrides drop unset fields and empty streams; heat is against the busiest", () => {

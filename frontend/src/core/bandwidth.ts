@@ -36,13 +36,13 @@ export const DEFAULT_TRADEOFF = 0.5
 /** the − / + steps of bandwidthPriority: "last" yields everything before any other stream gives up anything, ×N takes 1/N of the cut */
 export const PRIORITY_STEPS = [0, 0.25, 0.5, 1, 2, 4, 8]
 
-/** The priority as a rank, 1 / bandwidthPriority: 1 is the gateway's default, 2 secondary (gives up twice as much), ½ a boost. */
+/** The priority as a level: 0 is the gateway's default, each + / − step doubles or halves the stream's share (log2 of bandwidthPriority). */
 export function priorityLabel(priority: number): string {
     if (priority <= 0) {
         return "last"
     }
-    const rank = Number((1 / priority).toPrecision(2))
-    return ({ 0.5: "½", 0.25: "¼", 0.13: "⅛", 0.12: "⅛" } as Record<number, string>)[rank] ?? `${rank}`
+    const level = Math.round(Math.log2(priority))
+    return level > 0 ? `+${level}` : `${level}`
 }
 
 /** The next step up (+1) or down (−1) from `priority` (which may sit between steps, e.g. an app's 0.2); the end steps stay. */
