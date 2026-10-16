@@ -13,6 +13,8 @@ const OWN_ICON_PATHS: Record<string, string> = {
     // a camera's fill: crop marks around a picture that runs past them
     fill: "M3 8V4h4M21 8V4h-4M3 16v4h4M21 16v4h-4 M7 8h10v8H7z",
     // the map's "fit the whole map": a magnifier over a frame
+    // three dots in a row (more actions)
+    more: "M5 12h.01 M12 12h.01 M19 12h.01",
     // a robot arm: base, two links, an open gripper
     arm: "M4 21h8 M8 21v-4 M8 17l4-7 M12 10l6-3 M18 7l3-2 M18 7l2 3",
     "fit-map": "M10.5 4a6.5 6.5 0 1 0 0 13a6.5 6.5 0 1 0 0-13z M15.5 15.5 20 20 M8 8.5h5v4H8z",

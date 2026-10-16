@@ -309,7 +309,6 @@ function CameraPanel({ app, panel, topics, onChange }: {
     useDockActions(cameraId(panel.id), [
         { id: "fill", label: fill ? "Fill" : "Fit", icon: fill ? "fill" : "fit", title: fill ? "Fill: the picture fills the view, edges cropped (click to fit the whole picture)" : "Fit: the whole picture, letterboxed (click to fill the view)", pressed: fill, run: toggleFill },
         ...(nextTab ? [{ id: "next", label: "Next camera", icon: "camera", title: `Show ${nextTab.topic.name}`, run: () => onChange({ key: nextTab.topic.key, picked: nextTab.topic.key }) }] : []),
-        ...(topic && !depth ? [{ id: "quality", label: `mode: ${presetFor(quality).id}`, icon: "settings", title: `${presetFor(quality).label}: ${presetFor(quality).about} (click for ${nextQuality.label})`, run: () => app.video.setQuality(topic, nextQuality.id) }] : []),
     ])
     return (
         <Panel

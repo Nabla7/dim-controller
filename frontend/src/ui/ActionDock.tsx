@@ -1,12 +1,16 @@
 // The page's one bar, along the bottom (desktop): on the left the drive keys lighting up as they're held with what's
-// being sent (or, disengaged, why and Reconnect; or why nothing can be driven yet) and Record (away from STOP); in the middle the main view's own
-// actions (ui/dockActions.ts: a camera's, the 3D view's or the map's), focus and the palette; on the right the problem
+// being sent, the joint keys stacked on top when the robot has them (or, disengaged, why and Reconnect; or why nothing
+// can be driven yet) and Record (away from STOP); in the middle Focus and More, which holds the main view's own actions
+// (ui/dockActions.ts: a camera's, the 3D view's or the map's) and the palette; on the right the problem
 // and gamepad chips (ui/BarChips.tsx), the shortcut list and STOP, always in the same corner. The two sides
 // share the width equally, so the middle stays centred. On a phone the bar is the two thumb sticks with STOP between
 // them (ui/DriveHud.tsx) and the rest sits over the main view's top corners (ui/PhoneCorners.tsx).
 import type { ViewerApp } from "../core/app.ts"
+import { useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { useStore } from "../core/store.ts"
-import { dockActions, dockActionsFor } from "./dockActions.ts"
+import { type DockAction, dockActions, dockActionsFor } from "./dockActions.ts"
+import { popoverPosition } from "./panelDrag.ts"
 import { ArmHud } from "./ArmHud.tsx"
 import { DriveKeys } from "./DriveHud.tsx"
 import { JointDock } from "./JointControl.tsx"
@@ -17,7 +21,7 @@ import { BarChips } from "./BarChips.tsx"
 import { RecordControl } from "./RecordControl.tsx"
 import type { Onboarding } from "./Onboarding.tsx"
 import { openApp } from "dimos-react/dim-app/desktop.js"
-import { Button, Kbd } from "dimos-react"
+import { Button, Card, Kbd } from "dimos-react"
 
 export function ActionDock({ app, api, onboarding }: { app: ViewerApp; api: WorkspaceApi; onboarding: Onboarding }) {
     useStore(app.robot)
@@ -32,26 +36,14 @@ export function ActionDock({ app, api, onboarding }: { app: ViewerApp; api: Work
                     ? <NothingToDrive onboarding={onboarding} />
                     : arm
                     ? <ArmHud app={app} mobile={false} />
-                    : <><DriveKeys app={app} />{app.profile.joint && <JointDock app={app} />}</>}
+                    : app.profile.joint
+                    ? <div className="dock-drive-stack"><JointDock app={app} /><DriveKeys app={app} /></div>
+                    : <DriveKeys app={app} />}
                 <RecordControl app={app} />
             </div>
             <div className="dock-group dock-actions" role="toolbar" aria-label="Actions">
-                {actions.map((action) => (
-                    <Button
-                        key={action.id}
-                        size="sm"
-                        className="dock-action main-action"
-                        data-action={action.id}
-                        pressed={action.pressed}
-                        title={action.title}
-                        onClick={action.run}
-                    >
-                        <Icon name={action.icon} size={15} />
-                        <span>{action.label}</span>
-                    </Button>
-                ))}
                 <Button size="sm" className="dock-action" pressed={focused} title="Focus the main view: hide both rails (\\)" onClick={api.toggleFocus}><Icon name={focused ? "fullscreen-exit" : "fullscreen"} size={15} /><span>Focus</span></Button>
-                <Button size="sm" className="dock-action" title="Every action, searchable (/)" onClick={() => openOverlay("palette")}><Icon name="search" size={15} /><span>All actions</span><Kbd className="lv-kbd">/</Kbd></Button>
+                <MoreMenu actions={actions} />
             </div>
             <div className="dock-stop-slot">
                 <BarChips app={app} api={api} />
@@ -64,6 +56,52 @@ export function ActionDock({ app, api, onboarding }: { app: ViewerApp; api: Work
                 </Button>
             </div>
         </footer>
+    )
+}
+
+/** More: the main view's own actions and the palette, in a menu over the bar. */
+function MoreMenu({ actions }: { actions: DockAction[] }) {
+    const [open, setOpen] = useState(false)
+    const button = useRef<HTMLButtonElement | HTMLAnchorElement>(null)
+    useEffect(() => {
+        if (!open) {
+            return
+        }
+        const close = (event: Event) => {
+            if (!(event.target as HTMLElement).closest?.(".dock-more-menu, .dock-more")) {
+                setOpen(false)
+            }
+        }
+        addEventListener("pointerdown", close, true)
+        return () => removeEventListener("pointerdown", close, true)
+    }, [open])
+    const run = (action: () => void) => () => {
+        setOpen(false)
+        action()
+    }
+    return (
+        <>
+            <Button ref={button} size="sm" className="dock-action dock-more" pressed={open} title="The main view's actions and every action" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+                <Icon name="more" size={15} />
+                <span>More</span>
+            </Button>
+            {open && createPortal(
+                <Card padded={false} className="dock-more-menu" role="menu" aria-label="More actions" style={popoverPosition(button.current, 240)}>
+                    {actions.map((action) => (
+                        <Button key={action.id} size="sm" className="dock-more-item main-action" role="menuitem" data-action={action.id} pressed={action.pressed} title={action.title} onClick={run(action.run)}>
+                            <Icon name={action.icon} size={15} />
+                            <span>{action.label}</span>
+                        </Button>
+                    ))}
+                    <Button size="sm" className="dock-more-item" role="menuitem" title="Every action, searchable (/)" onClick={run(() => openOverlay("palette"))}>
+                        <Icon name="search" size={15} />
+                        <span>All actions</span>
+                        <Kbd className="lv-kbd">/</Kbd>
+                    </Button>
+                </Card>,
+                document.body,
+            )}
+        </>
     )
 }
 
