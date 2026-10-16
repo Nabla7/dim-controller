@@ -134,6 +134,18 @@ export interface StreamShare {
 }
 
 /** Who's using the link in one sample, largest first; OTHER is what the wire carried beyond the parts' sum. */
+/** The mean of several samples (the wire and each stream), so a table built from it doesn't jump every second. */
+export function averageOf(samples: Pick<NetSample, "bytesPerSec" | "streams">[]): Pick<NetSample, "bytesPerSec" | "streams"> {
+    const wire = samples.map((sample) => sample.bytesPerSec).filter((value): value is number => value !== null)
+    const streams: Record<string, number> = {}
+    for (const sample of samples) {
+        for (const [key, rate] of Object.entries(sample.streams)) {
+            streams[key] = (streams[key] ?? 0) + rate / samples.length
+        }
+    }
+    return { bytesPerSec: wire.length ? wire.reduce((sum, value) => sum + value, 0) / wire.length : null, streams }
+}
+
 export function breakdown(sample: Pick<NetSample, "bytesPerSec" | "streams">): StreamShare[] {
     const rows = Object.entries(sample.streams).filter(([, bytesPerSec]) => bytesPerSec > 0).map(([key, bytesPerSec]) => ({ key, bytesPerSec }))
     const counted = rows.reduce((sum, row) => sum + row.bytesPerSec, 0)

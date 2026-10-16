@@ -6,7 +6,9 @@ import { useStore } from "../core/store.ts"
 import { splatFallback } from "../core/render/rendering.ts"
 import { useEffect, useRef, useState } from "react"
 import { gamepadChip, leaseChip, LINK_REDRAW_MS, LINK_SAMPLE_MS, linkChip, smoothed } from "./barStatus.ts"
+import { Modal } from "dimos-react"
 import { Icon } from "./icons.tsx"
+import { NetworkPanel } from "./NetworkPanel.tsx"
 import { gamepadStatus } from "./useGamepad.ts"
 import type { WorkspaceApi } from "./Workspace.tsx"
 
@@ -32,6 +34,7 @@ function useSmoothedLink(app: ViewerApp): { rate: number | null; latency: number
 }
 
 export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
+    const [networkOpen, setNetworkOpen] = useState(false)
     const connection = useStore(app.connection.status)
     const { issues: tfIssues } = useStore(app.tfIssues)
     const fallback = useStore(splatFallback)
@@ -47,10 +50,16 @@ export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
                     <span className="bar-value">{lease.text}</span>
                 </button>
             )}
-            <button type="button" className={`bar-chip tone-${link.tone} bar-button`} title={`${link.detail} (open Network: history and who's using the link)`} data-testid="bar-link" onClick={() => api.act("network", "show")}>
+            <button type="button" className={`bar-chip tone-${link.tone} bar-button`} title={`${link.detail} (open Network: history and who's using the link)`} data-testid="bar-link" onClick={() => setNetworkOpen(true)}>
                 <span className="bar-dot" />
                 <span className="bar-value">{link.text}</span>
             </button>
+            <Modal open={networkOpen} onClose={() => setNetworkOpen(false)} title="Network" size="lg" data-testid="network-modal">
+                {networkOpen && <NetworkPanel app={app} onStatus={() => {
+                    setNetworkOpen(false)
+                    api.act("status", "show")
+                }} />}
+            </Modal>
             {tfIssues.length > 0 && (
                 <button type="button" className="bar-chip tone-warn bar-button" title={`TF: ${tfIssues[0].summary} (open the TF panel)`} data-testid="bar-tf" onClick={() => api.act("tf", "show")}>
                     <Icon name="warn" size={13} />

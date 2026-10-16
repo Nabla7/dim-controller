@@ -20,7 +20,7 @@ Deno.test("filter: every word must match (label, group, hint, keys, extra words)
 Deno.test("a panel's header actions, in a fixed order: collapse and make main view (not on the main view), pop out (not on a phone); never close", () => {
     const arrangement = movePanel(defaultArrangement(IDS), "tf", { zone: "float", box: { x: 400, y: 200, width: 300, height: 300 } })
     const actions = (id: string, mobile = false) => panelActions(arrangement, id, { mobile }).map((state) => state.action)
-    for (const id of ["map", "scene", "status", "network", "settings", "layers", "tf"]) {
+    for (const id of ["map", "scene", "status", "settings", "layers", "tf"]) {
         assertEquals(actions(id), ["collapse", "main", "popout"], id)
         assertEquals(actions(id, true), ["collapse", "main"], id)
     }

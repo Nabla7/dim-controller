@@ -1,7 +1,7 @@
 // The Network panel's history (core/netHistory.ts): a ring of samples, the wire's parts from the page's WebRTC stats,
 // and who's using the link.
 import { assertEquals } from "jsr:@std/assert@1"
-import { assignSlots, breakdown, CONTROL, HEARTBEAT, NetHistory, OTHER, partRates, RESENT, Ring, RTP_HEADERS, wireCounts } from "../src/core/netHistory.ts"
+import { assignSlots, averageOf, breakdown, CONTROL, HEARTBEAT, NetHistory, OTHER, partRates, RESENT, Ring, RTP_HEADERS, wireCounts } from "../src/core/netHistory.ts"
 
 
 Deno.test("the ring keeps the newest items, oldest first", () => {
@@ -64,4 +64,15 @@ Deno.test("colour slots follow the stream, not its rank; past the palette a stre
     slots.delete("a")
     assignSlots(slots, ["c"], 2)
     assertEquals(slots.get("c"), 0)
+})
+
+Deno.test("the table's average: the wire and each stream averaged over the samples, a stream missing from one counts as zero there", () => {
+    const average = averageOf([
+        { bytesPerSec: 100, streams: { a: 60, b: 40 } },
+        { bytesPerSec: 300, streams: { a: 60 } },
+        { bytesPerSec: null, streams: {} },
+    ])
+    assertEquals(average.bytesPerSec, 200)
+    assertEquals(average.streams, { a: 40, b: 40 / 3 })
+    assertEquals(averageOf([]), { bytesPerSec: null, streams: {} })
 })

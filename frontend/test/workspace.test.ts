@@ -36,12 +36,12 @@ const overlap = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width
 const within = (inner: Rect, outer: Rect) => inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.width <= outer.x + outer.width && inner.y + inner.height <= outer.y + outer.height
 const center = (rect: Rect) => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
 
-Deno.test("default: the camera is the main view, map and 3D on the left, status and settings on the right (network, layers, TF folded)", () => {
+Deno.test("default: the camera is the main view, map and 3D on the left, status and settings on the right (layers, TF folded)", () => {
     const arrangement = defaultArrangement(IDS)
     assertEquals(arrangement.stage, "camera:1")
     assertEquals(arrangement.left, ["map", "scene"])
-    assertEquals(arrangement.right, ["status", "network", "settings", "layers", "tf"])
-    assertEquals(arrangement.collapsed.sort(), ["layers", "network", "tf"])
+    assertEquals(arrangement.right, ["status", "settings", "layers", "tf"])
+    assertEquals(arrangement.collapsed.sort(), ["layers", "tf"])
     assertEquals(arrangement.floating, [])
 })
 
@@ -89,7 +89,7 @@ Deno.test("desktop: the rails and the main view share the space between the stri
     assert(within(left, layout.area) && within(right, layout.area) && within(layout.stage, layout.area))
     assert(!overlap(left, layout.stage) && !overlap(right, layout.stage))
     assertEquals(layout.slots["camera:1"].rect, layout.stage)
-    const docked = ["map", "scene", "status", "network", "settings", "layers", "tf"].map((id) => layout.slots[id].rect)
+    const docked = ["map", "scene", "status", "settings", "layers", "tf"].map((id) => layout.slots[id].rect)
     for (const [index, rect] of docked.entries()) {
         assert(rect.height >= PANEL_HEAD)
         for (const other of docked.slice(index + 1)) {

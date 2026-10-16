@@ -3,7 +3,7 @@
 // (core/netHistory.ts, sampled by core/transport.ts), so opening the panel shows the recent past.
 import type { ViewerApp } from "../core/app.ts"
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react"
-import { assignSlots, breakdown, CONTROL, HEARTBEAT, type NetSample, OTHER, RESENT, RTP_HEADERS } from "../core/netHistory.ts"
+import { assignSlots, averageOf, breakdown, CONTROL, HEARTBEAT, type NetSample, OTHER, RESENT, RTP_HEADERS } from "../core/netHistory.ts"
 import { parseKey } from "../core/transport.ts"
 
 /** colour slots (styles.css --net-1..7); a stream past them is drawn with "other" */
@@ -11,6 +11,9 @@ const SLOT_COUNT = 7
 const CHART_W = 300
 const RATE_H = 90
 const LATENCY_H = 50
+/** the table: each stream averaged over the last TABLE_AVERAGE_SAMPLES (1 s each), redrawn every TABLE_REFRESH_MS */
+const TABLE_AVERAGE_SAMPLES = 5
+const TABLE_REFRESH_MS = 3000
 
 const mbps = (bytesPerSec: number) => (bytesPerSec * 8) / 1e6
 const mbpsText = (bytesPerSec: number) => `${mbps(bytesPerSec).toFixed(mbps(bytesPerSec) < 10 ? 2 : 1)} Mbps`
@@ -51,10 +54,15 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
     const [, redraw] = useState(0)
     const slots = useRef(new Map<string, number>()).current
     const [hover, setHover] = useState<number | null>(null)
+    const [tableAverage, setTableAverage] = useState(() => averageOf(history.samples.toArray().slice(-TABLE_AVERAGE_SAMPLES)))
     useEffect(() => {
-        const timer = setInterval(() => redraw((n) => n + 1), 1000)
-        return () => clearInterval(timer)
-    }, [])
+        const charts = setInterval(() => redraw((n) => n + 1), 1000)
+        const table = setInterval(() => setTableAverage(averageOf(history.samples.toArray().slice(-TABLE_AVERAGE_SAMPLES))), TABLE_REFRESH_MS)
+        return () => {
+            clearInterval(charts)
+            clearInterval(table)
+        }
+    }, [history])
     const samples = history.samples.toArray()
     for (const sample of samples) {
         assignSlots(slots, Object.keys(sample.streams).sort(), SLOT_COUNT)
@@ -86,7 +94,8 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
         .map((sample) => `${x(sample.at).toFixed(1)},${(LATENCY_H - (sample.latencyMs! / latencyTop) * LATENCY_H).toFixed(1)}`)
         .join(" ")
     const shown = hover === null ? latest : samples[hover]
-    const rows = breakdown(shown)
+    // hovering a moment shows that second; otherwise the last few seconds, averaged
+    const rows = breakdown(hover === null ? tableAverage : shown)
     const onMove = (event: ReactPointerEvent<SVGSVGElement>) => {
         const box = event.currentTarget.getBoundingClientRect()
         const at = end - (1 - (event.clientX - box.left) / box.width) * span
@@ -132,7 +141,7 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
                             <td>{Math.round(row.share * 100)}%</td>
                         </tr>
                     ))}
-                    {!rows.length && <tr><td colSpan={3} className="dim">nothing received in the last second</td></tr>}
+                    {!rows.length && <tr><td colSpan={3} className="dim">nothing received in the last few seconds</td></tr>}
                 </tbody>
             </table>
             <p className="hint">
