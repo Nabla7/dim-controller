@@ -4,6 +4,7 @@
 import type { ConnectionState } from "../core/transport.ts"
 import type { DriveHalt } from "../core/drive.ts"
 import type { GamepadStatus } from "../core/gamepad.ts"
+import type { LeaseState } from "../core/lease.ts"
 
 export type Tone = "ok" | "warn" | "bad"
 
@@ -83,4 +84,20 @@ export function gamepadChip(pad: GamepadStatus): { text: string; tone: Tone; det
     return pad.ready
         ? { text: "pad ready", tone: "ok", detail: "the sticks drive (LT + RT: STOP)" }
         : { text: "center sticks", tone: "warn", detail: "nothing is sent until both sticks are at rest and the triggers are out" }
+}
+
+/** The text a page shows once a newer viewer took the lease (bar chip, camera views). */
+export const TAKEN_OVER_TEXT = "Another viewer took over"
+export const TAKE_BACK_TEXT = "Take control back"
+
+/** The lease, only when another viewer has it: the bar's chip, a button that takes control back. Null: nothing to show. */
+export function leaseChip(lease: LeaseState, mobile = false): { text: string; tone: Tone; detail: string } | null {
+    if (lease.status !== "takenOver") {
+        return null
+    }
+    return {
+        text: mobile ? TAKE_BACK_TEXT : `${TAKEN_OVER_TEXT} · ${TAKE_BACK_TEXT}`,
+        tone: "bad",
+        detail: `${TAKEN_OVER_TEXT}: a newer viewer has the cameras, point clouds and driving, so this page's streams stopped (the robot's link can't feed every viewer). Click to take control back${lease.reason ? ` (${lease.reason})` : ""}.`,
+    }
 }

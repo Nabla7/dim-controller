@@ -5,7 +5,7 @@ import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { splatFallback } from "../core/render/rendering.ts"
 import { useEffect, useRef, useState } from "react"
-import { gamepadChip, LINK_REDRAW_MS, LINK_SAMPLE_MS, linkChip, smoothed } from "./barStatus.ts"
+import { gamepadChip, leaseChip, LINK_REDRAW_MS, LINK_SAMPLE_MS, linkChip, smoothed } from "./barStatus.ts"
 import { Icon } from "./icons.tsx"
 import { gamepadStatus } from "./useGamepad.ts"
 import type { WorkspaceApi } from "./Workspace.tsx"
@@ -38,8 +38,15 @@ export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
     const pad = gamepadChip(useStore(gamepadStatus))
     const average = useSmoothedLink(app)
     const link = linkChip({ ...connection, throughputBytesPerSec: average.rate }, average.latency)
+    const lease = leaseChip(useStore(app.connection.lease.state), api.mobile)
     return (
         <>
+            {lease && (
+                <button type="button" className={`bar-chip tone-${lease.tone} bar-button bar-lease`} title={lease.detail} data-testid="bar-lease" onClick={() => void app.connection.takeBack()}>
+                    <Icon name="warn" size={13} />
+                    <span className="bar-value">{lease.text}</span>
+                </button>
+            )}
             <button type="button" className={`bar-chip tone-${link.tone} bar-button`} title={`${link.detail} (open Network: history and who's using the link)`} data-testid="bar-link" onClick={() => api.act("network", "show")}>
                 <span className="bar-dot" />
                 <span className="bar-value">{link.text}</span>

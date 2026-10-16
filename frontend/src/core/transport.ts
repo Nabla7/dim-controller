@@ -5,6 +5,7 @@ import { connect, type Message, Priority, type Publisher, type SubscribeOptions,
 import { getZenoh } from "dimos-react/dim-app/zenoh.js"
 import { Store } from "./store.ts"
 import { NetHistory, wireCounts, type WireCounts } from "./netHistory.ts"
+import { isLeasedKey, isLeaseRejection, LeaseKeeper, type LeaseClient } from "./lease.ts"
 
 export { Priority }
 export type { Message, Publisher, SubscribeOptions, SubscriptionUpdate }
@@ -101,8 +102,17 @@ export class Connection {
     #reconnecting: Promise<void> | null = null
     /** the last few minutes of throughput, latency and each stream's rate (the Network panel), sampled from start */
     readonly network = new NetHistory()
+    /** the page's lease on the cameras, point clouds and drive topics (core/lease.ts) */
+    readonly lease = new LeaseKeeper()
+    /** leased subscriptions wait for the first lease attempt (a page without the lease is refused there) */
+    #leaseTried = false
+    /** while taking control back, our old rejected subscriptions don't mean a new takeover */
+    #takingBack = false
 
-    /** Makes the page's shared connection (the first getZenoh() call: its options win), with the heartbeat drive needs. */
+    /**
+     * Makes the page's shared connection (the first getZenoh() call: its options win), with the heartbeat drive needs;
+     * its deadline (misses / hz, e.g. 0.4 s) is also the lease's, which the gateway caps at 60 s.
+     */
     constructor(deadmanMs = 400) {
         const heartbeatMisses = Math.max(2, Math.round((deadmanMs / 1000) * HEARTBEAT_HZ))
         this.#shared = getZenoh({ connect: connect as never, connectOptions: { heartbeatHz: HEARTBEAT_HZ, heartbeatMisses } })
@@ -112,9 +122,24 @@ export class Connection {
         const client = (await this.#shared.ready).client as ZenohGateway
         this.client = client
         this.status.update({ state: "connected", error: null })
-        client.onState((state) => this.status.update({ state }))
+        client.onState((state) => {
+            this.status.update({ state })
+            if (state === "connected") {
+                this.lease.onConnected(client as unknown as LeaseClient)
+            }
+        })
         for (const subscription of this.#subscriptions) {
-            subscription.open(client)
+            if (!isLeasedKey(subscription.key)) {
+                subscription.open(client)
+            }
+        }
+        // the lease before the cameras and clouds: a newer viewer's lease would refuse them
+        await this.lease.take(client as unknown as LeaseClient)
+        this.#leaseTried = true
+        for (const subscription of this.#subscriptions) {
+            if (isLeasedKey(subscription.key)) {
+                subscription.open(client)
+            }
         }
         let lastWire: { bytes: number; at: number } | null = null
         setInterval(async () => {
@@ -128,6 +153,7 @@ export class Connection {
             this.status.update({ droppedPerSecond: dropped - this.#lastDropped, rttMs: client.rttMs ?? null, throughputBytesPerSec: wire ?? throughputOf(client.gatewayStats) })
             this.#lastDropped = dropped
             this.network.sample(now, counts, this.latencyMs(now))
+            this.#checkRejected()
         }, 1000)
         this.#lastRtt = { value: client.rttMs ?? null, at: performance.now() }
         const lastSeen = new Map<string, { topic: Topic; at: number }>()
@@ -183,6 +209,7 @@ export class Connection {
             client._peer?.close()
             try {
                 await client._open()
+                this.lease.sessionReplaced(client as unknown as LeaseClient)
             } finally {
                 this.#lastRtt = { value: client.rttMs ?? null, at: performance.now() }
                 this.status.update({ state: client.state, rttMs: client.rttMs ?? null })
@@ -194,9 +221,9 @@ export class Connection {
 
     /** Subscribes now or once connected; the returned function unsubscribes, its `update` changes the options in place. */
     subscribe(key: string, options: SubscribeOptions, onMessage: (message: Message) => void): LiveHandle {
-        const subscription = new LiveSubscription(key, options, onMessage)
+        const subscription = new LiveSubscription(key, options, onMessage, (reason) => this.#rejected(subscription, reason))
         this.#subscriptions.add(subscription)
-        if (this.client) {
+        if (this.client && (this.#leaseTried || !isLeasedKey(key))) {
             subscription.open(this.client)
         }
         const unsubscribe = () => {
@@ -204,6 +231,49 @@ export class Connection {
             subscription.close()
         }
         return Object.assign(unsubscribe, { update: (changes: SubscriptionUpdate) => subscription.update(changes) })
+    }
+
+    /** A subscription the gateway ended or refused: another viewer's lease means that viewer took over. */
+    #rejected(subscription: LiveSubscription, reason: string) {
+        if (!this.#takingBack && isLeasedKey(subscription.key) && isLeaseRejection(reason)) {
+            this.lease.subscriptionRejected(reason)
+        }
+    }
+
+    /** A subscription ended after it opened has no event of its own (the gateway's `rejected` only sets its state). */
+    #checkRejected() {
+        for (const subscription of this.#subscriptions) {
+            const reason = subscription.rejection
+            if (reason !== null) {
+                this.#rejected(subscription, reason)
+            }
+        }
+    }
+
+    /**
+     * "Take control back": takes the lease over from the newer viewer, then subscribes again where it had ended ours
+     * (the client doesn't re-open a rejected subscription). Resolves whether the lease is ours again.
+     */
+    async takeBack(): Promise<boolean> {
+        const client = this.client
+        if (!client) {
+            return false
+        }
+        this.#takingBack = true
+        try {
+            if (!(await this.lease.takeBack(client as unknown as LeaseClient))) {
+                return false
+            }
+            for (const subscription of this.#subscriptions) {
+                if (subscription.rejection !== null) {
+                    subscription.close()
+                    subscription.open(client)
+                }
+            }
+            return true
+        } finally {
+            this.#takingBack = false
+        }
     }
 
     /** Gateway clock now (ms), the clock message timestamps are in. */
@@ -215,9 +285,16 @@ export class Connection {
 
 class LiveSubscription {
     #handle: Subscription | null = null
-    constructor(readonly key: string, public options: SubscribeOptions, readonly onMessage: (message: Message) => void) {}
+    constructor(readonly key: string, public options: SubscribeOptions, readonly onMessage: (message: Message) => void, readonly onRejected: (reason: string) => void) {}
     open(client: ZenohGateway) {
-        this.#handle = client.subscribe(this.key, this.options, this.onMessage)
+        const handle = client.subscribe(this.key, this.options, this.onMessage)
+        this.#handle = handle
+        // refused when it opens (another viewer holds the lease); ended later, it is found by `rejection`
+        handle.ready().catch(() => handle === this.#handle && handle.rejectionReason !== null && this.onRejected(handle.rejectionReason))
+    }
+    /** why the gateway refused or ended it, else null */
+    get rejection(): string | null {
+        return this.#handle?.state === "rejected" ? this.#handle.rejectionReason : null
     }
     /** zenoh-gateway >= 0.5.1: the running subscription takes the new options; before it opens, it opens with them. */
     async update(changes: SubscriptionUpdate) {

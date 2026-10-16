@@ -1,7 +1,8 @@
 // Wires the core together (no React): bridge connection, TF, the 3D view, layers, camera streams, drive.
 // The UI reads the stores; window.__lv exposes this for tests.
 import * as THREE from "three"
-import { Connection } from "./transport.ts"
+import { Connection, dimosKey } from "./transport.ts"
+import { zenohKey } from "./cmdvel.ts"
 import { TfTree } from "dimos-react/three"
 import { feedTf } from "./tfFeed.ts"
 import { checkTf, confirmed, type TfIssue } from "./tfCheck.ts"
@@ -12,7 +13,7 @@ import { FrameHighlight } from "./render/frameHighlight.ts"
 import { LayerManager } from "./layers/manager.ts"
 import { VideoSources } from "./video.ts"
 import { Drive } from "./drive.ts"
-import { JoyPublisher } from "./joy.ts"
+import { JOY_TOPIC, JOY_TYPE, JoyPublisher } from "./joy.ts"
 import { ArmControl } from "./arm.ts"
 import { ArmManipView } from "./armManipView.ts"
 import { urdfSource } from "./urdfSource.ts"
@@ -104,6 +105,10 @@ export class ViewerApp {
         this.layers = new LayerManager(this.viewer, this.tf, this.connection, this.video, this.profile)
         this.drive = new Drive(this.connection, this.profile)
         this.joy = new JoyPublisher(this.connection)
+        // the lease also keeps the drive topics (and the gamepad's) to this viewer
+        const leasePublish = () => this.connection.lease.setPublish([...this.drive.state.get().topics.map((topic) => zenohKey(topic.topic, topic.type)), dimosKey(JOY_TOPIC, JOY_TYPE)])
+        leasePublish()
+        this.drive.state.subscribe(leasePublish)
         this.arm = new ArmControl(this.connection, this.drive, profileFor("arm").arm!)
         this.manipView = new ArmManipView(this.viewer, this.tf, this.arm, this.manipulation, urdfSource(this.connection), () => this.robot.get().type === "arm")
         feedTf(this.connection, this.tf, this.viewer)
