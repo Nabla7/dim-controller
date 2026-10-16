@@ -21,7 +21,7 @@ import { Manipulation } from "./manipulation.ts"
 import { AgentLink } from "./agent.ts"
 import { LocationLabels } from "./labels.ts"
 import { robotPose } from "./robot.ts"
-import { disposeTree, robotModel } from "dimos-react/three"
+import { disposeTree } from "dimos-react/three"
 import { plannerRunning, RunWatch } from "./runs.ts"
 import { persistentStore, Store } from "./store.ts"
 import { profileFor } from "../profile/index.ts"
@@ -283,7 +283,7 @@ export class ViewerApp {
                 this.viewer.scene.remove(this.#model.group)
                 disposeTree(this.#model.group)
             }
-            this.#model = { type: this.#profile.type, group: this.#profile.type === "arm" ? null : robotModel(this.#profile.type) }
+            this.#model = { type: this.#profile.type, group: this.#profile.type === "arm" ? null : standInBox() }
             if (this.#model.group) {
                 this.viewer.scene.add(this.#model.group)
             }
@@ -293,8 +293,9 @@ export class ViewerApp {
         if (!group) {
             return
         }
-        // the robot's own URDF model (layers/robotModel.tsx) replaces the stand-in while it's drawn
-        const visible = !!robot && this.settings.get().robotModel !== false && !urdfSource(this.connection).state.get().drawing
+        // a robot with its own URDF is drawn by that alone (layers/robotModel.tsx or the arm view), never with the box over it
+        const urdf = urdfSource(this.connection).state.get()
+        const visible = !!robot && this.settings.get().robotModel !== false && !urdf.description && !urdf.drawing && !urdf.armDraws
         if (visible && !group.matrix.equals(robot)) {
             group.matrix.copy(robot)
             group.matrixWorldNeedsUpdate = true
@@ -382,4 +383,14 @@ export class ViewerApp {
         this.drive.setRunning(this.runs.state.get().blueprints, onBridge)
         this.arm.setRunning(this.runs.state.get().blueprints, topics.filter((topic) => topic.type === "sensor_msgs.JointState").map((topic) => topic.name))
     }
+}
+
+/** The stand-in when the robot has no URDF: a plain box at base_link (0.5 x 0.4 x 0.3 m, resting on the ground), not a stock car or dog that would read as the robot. */
+function standInBox(): THREE.Group {
+    const group = new THREE.Group()
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 0.3), new THREE.MeshStandardMaterial({ color: 0x8a94a6, transparent: true, opacity: 0.7 }))
+    box.position.z = 0.15
+    group.add(box)
+    group.matrixAutoUpdate = false
+    return group
 }
