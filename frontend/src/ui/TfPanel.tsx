@@ -5,7 +5,7 @@ import { useStore } from "../core/store.ts"
 import type { TfSnapshot } from "dimos-react/three"
 import { Field, Select } from "dimos-react"
 
-function Tree({ app, snapshot, frame, depth, seen, hovered, flagged }: { app: ViewerApp; snapshot: TfSnapshot; frame: string; depth: number; seen: Set<string>; hovered: string | null; flagged: Set<string> }) {
+function Tree({ app, snapshot, frame, depth, chain = false, seen, hovered, flagged }: { app: ViewerApp; snapshot: TfSnapshot; frame: string; depth: number; chain?: boolean; seen: Set<string>; hovered: string | null; flagged: Set<string> }) {
     if (seen.has(frame) || depth > 64) {
         return null
     }
@@ -17,16 +17,17 @@ function Tree({ app, snapshot, frame, depth, seen, hovered, flagged }: { app: Vi
         <>
             <div
                 className={`tf-frame ${stale ? "stale" : ""} ${flagged.has(frame) ? "flagged" : ""} ${hovered === frame ? "highlighted" : ""}`}
-                style={{ paddingLeft: depth * 14 + 4 }}
+                style={{ paddingLeft: Math.min(depth, 8) * 12 + 4 }}
                 data-frame={frame}
-                title="Hover to find it in the 3D view"
+                title={`${frame}: hover to find it in the 3D view`}
                 onPointerEnter={() => app.highlight.set(frame)}
                 onPointerLeave={() => app.highlight.set(null)}
             >
-                <span>{frame}</span>
+                <span className="tf-name">{chain ? "↳ " : ""}{frame}</span>
                 {edge && <span className="tf-age">{edge.isStatic ? "static" : `${Math.round(edge.ageMs)} ms`}</span>}
             </div>
-            {children.map((child) => <Tree key={child} app={app} snapshot={snapshot} frame={child} depth={depth + 1} seen={seen} hovered={hovered} flagged={flagged} />)}
+            {/* an only child stays at its parent's indent (a chain like link1 → link7 reads down, not off the panel's edge) */}
+            {children.map((child) => <Tree key={child} app={app} snapshot={snapshot} frame={child} depth={children.length > 1 ? depth + 1 : depth} chain={children.length === 1} seen={seen} hovered={hovered} flagged={flagged} />)}
         </>
     )
 }

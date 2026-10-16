@@ -401,11 +401,12 @@ h3.dr-h3.first { margin-top: 4px; }
 
 /* tf */
 .tf-tree { font: 11.5px var(--mono); margin-top: 8px; }
-.tf-frame { display: flex; justify-content: space-between; padding: 1px 4px; margin: 0 -4px; border-radius: 4px; cursor: default; }
+.tf-frame { display: flex; justify-content: space-between; min-width: 0; padding: 1px 4px; margin: 0 -4px; border-radius: 4px; cursor: default; }
 .tf-frame:hover, .tf-frame.highlighted { background: color-mix(in srgb, var(--primary) 16%, transparent); }
 .tf-frame.stale { color: var(--warn); }
 .tf-frame.flagged { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
-.tf-age { color: var(--muted-fg); }
+.tf-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-age { color: var(--muted-fg); flex: none; white-space: nowrap; margin-left: 8px; }
 
 /* ── cameras (ui/CameraPanels.tsx) ── */
 .camera-tools { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; align-self: stretch; }

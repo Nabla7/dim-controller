@@ -36,12 +36,12 @@ const overlap = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width
 const within = (inner: Rect, outer: Rect) => inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.width <= outer.x + outer.width && inner.y + inner.height <= outer.y + outer.height
 const center = (rect: Rect) => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
 
-Deno.test("default: the camera is the main view, map and 3D on the left, status and settings on the right (layers, TF folded)", () => {
+Deno.test("default: the camera is the main view, map and 3D on the left, status and settings on the right (TF folded)", () => {
     const arrangement = defaultArrangement(IDS)
     assertEquals(arrangement.stage, "camera:1")
     assertEquals(arrangement.left, ["map", "scene"])
-    assertEquals(arrangement.right, ["status", "settings", "layers", "tf"])
-    assertEquals(arrangement.collapsed.sort(), ["layers", "tf"])
+    assertEquals(arrangement.right, ["status", "settings", "tf"])
+    assertEquals(arrangement.collapsed.sort(), ["tf"])
     assertEquals(arrangement.floating, [])
 })
 
@@ -51,7 +51,7 @@ Deno.test("a saved arrangement is made safe: each panel once, unknown ones dropp
         left: ["map", "ghost", "scene", "scene"],
         right: ["status"],
         floating: [{ id: "settings", x: 100, y: 120, width: 10, height: NaN }, { id: "tf", x: 300, y: 300, width: 300, height: 200 }],
-        closed: ["layers", "map"],
+        closed: ["status", "map"],
         collapsed: ["map", "nope"],
         leftWidth: Infinity,
         rightWidth: 10,
@@ -61,8 +61,8 @@ Deno.test("a saved arrangement is made safe: each panel once, unknown ones dropp
     assertEquals(arrangement.stage, "map")
     assertEquals(arrangement.left, ["camera:1", "scene"])
     assertEquals(arrangement.floating.map((box) => box.id), ["tf"])
-    // there's no closed place (an old arrangement's closed list is ignored): layers is back home, on the right
-    assert(!("closed" in arrangement) && arrangement.right.includes("layers"))
+    // there's no closed place (an old arrangement's closed list is ignored): status is in its rail, on the right
+    assert(!("closed" in arrangement) && arrangement.right.includes("status"))
     // settings (its box was broken) went home: the right rail
     assert(arrangement.right.includes("settings"))
     // the stage panel is never folded
@@ -89,7 +89,7 @@ Deno.test("desktop: the rails and the main view share the space between the stri
     assert(within(left, layout.area) && within(right, layout.area) && within(layout.stage, layout.area))
     assert(!overlap(left, layout.stage) && !overlap(right, layout.stage))
     assertEquals(layout.slots["camera:1"].rect, layout.stage)
-    const docked = ["map", "scene", "status", "settings", "layers", "tf"].map((id) => layout.slots[id].rect)
+    const docked = ["map", "scene", "status", "settings", "tf"].map((id) => layout.slots[id].rect)
     for (const [index, rect] of docked.entries()) {
         assert(rect.height >= PANEL_HEAD)
         for (const other of docked.slice(index + 1)) {
@@ -97,8 +97,8 @@ Deno.test("desktop: the rails and the main view share the space between the stri
         }
     }
     // folded: just the header; the rest share the rail
-    assertEquals(layout.slots.layers.rect.height, PANEL_HEAD)
-    assert(layout.slots.layers.collapsed && !layout.slots.settings.collapsed)
+    assertEquals(layout.slots.tf.rect.height, PANEL_HEAD)
+    assert(layout.slots.tf.collapsed && !layout.slots.settings.collapsed)
     assert(layout.slots.settings.rect.height > layout.slots.status.rect.height)
     // the stage is wider than both rails together
     assert(layout.stage.width > left.width + right.width)
@@ -208,9 +208,9 @@ Deno.test("the panel actions: collapse, pop out and dock back, show", () => {
     // it remembers where it floated
     assertEquals(popOut(docked, "settings", layout).floating.find((other) => other.id === "settings"), box)
     // show: expanded where it is
-    const shownLayers = showPanel(arrangement, "layers")
-    assertEquals(locate(shownLayers, "layers")?.zone, "right")
-    assert(!shownLayers.collapsed.includes("layers"))
+    const shownLayers = showPanel(arrangement, "tf")
+    assertEquals(locate(shownLayers, "tf")?.zone, "right")
+    assert(!shownLayers.collapsed.includes("tf"))
 })
 
 Deno.test("splitters: the pair's share moves, their total height doesn't; rails stay within their limits", () => {

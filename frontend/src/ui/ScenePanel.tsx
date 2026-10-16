@@ -1,6 +1,6 @@
 // The 3D view (lidar, maps, TF, the robot model) as a workspace panel (ui/Panel.tsx). Its tools: points and bytes a
 // second and its menu: cameras in 3D (the same setting as Settings → 3D view), then each PointCloud2 on the bus (on/off,
-// this viewer's bandwidth preset, color and size).
+// this viewer's bandwidth preset, color and size), then every other layer (TF, maps, markers…: ui/LayersPanel.tsx).
 // Collapsed (or off screen: a shut drawer, a rail hidden by focus) every 3D layer stops: nothing subscribed, no
 // bandwidth; expanded, they subscribe again. Follow sits over its corner, and in the dock while it's the main view.
 // View-only: nothing here moves the robot. The element the viewer draws into (`host`) is never remounted, wherever the
@@ -24,6 +24,7 @@ import { panelTitle } from "./commands.ts"
 import { useWorkspaceApi } from "./Workspace.tsx"
 import { useDockActions } from "./dockActions.ts"
 import { Unavailable } from "./Unavailable.tsx"
+import { LayerList } from "./LayersPanel.tsx"
 
 const COLOR_MODES: [PointLook["colorMode"], string][] = [["height", "by height"], ["intensity", "by intensity"], ["range", "by distance"], ["solid", "solid"]]
 
@@ -124,12 +125,11 @@ function SceneRate() {
 
 function CloudButton({ app, open, onOpen, buttonRef }: { app: ViewerApp; open: boolean; onOpen: (open: boolean) => void; buttonRef: RefObject<HTMLButtonElement | null> }) {
     const { list } = useStore(app.layers.entries)
-    const clouds = list.filter(isCloud)
-    const on = clouds.filter((entry) => entry.enabled).length
+    const on = list.filter((entry) => entry.enabled).length
     return (
-        <Button ref={buttonRef} className="dr-btn--icon icon-button scene-clouds" aria-haspopup="menu" aria-expanded={open} title={`3D view settings: cameras in 3D, point clouds (${on} of ${clouds.length} shown)`} aria-label="3D view settings" onClick={() => onOpen(!open)}>
+        <Button ref={buttonRef} className="dr-btn--icon icon-button scene-clouds" aria-haspopup="menu" aria-expanded={open} title={`3D view layers: cameras in 3D, point clouds, TF and the rest (${on} of ${list.length} shown)`} aria-label="3D view settings" onClick={() => onOpen(!open)}>
             <Icon name="layers" size={15} />
-            {clouds.length > 0 && <span className="scene-count">{on}/{clouds.length}</span>}
+            {list.length > 0 && <span className="scene-count">{on}/{list.length}</span>}
         </Button>
     )
 }
@@ -151,14 +151,10 @@ function CloudMenu({ app, anchor, onClose }: { app: ViewerApp; anchor: HTMLEleme
     return createPortal(
         <Card padded={false} className="cloud-menu" role="menu" aria-label="3D view settings" style={popoverPosition(anchor, 320)}>
             <CamerasIn3dRow app={app} />
-            {list.filter((entry) => entry.type.id === "tf").map((entry) => (
-                <div key={entry.topic.key} className="cloud-row tf-row" title={`the TF tree's axes, names and links (${entry.topic.key})`}>
-                    <Toggle value={entry.enabled} onChange={(enabled) => app.layers.setEnabled(entry.topic.key, enabled)} label={`TF frames (${entry.topic.name})`} />
-                </div>
-            ))}
             <div className="quality-title">Point clouds</div>
             {!clouds.length && <p className="cloud-empty">No PointCloud2 on the bus yet.</p>}
             {clouds.map((entry) => <CloudRow key={entry.topic.key} app={app} entry={entry} rate={rates[entry.topic.key]} />)}
+            <LayerList app={app} skip={isCloud} />
         </Card>,
         document.body,
     )

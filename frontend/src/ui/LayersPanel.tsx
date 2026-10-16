@@ -1,10 +1,10 @@
-// Every drawable topic, grouped by layer type: a switch (on = subscribed), live info or the problem, and the
-// layer's own settings behind a disclosure.
+// The 3D view menu's layers past its point clouds (ui/ScenePanel.tsx): every other drawable topic, grouped by layer
+// type: a switch (on = subscribed), live info or the problem, and the layer's own settings behind a disclosure.
 import { useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import type { LayerEntry } from "../core/layers/manager.ts"
 import { useStore } from "../core/store.ts"
-import { Heading, Toggle } from "dimos-react"
+import { Toggle } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { bandwidthOverrides, setOverride } from "../core/bandwidth.ts"
 
@@ -40,21 +40,21 @@ function LayerRow({ app, entry }: { app: ViewerApp; entry: LayerEntry }) {
     )
 }
 
-export function LayersPanel({ app }: { app: ViewerApp }) {
-    const { list } = useStore(app.layers.entries)
+export function LayerList({ app, skip }: { app: ViewerApp; skip: (entry: LayerEntry) => boolean }) {
+    const all = useStore(app.layers.entries).list
+    const list = all.filter((entry) => !skip(entry))
     const connection = useStore(app.connection.status)
     const groups = new Map<string, LayerEntry[]>()
     for (const entry of list) {
         groups.set(entry.type.label, [...(groups.get(entry.type.label) ?? []), entry])
     }
-    const drawn = new Set(list.map((entry) => entry.topic.key))
+    const drawn = new Set(all.map((entry) => entry.topic.key))
     const other = connection.topics.filter((topic) => !drawn.has(topic.key))
     return (
         <div className="layers">
-            {!list.length && <p className="empty">Waiting for topics… start a blueprint (or a replay) and they appear here.</p>}
             {[...groups].map(([label, entries]) => (
                 <section key={label} className="layer-group">
-                    <Heading level={3}>{label}</Heading>
+                    <div className="quality-title">{label}</div>
                     {entries.map((entry) => <LayerRow key={entry.topic.key} app={app} entry={entry} />)}
                 </section>
             ))}

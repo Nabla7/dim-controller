@@ -1,5 +1,5 @@
 // The page's one panel system: a main view (the stage) between a left and a right rail, plus panels floating over the
-// stage. Every panel (each camera, the map, the 3D view, status, network, settings, layers, TF) sits in exactly one place: the
+// stage. Every panel (each camera, the map, the 3D view, status, network, settings, TF) sits in exactly one place: the
 // stage, a rail (stacked top to bottom) or floating; any panel can go to any place, and a rail or floating panel folds
 // to its header (its rail's other panels take the height). Dragging a header snaps it
 // into a rail (near or over it), onto the stage (its middle: swap), or leaves it floating, its edges snapping to the
@@ -55,7 +55,6 @@ const HOMES: Record<string, { side: Side; collapsed?: boolean; weight: number; f
     status: { side: "right", weight: 0.75, float: { width: 320, height: 300 } },
     settings: { side: "right", weight: 1.5, float: { width: 360, height: 520 } },
     arms: { side: "right", weight: 1.5, float: { width: 360, height: 560 } },
-    layers: { side: "right", collapsed: true, weight: 1.2, float: { width: 360, height: 480 } },
     tf: { side: "right", collapsed: true, weight: 1, float: { width: 340, height: 420 } },
 }
 const CAMERA_HOME = { side: "left" as Side, weight: 1, float: { width: 480, height: 270 + PANEL_HEAD } }

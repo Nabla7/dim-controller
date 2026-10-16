@@ -1,11 +1,10 @@
-// The panels that are lists and forms: Status, Settings, Arms (while there are arms), Layers and TF, each in the shared frame (ui/Panel.tsx), its
+// The panels that are lists and forms: Status, Settings, Arms (while there are arms) and TF, each in the shared frame (ui/Panel.tsx), its
 // body scrolling inside it.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { Panel } from "./Panel.tsx"
 import { StatusPanel } from "./StatusPanel.tsx"
 import { SettingsPanel } from "./SettingsPanel.tsx"
-import { LayersPanel } from "./LayersPanel.tsx"
 import { TfPanel } from "./TfPanel.tsx"
 import { ArmsPanel, armsPanelShown } from "./ArmsPanel.tsx"
 import { ARMS_PANEL } from "./workspace.ts"
@@ -13,8 +12,6 @@ import { panelTitle } from "./commands.ts"
 
 export function InfoPanels({ app }: { app: ViewerApp }) {
     const { issues } = useStore(app.tfIssues)
-    const { list } = useStore(app.layers.entries)
-    const on = list.filter((entry) => entry.enabled).length
     const robot = useStore(app.robot)
     const runs = useStore(app.runs.state)
     const manipulation = useStore(app.manipulation.state)
@@ -31,9 +28,6 @@ export function InfoPanels({ app }: { app: ViewerApp }) {
                     <ArmsPanel app={app} />
                 </Panel>
             )}
-            <Panel id="layers" title={panelTitle("layers")} icon="layers" info={`${on}/${list.length} on`} bodyClassName="panel-body">
-                <LayersPanel app={app} />
-            </Panel>
             <Panel id="tf" title={panelTitle("tf")} icon="tree" info={issues.length ? `${issues.length} issue${issues.length === 1 ? "" : "s"}` : undefined} className={issues.length ? "has-issues" : ""} bodyClassName="panel-body">
                 <TfPanel app={app} />
             </Panel>
