@@ -379,11 +379,21 @@ export class ArmManipView {
             // no planner to ask: the page's own IK (no collision check) places the ghost and says whether it reaches
             const tip = this.#tip(group)!
             const inRoot = model.rootInBase.clone().invert().multiply(handle.matrix)
-            const result = solveIk(model.kinematics, tip, inRoot, this.#solved ?? this.#targetPositions() ?? this.#measured())
+            // only the group's joints move (the torso stays where it is: the planner gets just these), by their URDF
+            // names (a planner's may be prefixed: "r1pro/left_arm_joint1")
+            const urdfNames = new Map<string, string>()
+            for (const name of this.manipulation.groupById(group)?.joint_names ?? []) {
+                const short = Object.keys(urdfPositions(model.kinematics, [{ name, position: 0 }], isGripperJoint))[0]
+                if (short) {
+                    urdfNames.set(short, name)
+                }
+            }
+            const previous = this.#solved ?? this.#targetPositions() ?? {}
+            const seed = { ...this.#measured(), ...Object.fromEntries([...urdfNames.keys()].filter((short) => short in previous).map((short) => [short, previous[short]])) }
+            const result = solveIk(model.kinematics, tip, inRoot, seed, new Set(urdfNames.keys()))
             this.#solved = result.positions
             this.manipulation.setReach({ reachable: result.reachable, positionError: result.positionError, angleError: result.angleError })
-            const groupJoints = this.manipulation.groupById(group)?.joint_names ?? []
-            next.joints = { ...next.joints, ...Object.fromEntries(groupJoints.filter((name) => name in result.positions).map((name) => [name, result.positions[name]])) }
+            next.joints = { ...next.joints, ...Object.fromEntries([...urdfNames].map(([short, name]) => [name, result.positions[short]])) }
         }
         this.manipulation.setTarget(next, false)
     }

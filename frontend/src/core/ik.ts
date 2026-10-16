@@ -63,10 +63,11 @@ function solve(matrix: number[][], vector: number[]): number[] {
 
 /**
  * Moves the chain's joints so the link `tip` (pose relative to the kinematics' root) reaches `target`, starting from
- * `seed` (the joints not in the chain keep their seed value).
+ * `seed` (the joints not in the chain keep their seed value). `movable`: only these of the chain's joints move (an
+ * arm's group, not the torso it hangs from).
  */
-export function solveIk(kinematics: Kinematics, tip: string, target: THREE.Matrix4, seed: JointPositions, iterations = 80): IkResult {
-    const chain = kinematics.chain(tip)
+export function solveIk(kinematics: Kinematics, tip: string, target: THREE.Matrix4, seed: JointPositions, movable?: Set<string>, iterations = 80): IkResult {
+    const chain = kinematics.chain(tip).filter((joint) => !movable || movable.has(joint.name))
     const positions: JointPositions = { ...seed }
     const tipOf = (values: JointPositions) => kinematics.linkPoses(values).get(tip) ?? new THREE.Matrix4()
     const clamp = (name: string, value: number) => {

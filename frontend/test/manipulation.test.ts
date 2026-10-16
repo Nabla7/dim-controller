@@ -77,6 +77,10 @@ Deno.test("IK reaches a pose the arm can reach and says when one is out of reach
         const limit = kinematics.joints.get(name)?.limit
         assert(!limit || (value >= limit[0] - 1e-9 && value <= limit[1] + 1e-9), `${name} ${value} outside ${limit}`)
     }
+    // only the movable joints move: j1 (a torso, say) keeps its seed
+    const armOnly = solveIk(kinematics, "tip", target, { j1: 0.4, j2: 0.1, j3: 0.1 }, new Set(["j2", "j3"]))
+    assertEquals(armOnly.positions.j1, 0.4)
+    assert(armOnly.reachable, `error ${armOnly.positionError} m`)
     const far = new THREE.Matrix4().makeTranslation(3, 0, 0.5)
     assertEquals(solveIk(kinematics, "tip", far, {}).reachable, false)
 })
