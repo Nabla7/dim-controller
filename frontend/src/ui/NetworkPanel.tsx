@@ -186,7 +186,7 @@ function PriorityStepper({ streamKey, priority, overridden, disabled }: { stream
     return (
         <span className={`net-priority ${overridden ? "set" : ""}`} title={disabled ? "reliable: the gateway never shrinks it, so priority doesn't apply" : `bandwidth priority ${priorityLabel(priority)} (when the link is short, a stream's cut is split by demand ÷ priority; "last" gives up first)`}>
             <button type="button" className="net-step" aria-label={`Lower ${name}'s priority`} disabled={disabled || priority <= 0} onClick={() => setOverride(streamKey, { bandwidthPriority: stepPriority(priority, -1) })}>−</button>
-            <span className="net-priority-value" data-testid="net-priority">{disabled ? "—" : priorityLabel(priority)}</span>
+            <span className="net-priority-value" data-testid="net-priority">{priorityLabel(priority)}</span>
             <button type="button" className="net-step" aria-label={`Raise ${name}'s priority`} disabled={disabled || priority >= 8} onClick={() => setOverride(streamKey, { bandwidthPriority: stepPriority(priority, 1) })}>+</button>
         </span>
     )
@@ -290,7 +290,7 @@ function ConsumersTable({ table, slots, consumers }: { table: StreamShare[]; slo
                                         <span className="net-heat" style={{ width: `${heat * 100}%`, background: heatColor(heat) }} />
                                         <span className="net-rate" title={paused ? "paused: not subscribed" : `${Math.round(row.share * 100)}% of the link`}>{paused ? "0.00" : mbps(row.bytesPerSec).toFixed(2)}</span>
                                     </td>
-                                    <td className="net-col-priority">{controllable ? <PriorityStepper streamKey={row.key} priority={priority} overridden={override?.bandwidthPriority !== undefined} disabled={reliable} /> : <span className="dim">—</span>}</td>
+                                    <td className="net-col-priority">{controllable ? <PriorityStepper streamKey={row.key} priority={priority} overridden={override?.bandwidthPriority !== undefined} disabled={reliable} /> : <span className="dim" title="zenoh-gateway's default bandwidth priority">{priorityLabel(DEFAULT_PRIORITY)}</span>}</td>
                                     <td className="net-col-gear">{controllable && <button type="button" className={`net-icon-button ${tags.includes("tuned") ? "set" : ""}`} aria-label={`${streamName(row.key)} settings`} onClick={() => setEditing(row.key)}><Icon name="settings" size={15} /></button>}</td>
                                 </tr>
                             )
