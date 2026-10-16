@@ -184,7 +184,7 @@ function effectiveOf(consumer: Consumer | undefined, override: StreamOverride | 
 function PriorityStepper({ streamKey, priority, overridden, disabled }: { streamKey: string; priority: number; overridden: boolean; disabled: boolean }) {
     const name = streamName(streamKey)
     return (
-        <span className={`net-priority ${overridden ? "set" : ""}`} title={disabled ? "reliable: the gateway never shrinks it, so priority doesn't apply" : `bandwidth priority ${priorityLabel(priority)} (when the link is short, a stream's cut is split by demand ÷ priority; "last" gives up first)`}>
+        <span className={`net-priority ${overridden ? "set" : ""}`} title={disabled ? "reliable: the gateway never shrinks it, so priority doesn't apply" : `priority ${priorityLabel(priority)} (1 is the default; when the link is short, a 2 gives up twice what a 1 does, ½ half; "last" gives up first)`}>
             <button type="button" className="net-step" aria-label={`Lower ${name}'s priority`} disabled={disabled || priority <= 0} onClick={() => setOverride(streamKey, { bandwidthPriority: stepPriority(priority, -1) })}>−</button>
             <span className="net-priority-value" data-testid="net-priority">{priorityLabel(priority)}</span>
             <button type="button" className="net-step" aria-label={`Raise ${name}'s priority`} disabled={disabled || priority >= 8} onClick={() => setOverride(streamKey, { bandwidthPriority: stepPriority(priority, 1) })}>+</button>
@@ -415,8 +415,8 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
                     All counted by this browser (WebRTC stats), each second: throughput is the wire's bytes, a stream its data channel's
                     payload or its video track's. Protocol overhead is the wire beyond everything named (DTLS/SCTP framing, acks and
                     SCTP resends, which the browser doesn't count on their own). Latency is the heartbeat's round trip. A
-                    stream switched off is unsubscribed until switched back on; priority (×N takes 1/N of the cut when the
-                    link is short, "last" gives up first) and the gear's options are the gateway's, kept by this browser.{" "}
+                    stream switched off is unsubscribed until switched back on; priority (1 is the default; when the
+                    link is short a 2 gives up twice what a 1 does, ½ half, and "last" gives up first) and the gear's options are the gateway's, kept by this browser.{" "}
                     <button type="button" className="net-link" onClick={onStatus}>Open Status</button>
                 </p>
             </details>
