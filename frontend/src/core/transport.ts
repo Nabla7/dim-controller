@@ -6,6 +6,7 @@ import { getZenoh } from "dimos-react/dim-app/zenoh.js"
 import { Store } from "./store.ts"
 import { NetHistory, wireCounts, type WireCounts } from "./netHistory.ts"
 import { isLeasedKey, isLeaseRejection, LeaseKeeper, type LeaseClient } from "./lease.ts"
+import { applyOverride, bandwidthOverrides, isVideoOptions, optionDiff, type StreamOverride, withChanges } from "./bandwidth.ts"
 
 export { Priority }
 export type { Message, Publisher, SubscribeOptions, SubscriptionUpdate }
@@ -91,6 +92,15 @@ export async function transportBytesReceived(peer: RTCPeerConnection | null | un
     return (await peerCounts(peer))?.wire ?? null
 }
 
+/** What the page subscribes to on one key (the Network modal's Bandwidth Consumers): every subscription the app holds on it, paused or not. */
+export interface Consumer {
+    subscriptions: number
+    /** the app's own options (the first subscription's), before this viewer's override */
+    base: SubscribeOptions
+    /** a video track (delivery stays "latest"; maxBitrate applies) */
+    video: boolean
+}
+
 export class Connection {
     client: ZenohGateway | null = null
     readonly status = new Store<ConnectionState>({ state: "connecting", topics: [], droppedPerSecond: 0, rttMs: null, throughputBytesPerSec: null, error: null })
@@ -108,6 +118,8 @@ export class Connection {
     #leaseTried = false
     /** while taking control back, our old rejected subscriptions don't mean a new takeover */
     #takingBack = false
+    /** topic key → the page's subscriptions on it (core/bandwidth.ts's overrides apply under each) */
+    readonly consumers = new Store<Record<string, Consumer>>({})
 
     /**
      * Makes the page's shared connection (the first getZenoh() call: its options win), with the heartbeat drive needs;
@@ -116,6 +128,37 @@ export class Connection {
     constructor(deadmanMs = 400) {
         const heartbeatMisses = Math.max(2, Math.round((deadmanMs / 1000) * HEARTBEAT_HZ))
         this.#shared = getZenoh({ connect: connect as never, connectOptions: { heartbeatHz: HEARTBEAT_HZ, heartbeatMisses } })
+        bandwidthOverrides.subscribe(() => this.#overridesChanged())
+    }
+
+    /** This viewer changed a stream's override (Network → Bandwidth Consumers): each subscription on its key takes it. */
+    #overridesChanged() {
+        const overrides = bandwidthOverrides.get()
+        for (const subscription of this.#subscriptions) {
+            subscription.setOverride(overrides[subscription.key])
+        }
+        this.#refreshConsumers()
+    }
+
+    #refreshConsumers() {
+        const consumers: Record<string, Consumer> = {}
+        for (const subscription of this.#subscriptions) {
+            const consumer = consumers[subscription.key]
+            if (consumer) {
+                consumer.subscriptions++
+                consumer.video ||= subscription.video
+            } else {
+                consumers[subscription.key] = { subscriptions: 1, base: subscription.base, video: subscription.video }
+            }
+        }
+        if (JSON.stringify(consumers) !== JSON.stringify(this.consumers.get())) {
+            this.consumers.set(consumers)
+        }
+    }
+
+    /** The client a subscription on `key` may open on now: connected, and for a leased key once the lease was tried. */
+    #openable(key: string): ZenohGateway | null {
+        return this.client && (this.#leaseTried || !isLeasedKey(key)) ? this.client : null
     }
 
     async start() {
@@ -141,6 +184,7 @@ export class Connection {
                 subscription.open(client)
             }
         }
+        this.#refreshConsumers()
         let lastWire: { bytes: number; at: number } | null = null
         setInterval(async () => {
             const dropped = Object.values(client.stats).reduce((sum, stats) => sum + (stats.dropped || 0), 0)
@@ -218,18 +262,27 @@ export class Connection {
         return this.#reconnecting
     }
 
-    /** Subscribes now or once connected; the returned function unsubscribes, its `update` changes the options in place. */
+    /**
+     * Subscribes now or once connected (not while this viewer paused the key in Network); the returned function
+     * unsubscribes, its `update` changes the options in place. This viewer's override for the key (core/bandwidth.ts)
+     * applies on top of `options`, now and whenever it changes.
+     */
     subscribe(key: string, options: SubscribeOptions, onMessage: (message: Message) => void): LiveHandle {
-        const subscription = new LiveSubscription(key, options, onMessage, (reason) => this.#rejected(subscription, reason))
+        const subscription: LiveSubscription = new LiveSubscription(key, options, onMessage, (reason) => this.#rejected(subscription, reason), () => this.#openable(key), bandwidthOverrides.get()[key])
         this.#subscriptions.add(subscription)
-        if (this.client && (this.#leaseTried || !isLeasedKey(key))) {
-            subscription.open(this.client)
+        const client = this.#openable(key)
+        if (client) {
+            subscription.open(client)
         }
+        this.#refreshConsumers()
         const unsubscribe = () => {
             this.#subscriptions.delete(subscription)
             subscription.close()
+            this.#refreshConsumers()
         }
-        return Object.assign(unsubscribe, { update: (changes: SubscriptionUpdate) => subscription.update(changes) })
+        // the app's own option changes show in Bandwidth Consumers as its defaults
+        const update = (changes: SubscriptionUpdate) => subscription.update(changes).finally(() => this.#refreshConsumers())
+        return Object.assign(unsubscribe, { update })
     }
 
     /** A subscription the gateway ended or refused: another viewer's lease means that viewer took over. */
@@ -283,11 +336,49 @@ export class Connection {
     }
 }
 
-class LiveSubscription {
+/**
+ * One subscription the app holds: its own options (`base`) with this viewer's override on top (core/bandwidth.ts).
+ * Paused, it has no gateway subscription; unpaused it opens again. An override or app change goes in place where the
+ * gateway can (Subscription.update), else as a new subscription (closed, then opened: delivery can't change in place).
+ */
+export class LiveSubscription {
     #handle: Subscription | null = null
-    constructor(readonly key: string, public options: SubscribeOptions, readonly onMessage: (message: Message) => void, readonly onRejected: (reason: string) => void) {}
+    /** the options the open gateway subscription runs with */
+    #running: SubscribeOptions = {}
+    #override: StreamOverride | undefined
+    /**
+     * `openable()`: the client to open on now, or null (not connected, or the lease not tried yet: Connection opens it
+     * then); `override`: this viewer's for the key.
+     */
+    constructor(
+        readonly key: string,
+        public base: SubscribeOptions,
+        readonly onMessage: (message: Message) => void,
+        readonly onRejected: (reason: string) => void,
+        readonly openable: () => ZenohGateway | null,
+        override?: StreamOverride,
+    ) {
+        this.#override = override
+    }
+    get paused(): boolean {
+        return !!this.#override?.paused
+    }
+    get video(): boolean {
+        return isVideoOptions(this.base, this.#handle?.channelName)
+    }
+    /** what it runs with (or will when opened): the app's options, the override on top */
+    get options(): SubscribeOptions {
+        return applyOverride(this.base, this.#override, this.video)
+    }
+    get isOpen(): boolean {
+        return this.#handle !== null
+    }
     open(client: ZenohGateway) {
-        const handle = client.subscribe(this.key, this.options, this.onMessage)
+        if (this.paused || this.#handle) {
+            return
+        }
+        this.#running = this.options
+        const handle = client.subscribe(this.key, this.#running, this.onMessage)
         this.#handle = handle
         // refused when it opens (another viewer holds the lease); one ended later comes with the lease's onLost("takenOver")
         handle.ready().catch(() => handle === this.#handle && handle.rejectionReason !== null && this.onRejected(handle.rejectionReason))
@@ -296,22 +387,52 @@ class LiveSubscription {
     get rejection(): string | null {
         return this.#handle?.state === "rejected" ? this.#handle.rejectionReason : null
     }
-    /** zenoh-gateway >= 0.5.1: the running subscription takes the new options; before it opens, it opens with them. */
+    /** The app's change (zenoh-gateway >= 0.5.1: in place); a refused update throws, so the caller can resubscribe. */
     async update(changes: SubscriptionUpdate) {
-        if (this.#handle) {
-            await this.#handle.update(changes)
-            this.options = this.#handle.options
+        this.base = withChanges(this.base, changes)
+        await this.#apply()
+    }
+    /** This viewer's override changed: pause, resume, or run with the new options (a refused update resubscribes). */
+    setOverride(override: StreamOverride | undefined) {
+        if (JSON.stringify(override) === JSON.stringify(this.#override)) {
             return
         }
-        const options: Record<string, unknown> = { ...this.options }
-        for (const [name, value] of Object.entries(changes)) {
-            if (value === null) {
-                delete options[name]
-            } else {
-                options[name] = name === "encodeOptions" ? { ...this.options.encodeOptions, ...(value as object) } : value
-            }
+        this.#override = override
+        this.#apply().catch((error) => {
+            console.warn(`[bandwidth] ${this.key}: the gateway refused the change (${error?.message ?? error}); resubscribing`)
+            this.#reopen()
+        })
+    }
+    async #apply() {
+        if (this.paused) {
+            this.close()
+            return
         }
-        this.options = options as SubscribeOptions
+        const handle = this.#handle
+        if (!handle) {
+            const client = this.openable()
+            if (client) {
+                this.open(client)
+            }
+            return
+        }
+        const next = this.options
+        const { update, resubscribe } = optionDiff(this.#running, next)
+        if (resubscribe) {
+            return this.#reopen()
+        }
+        if (!Object.keys(update).length) {
+            return
+        }
+        this.#running = next
+        await handle.update(update)
+    }
+    #reopen() {
+        const client = this.openable()
+        this.close()
+        if (client) {
+            this.open(client)
+        }
     }
     close() {
         this.#handle?.close()

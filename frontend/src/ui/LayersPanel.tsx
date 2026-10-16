@@ -6,10 +6,13 @@ import type { LayerEntry } from "../core/layers/manager.ts"
 import { useStore } from "../core/store.ts"
 import { Heading, Toggle } from "dimos-react"
 import { Icon } from "./icons.tsx"
+import { bandwidthOverrides, setOverride } from "../core/bandwidth.ts"
 
 function LayerRow({ app, entry }: { app: ViewerApp; entry: LayerEntry }) {
     const [open, setOpen] = useState(false)
     const Settings = entry.type.Settings
+    // paused in Network → Bandwidth Consumers: the layer is on but nothing is subscribed
+    const paused = !!useStore(bandwidthOverrides)[entry.topic.key]?.paused
     return (
         <div className={`layer-row ${entry.enabled ? "on" : ""} ${entry.status.problem ? "problem" : ""}`} data-key={entry.topic.key}>
             <div className="layer-line">
@@ -20,7 +23,12 @@ function LayerRow({ app, entry }: { app: ViewerApp; entry: LayerEntry }) {
                     {Settings && <span className={`chevron ${open ? "open" : ""}`}><Icon name="chevron-right" size={14} /></span>}
                 </button>
             </div>
-            {entry.enabled && (entry.status.problem || entry.status.info) && (
+            {entry.enabled && paused && (
+                <div className="layer-status paused" data-testid="layer-paused">
+                    paused in Network · <button type="button" className="net-link" onClick={() => setOverride(entry.topic.key, { paused: undefined })}>resume</button>
+                </div>
+            )}
+            {entry.enabled && !paused && (entry.status.problem || entry.status.info) && (
                 <div className={`layer-status ${entry.status.problem ? "problem" : ""}`}>{entry.status.problem ?? entry.status.info}</div>
             )}
             {open && Settings && (

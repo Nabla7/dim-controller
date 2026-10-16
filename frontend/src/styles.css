@@ -579,17 +579,58 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .net-key { width: 10px; height: 2px; border-radius: 1px; flex: none; }
 .net-readout-close { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border: 0; padding: 0; background: none; color: var(--muted-fg); font-size: 15px; line-height: 1; cursor: pointer; pointer-events: auto; }
 .net-streams { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+.net-table { position: relative; container-type: inline-size; }
 .net-table h4 { margin: 0 0 4px; font-size: 12px; font-weight: 600; }
 .net-table h4 .dim { font-weight: 400; }
 /* a fixed height (about 6 rows) that scrolls on its own, so the modal never grows or shrinks with the stream count */
-.net-table-scroll { height: 186px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
-.net-streams th { position: sticky; top: 0; z-index: 1; background: var(--raised, var(--card)); text-align: right; font: 10px var(--mono); color: var(--muted-fg); font-weight: 400; border-bottom: 1px solid var(--border); padding: 2px 0 2px 8px; width: 64px; height: 24px; box-sizing: border-box; }
-.net-streams th:last-child { width: 48px; }
-.net-streams th:first-child, .net-streams td:first-child { text-align: left; width: auto; padding-left: 0; }
-.net-streams td { height: 26px; box-sizing: border-box; text-align: right; padding: 0 0 0 8px; font-family: var(--mono); font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--hair, var(--border)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.net-streams td:first-child { font-family: var(--sans); }
+.net-table-scroll { height: 268px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.net-streams th { position: sticky; top: 0; z-index: 1; background: var(--raised, var(--card)); text-align: left; font: 10px var(--mono); color: var(--muted-fg); font-weight: 400; border-bottom: 1px solid var(--border); padding: 2px 0 2px 6px; height: 24px; box-sizing: border-box; }
+.net-streams td { height: 40px; box-sizing: border-box; padding: 0 0 0 6px; border-bottom: 1px solid var(--hair, var(--border)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.net-streams .net-col-on { width: 44px; padding-left: 0; text-align: center; }
+.net-streams .net-col-rate { width: 84px; position: relative; text-align: right; padding-right: 6px; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.net-streams th.net-col-rate { text-align: right; }
+.net-streams .net-col-priority { width: 112px; text-align: center; }
+.net-streams .net-col-gear { width: 40px; text-align: center; padding-left: 2px; }
+.net-streams tr.paused td { color: var(--muted-fg); }
+.net-streams tr.paused .net-stream-name { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted-fg) 60%, transparent); }
 .net-streams tr.net-empty td { color: var(--muted-fg); border-bottom-color: transparent; }
-.net-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.net-streams .dr-toggle { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; cursor: pointer; }
+.net-swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: 1px; }
+.net-stream-name { font-size: 12px; }
+.net-stream-tags { display: block; padding-left: 14px; font: 10px var(--mono); color: var(--muted-fg); overflow: hidden; text-overflow: ellipsis; }
+.net-stream-tags:empty { display: none; }
+/* how much it uses: a bar under the number, its width and colour (calm → hot) against the busiest stream */
+:root { --net-heat-cool: color-mix(in srgb, var(--net-1) 45%, transparent); --net-heat-hot: #e0402a; }
+.net-heat { position: absolute; left: 6px; bottom: 7px; height: 4px; max-width: calc(100% - 12px); border-radius: 2px; }
+.net-streams td.net-col-rate { padding-bottom: 6px; }
+.net-rate { position: relative; }
+.net-priority { display: inline-flex; align-items: center; gap: 0; }
+.net-priority-value { width: 40px; text-align: center; font: 11px var(--mono); color: var(--muted-fg); }
+.net-priority.set .net-priority-value { color: var(--fg); font-weight: 600; }
+.net-step, .net-icon-button { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 6px; padding: 0; background: none; color: var(--fg); font: 16px/1 var(--sans); cursor: pointer; }
+.net-step:hover:not(:disabled), .net-icon-button:hover { background: var(--accent); border-color: var(--border); }
+.net-step:disabled { opacity: 0.3; cursor: default; }
+.net-icon-button.set { color: var(--primary); }
+@container (max-width: 440px) {
+    .net-streams .net-col-rate { width: 62px; }
+    .net-streams .net-col-priority { width: 100px; }
+    .net-priority-value { width: 28px; font-size: 10px; }
+    .net-streams .net-col-on { width: 40px; }
+}
+/* a stream's advanced options: over the table, so nothing under it moves */
+.net-settings { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 8px; background: var(--raised, var(--card)); box-shadow: var(--shadow-md, 0 2px 8px rgb(0 0 0 / 0.2)); min-width: 0; }
+.net-settings-head { display: flex; align-items: center; gap: 8px; padding: 0 0 0 12px; border-bottom: 1px solid var(--border); }
+.net-settings-title { flex: 1; min-width: 0; font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.net-settings-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 8px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+@container (min-width: 560px) { .net-settings-body { grid-template-columns: repeat(2, minmax(0, 1fr)); } .net-field.wide { grid-column: 1 / -1; } }
+.net-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 12px; }
+.net-field-name { font-weight: 600; }
+.net-app-default { font-weight: 400; font: 10px var(--mono); color: var(--muted-fg); margin-left: 4px; }
+.net-field-ends { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted-fg); }
+.net-field-note { font-size: 10.5px; color: var(--muted-fg); }
+.net-field .dr-segmented[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
+.net-settings-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--border); }
+.net-settings-foot .dr-btn { min-height: 36px; }
 .net-about { font-size: 11px; color: var(--muted-fg); }
 .net-about summary { cursor: pointer; }
 .net-about p { margin: 6px 0 0; }

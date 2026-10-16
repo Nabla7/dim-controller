@@ -256,11 +256,15 @@ export function stableOrder(previous: string[], rates: Record<string, number>, m
     return order
 }
 
-/** The streams table: the last `averageSamples`' average of every stream with traffic in the last `orderSamples`, in a stableOrder by the longer average (a stream gone quiet shows 0 until it leaves that window). */
-export function streamTable(samples: NetSample[], previousOrder: string[], averageSamples: number, orderSamples: number): StreamShare[] {
+/**
+ * The streams table: the last `averageSamples`' average of every stream with traffic in the last `orderSamples`, and of
+ * every `alwaysKeys` one (the page's subscriptions, paused ones too: 0 without traffic), in a stableOrder by the longer
+ * average (a stream gone quiet shows 0 until it leaves that window).
+ */
+export function streamTable(samples: NetSample[], previousOrder: string[], averageSamples: number, orderSamples: number, alwaysKeys: string[] = []): StreamShare[] {
     const shown = new Map(breakdown(averageOf(samples.slice(-averageSamples))).map((row) => [row.key, row]))
     const longRates = Object.fromEntries(breakdown(averageOf(samples.slice(-orderSamples))).map((row) => [row.key, row.bytesPerSec]))
-    for (const key of shown.keys()) {
+    for (const key of [...shown.keys(), ...alwaysKeys]) {
         longRates[key] ??= 0
     }
     return stableOrder(previousOrder, longRates).map((key) => shown.get(key) ?? { key, bytesPerSec: 0, share: 0 })

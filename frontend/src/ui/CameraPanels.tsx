@@ -23,6 +23,7 @@ import { ContainCrash, Unavailable } from "./Unavailable.tsx"
 import { presetFor, QUALITY_PRESETS, readLocal, type VideoQuality, writeLocal } from "../core/videoQuality.ts"
 import { panelTitle } from "./commands.ts"
 import { TAKE_BACK_TEXT, TAKEN_OVER_TEXT } from "./barStatus.ts"
+import { bandwidthOverrides, setOverride } from "../core/bandwidth.ts"
 import { cameraId, isCamera, workspace } from "./workspace.ts"
 import type { CameraActions } from "./useCommands.ts"
 
@@ -163,6 +164,9 @@ function CameraPanel({ app, panel, topics, onChange }: {
     const switched = api.mobile && slot?.zone === "stage"
     const { hidden: pageHidden } = useStore(pageVisibility)
     const takenOver = useStore(app.connection.lease.state).status === "takenOver"
+    const overrides = useStore(bandwidthOverrides)
+    // paused in Network → Bandwidth Consumers: no subscription, so say so instead of looking stalled
+    const paused = !!topic && !!overrides[topic.key]?.paused
     const open = panelStreams(slot, pageHidden)
 
     // the stream (shared with a 3D projection of the same topic), only while the panel is open
@@ -392,7 +396,13 @@ function CameraPanel({ app, panel, topics, onChange }: {
                     <Button variant="primary" onClick={() => void app.connection.takeBack()}>{TAKE_BACK_TEXT}</Button>
                 </div>
             )}
-            {topic && open && stalled && !takenOver && <div className="camera-stalled" data-testid="camera-stalled">slow / stopped link</div>}
+            {topic && paused && !takenOver && (
+                <div className="camera-takeover" data-testid="camera-paused">
+                    <span>Paused in Network</span>
+                    <Button variant="primary" onClick={() => setOverride(topic.key, { paused: undefined })}>Resume</Button>
+                </div>
+            )}
+            {topic && open && stalled && !takenOver && !paused && <div className="camera-stalled" data-testid="camera-stalled">slow / stopped link</div>}
             {!topic && <div className="camera-placeholder"><Icon name="camera" size={28} /><span>{!tabs.length ? "No camera on the bus yet" : switched ? "Pick a camera from the view switch (top bar)" : "Pick a camera from this panel's topic tabs (shown on hover) or the palette (/)"}</span></div>}
         </Panel>
     )
