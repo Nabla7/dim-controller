@@ -617,7 +617,9 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .net-rate { position: relative; }
 .net-priority { display: inline-flex; align-items: center; gap: 0; }
 .net-priority-value { width: 40px; text-align: center; font: 11px var(--mono); color: var(--muted-fg); }
-.net-priority.set .net-priority-value { color: var(--fg); font-weight: 600; }
+.net-priority.set .net-priority-value { color: var(--fg); }
+/* where there is nothing to step, the value still sits where a stepper's does */
+.net-step-spacer { display: inline-block; width: 36px; }
 .net-step, .net-icon-button { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 6px; padding: 0; background: none; color: var(--fg); font: 16px/1 var(--sans); cursor: pointer; }
 .net-step:hover:not(:disabled), .net-icon-button:hover { background: var(--accent); border-color: var(--border); }
 .net-step:disabled { opacity: 0.3; cursor: default; }

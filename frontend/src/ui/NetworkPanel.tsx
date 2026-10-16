@@ -290,7 +290,7 @@ function ConsumersTable({ table, slots, consumers }: { table: StreamShare[]; slo
                                         <span className="net-heat" style={{ width: `${heat * 100}%`, background: heatColor(heat) }} />
                                         <span className="net-rate" title={paused ? "paused: not subscribed" : `${Math.round(row.share * 100)}% of the link`}>{paused ? "0.00" : mbps(row.bytesPerSec).toFixed(2)}</span>
                                     </td>
-                                    <td className="net-col-priority">{controllable ? <PriorityStepper streamKey={row.key} priority={priority} overridden={override?.bandwidthPriority !== undefined} disabled={reliable} /> : <span className="dim" title="zenoh-gateway's default bandwidth priority">{priorityLabel(DEFAULT_PRIORITY)}</span>}</td>
+                                    <td className="net-col-priority">{controllable ? <PriorityStepper streamKey={row.key} priority={priority} overridden={override?.bandwidthPriority !== undefined} disabled={reliable} /> : <span className="net-priority" title="not a subscription this page makes: zenoh-gateway's default priority"><span className="net-step-spacer" /><span className="net-priority-value" data-testid="net-priority">{priorityLabel(DEFAULT_PRIORITY)}</span><span className="net-step-spacer" /></span>}</td>
                                     <td className="net-col-gear">{controllable && <button type="button" className={`net-icon-button ${tags.includes("tuned") ? "set" : ""}`} aria-label={`${streamName(row.key)} settings`} onClick={() => setEditing(row.key)}><Icon name="settings" size={15} /></button>}</td>
                                 </tr>
                             )
