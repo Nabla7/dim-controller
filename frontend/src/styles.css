@@ -804,8 +804,8 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .pose-color { width: 28px; height: 22px; padding: 0; border: 0; background: none; cursor: pointer; }
 .saved-pose-slot { position: relative; display: inline-flex; }
 .saved-pose-hint { position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 10.5px; color: var(--fg); background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1px 6px; pointer-events: none; z-index: 2; }
-.saved-pose-labels { display: inline-grid; }
-.saved-pose-labels > span { grid-area: 1 / 1; text-align: center; }
-.saved-pose-labels > .hidden { visibility: hidden; }
+.stacked-labels { display: inline-grid; }
+.stacked-labels > span { grid-area: 1 / 1; text-align: center; }
+.stacked-labels > .hidden { visibility: hidden; }
 .saved-pose.running { outline: 2px solid var(--fg); outline-offset: 1px; }
 .saved-poses { padding-top: 18px; }

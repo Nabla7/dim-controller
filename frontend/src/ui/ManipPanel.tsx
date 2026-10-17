@@ -248,9 +248,20 @@ export function ManipActions({ app, testid = "manip" }: { app: ViewerApp; testid
         <div className="button-row manip-actions" data-testid={`${testid}-actions`}>
             <Button size="sm" title="plans first if the target has no plan yet" disabled={!manipulation.canRun() || busy} loading={state.busy === "plan" || state.busy === "preview"} onClick={() => void manipulation.preview()} data-testid={`${testid}-preview`}>Preview</Button>
             <Button size="sm" variant="primary" title="plans first if the target has no plan yet" disabled={!manipulation.canRun()} loading={state.busy === "execute"} onClick={() => void manipulation.execute()} data-testid={`${testid}-execute`}>Execute</Button>
-            {manipulation.canCancel() && <Button size="sm" variant="danger" onClick={() => manipulation.cancel()} data-testid={`${testid}-cancel`}>Cancel</Button>}
-            <Button size="sm" variant="ghost" disabled={!state.plan && !state.target} title="drops the plan and the target: the gizmo goes back to the arm (Ctrl+Z brings the target back)" onClick={() => manipulation.clear()} data-testid={`${testid}-clear`}>Clear plan</Button>
+            {/* one button: Clear plan, or a red Cancel while planning or executing, at one width (nothing beside it moves) */}
+            {manipulation.canCancel()
+                ? <Button size="sm" variant="danger" onClick={() => manipulation.cancel()} data-testid={`${testid}-cancel`}><StackedLabels shown={1} labels={["Clear plan", "Cancel"]} /></Button>
+                : <Button size="sm" variant="ghost" disabled={!state.plan && !state.target} title="drops the plan and the target: the gizmo goes back to the arm (Ctrl+Z brings the target back)" onClick={() => manipulation.clear()} data-testid={`${testid}-clear`}><StackedLabels shown={0} labels={["Clear plan", "Cancel"]} /></Button>}
         </div>
+    )
+}
+
+/** Every label in one cell, only `shown` visible: a button as wide as its widest label, whichever it shows. */
+function StackedLabels({ labels, shown }: { labels: string[]; shown: number }) {
+    return (
+        <span className="stacked-labels">
+            {labels.map((label, index) => <span key={index} className={index === shown ? "" : "hidden"}>{label}</span>)}
+        </span>
     )
 }
 
@@ -321,11 +332,7 @@ function SavedPoses({ app }: { app: ViewerApp }) {
                                 setEditing(editing === index ? null : index)
                             }}
                         >
-                            {/* both labels in one cell: the button is as wide as the wider, Stop or the name */}
-                            <span className="saved-pose-labels">
-                                <span className={running === index ? "hidden" : ""}>{pose.name}</span>
-                                <span className={running === index ? "" : "hidden"}>Stop</span>
-                            </span>
+                            <StackedLabels shown={running === index ? 1 : 0} labels={[pose.name, "Stop"]} />
                         </Button>
                     </span>
                 ))}
