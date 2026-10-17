@@ -1,6 +1,6 @@
 // The arm target's gizmo: one thick arrow per axis (moves along it), a square between each pair of arrows (moves in
 // their plane, the orientation left to the IK) and a short arc between each pair of arrow heads (rotates about the third axis), in the handle's own axes. Each arrow points whichever way faces the camera, so the
-// shown one is the visible one; the arcs follow the arrows. Drawn on top of the scene, at a fixed size in the world or (scalesWithView) on screen.
+// shown one is the visible one; the arcs follow the arrows. Shift aligns it with the robot base's axes. Drawn on top of the scene, at a fixed size in the world or (scalesWithView) on screen.
 import * as THREE from "three"
 
 const AXES = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)]
@@ -47,6 +47,19 @@ export class PoseGizmo {
         canvas.addEventListener("pointermove", this.#move)
         canvas.addEventListener("pointerup", this.#up)
         canvas.addEventListener("pointercancel", this.#up)
+        addEventListener("keydown", this.#shift)
+        addEventListener("keyup", this.#shift)
+        addEventListener("blur", this.#shift)
+    }
+
+    /** Shift held: the gizmo's axes are the robot base's (z up), not the hand's */
+    #aligned = false
+    #shift = (event: Event) => {
+        const held = event instanceof KeyboardEvent && event.shiftKey
+        if (held !== this.#aligned) {
+            this.#aligned = held
+            this.events.render()
+        }
     }
 
     get dragging(): boolean {
@@ -153,6 +166,9 @@ export class PoseGizmo {
         const origin = new THREE.Vector3()
         const rotation = new THREE.Quaternion()
         this.handle.matrixWorld.decompose(origin, rotation, new THREE.Vector3())
+        if (this.#aligned && this.handle.parent) {
+            this.handle.parent.getWorldQuaternion(rotation)
+        }
         const distance = this.camera.position.distanceTo(origin)
         const height = Math.max(1, this.canvas.clientHeight)
         const scale = this.scalesWithView ? distance * 2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) * SCREEN_PX / height : WORLD_M
@@ -253,7 +269,8 @@ export class PoseGizmo {
         const startWorld = new THREE.Vector3()
         const startQuat = new THREE.Quaternion()
         this.handle.matrixWorld.decompose(startWorld, startQuat, new THREE.Vector3())
-        const axis = AXES[part.axis].clone().applyQuaternion(startQuat)
+        // along the axes as shown (the hand's, or with Shift the base's)
+        const axis = AXES[part.axis].clone().applyQuaternion(this.object.quaternion)
         const ray = this.#ray(event)
         this.#drag = {
             part,
@@ -320,6 +337,9 @@ export class PoseGizmo {
         this.canvas.removeEventListener("pointermove", this.#move)
         this.canvas.removeEventListener("pointerup", this.#up)
         this.canvas.removeEventListener("pointercancel", this.#up)
+        removeEventListener("keydown", this.#shift)
+        removeEventListener("keyup", this.#shift)
+        removeEventListener("blur", this.#shift)
         this.object.removeFromParent()
         this.object.traverse((object) => {
             const mesh = object as THREE.Mesh
