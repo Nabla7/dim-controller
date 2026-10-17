@@ -584,7 +584,9 @@ export class ArmManipView {
                 }
             }
         }
+        const scalesWithView = this.manipulation.options.get().gizmoScalesWithView
         for (const gizmo of this.gizmos.values()) {
+            gizmo.control.scalesWithView = scalesWithView
             gizmo.control.update()
         }
         // viser labels the three best grasps with their rank and score

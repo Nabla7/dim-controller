@@ -87,6 +87,8 @@ export interface ManipulationOptions {
     grid: boolean
     /** the 3D arm, ghost and gizmo are drawn */
     interact: boolean
+    /** the gizmo keeps one size on screen as the view zooms; off: a fixed size in the world, beside the arm */
+    gizmoScalesWithView: boolean
 }
 
 export interface ManipulationState {
@@ -145,7 +147,7 @@ export class Manipulation {
         busy: null,
         reach: null,
     })
-    readonly options = persistentStore<ManipulationOptions>("lv.manip", { mode: "joint", speed: 1, display: "visual", obstacles: true, grasps: true, grid: true, interact: true })
+    readonly options = persistentStore<ManipulationOptions>("lv.manip", { mode: "joint", speed: 1, display: "visual", obstacles: true, grasps: true, grid: true, interact: true, gizmoScalesWithView: false })
     /** `dragging`: a gizmo's drag is moving the target and it isn't committed yet: polls keep it. `focused`: the group
      * whose gizmo was grabbed last: the 3D view orbits it until doneManipulating() */
     readonly gizmo = new Store<{ dragging: boolean; focused: string | null }>({ dragging: false, focused: null })

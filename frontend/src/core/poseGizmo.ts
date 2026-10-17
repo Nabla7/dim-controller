@@ -1,12 +1,14 @@
 // The arm target's gizmo: one thick arrow per axis (moves along it), a square between each pair of arrows (moves in
 // their plane) and a short arc between each pair of arrow heads (rotates about the third axis), in the handle's own axes. Each arrow points whichever way faces the camera, so the
-// shown one is the visible one; the arcs follow the arrows. Drawn on top of the scene at a constant size on screen.
+// shown one is the visible one; the arcs follow the arrows. Drawn on top of the scene, at a fixed size in the world or (scalesWithView) on screen.
 import * as THREE from "three"
 
 const AXES = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)]
 const COLORS = [0xe5484d, 0x30a46c, 0x3e63dd]
-/** the arrow's length on screen (CSS px) */
+/** the arrow's length on screen (CSS px), when it scales with the view */
 const SCREEN_PX = 110
+/** the arrow's length in the world (m), when it doesn't */
+const WORLD_M = 0.22
 const ARC_RADIUS = 0.72
 const ARC_SPAN = THREE.MathUtils.degToRad(40)
 /** an arrow flips only once the camera is clearly on the other side (no flicker when it's edge-on) */
@@ -17,6 +19,8 @@ type Part = { kind: "move" | "plane" | "rotate"; axis: number; outlines: THREE.M
 export class PoseGizmo {
     readonly object = new THREE.Group()
     enabled = true
+    /** one size on screen (zoom doesn't change it); false: WORLD_M long in the world */
+    scalesWithView = false
     #parts: Part[] = []
     #arrows: THREE.Group[] = []
     #arcs: THREE.Group[] = []
@@ -146,7 +150,7 @@ export class PoseGizmo {
         this.handle.matrixWorld.decompose(origin, rotation, new THREE.Vector3())
         const distance = this.camera.position.distanceTo(origin)
         const height = Math.max(1, this.canvas.clientHeight)
-        const scale = distance * 2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) * SCREEN_PX / height
+        const scale = this.scalesWithView ? distance * 2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) * SCREEN_PX / height : WORLD_M
         this.object.position.copy(origin)
         this.object.quaternion.copy(rotation)
         this.object.scale.setScalar(scale)

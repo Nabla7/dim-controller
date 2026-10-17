@@ -1,6 +1,6 @@
-// The arm's planner panel. At the top: Preview / Execute (each planning first when needed) / Cancel / Clear plan, and the planning-group
-// toggles. Then
-// viser's Manipulation Panel in its order: status, scene grid, robot display, target (preset, feasibility, the gizmo: arrows move, arcs rotate), planning (next plan speed, planning mode), joint control, and the scene's obstacle and grasp-proposal toggles. Every action is an
+// The arm's planner panel. At the top: Preview / Execute (each planning first when needed) / Cancel / Clear plan, the planning-group
+// toggles and the scene (grid, robot display, gizmo size, obstacles, grasps). Then
+// viser's Manipulation Panel in its order: status, target (preset, feasibility, the gizmo: arrows move, arcs rotate), planning (next plan speed, planning mode), and joint control. Every action is an
 // api/manipulation endpoint (core/manipulation.ts); the planner is dimos's ManipulationModule, and what the RPCs
 // don't give (the model, feasibility, obstacle shapes, grasps) comes from dim-controller's hook in its process.
 import { useEffect } from "react"
@@ -97,6 +97,24 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
                 ))}
             </div>
 
+            <Heading level={3}>Scene</Heading>
+            <Field inline label="Scene grid"><Toggle value={options.grid} onChange={(grid: boolean) => manipulation.options.update({ grid })} /></Field>
+            <Field inline label="Robot display">
+                <Select<string>
+                    aria-label="Robot display"
+                    value={options.display}
+                    options={[["visual", "Visual"], ["collision", "Collision"], ["both", "Both"]]}
+                    onChange={(display: string) => manipulation.options.update({ display: display as "visual" | "collision" | "both" })}
+                />
+            </Field>
+            {options.display !== "visual" && view.collisionMissing && <p className="warn-text" data-testid="manip-collision-warning"><b>Collision meshes unavailable.</b> Showing visual geometry with collision styling.</p>}
+            <Field inline label="Arm in 3D"><Toggle value={options.interact} onChange={(interact: boolean) => manipulation.options.update({ interact })} /></Field>
+            <Field inline label="Gizmo scales with view" title="on: the gizmo keeps one size on screen as you zoom; off: a fixed size beside the arm"><Toggle value={options.gizmoScalesWithView} onChange={(gizmoScalesWithView: boolean) => manipulation.options.update({ gizmoScalesWithView })} /></Field>
+            <Field inline label="Obstacles"><Toggle value={options.obstacles} onChange={(obstacles: boolean) => manipulation.options.update({ obstacles })} /></Field>
+            <Field inline label="Grasp proposals"><Toggle value={options.grasps} onChange={(grasps: boolean) => manipulation.options.update({ grasps })} /></Field>
+            <p className="hint" data-testid="manip-scene">{view.obstacleCount} obstacles · {view.graspCount} grasp proposals</p>
+            {view.obstacleProblems.map((problem) => <p className="warn-text" key={problem}>⚠ Obstacle drawn as a stand-in: {problem}</p>)}
+
             <Heading level={3}>Status</Heading>
             <div className="manip-status" data-testid="manip-status">
                 <span className="hint">State</span> <Badge tone={statusTone(planner?.operation_status.name)} dot data-testid="manip-state">{moduleState}</Badge>
@@ -112,18 +130,6 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
                     : <>No dim-controller hook in the planner's process: {view.model ? "no live collision check, obstacle shapes or grasps" : "no 3D arm, live collision check, obstacle shapes or grasps"}. <HookInstall app={app} /></>}
             </p>
             {view.model ? <p className="hint" data-testid="manip-model">3D arm: {view.model}</p> : view.problem && <p className="hint">3D arm: {view.problem}</p>}
-
-            <Field inline label="Scene grid"><Toggle value={options.grid} onChange={(grid: boolean) => manipulation.options.update({ grid })} /></Field>
-            <Field inline label="Robot display">
-                <Select<string>
-                    aria-label="Robot display"
-                    value={options.display}
-                    options={[["visual", "Visual"], ["collision", "Collision"], ["both", "Both"]]}
-                    onChange={(display: string) => manipulation.options.update({ display: display as "visual" | "collision" | "both" })}
-                />
-            </Field>
-            {options.display !== "visual" && view.collisionMissing && <p className="warn-text" data-testid="manip-collision-warning"><b>Collision meshes unavailable.</b> Showing visual geometry with collision styling.</p>}
-            <Field inline label="Arm in 3D"><Toggle value={options.interact} onChange={(interact: boolean) => manipulation.options.update({ interact })} /></Field>
 
             <Heading level={3}>Target</Heading>
             <Field inline label="Preset">
@@ -191,11 +197,6 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
                 </div>
             </details>
 
-            <Heading level={3}>Scene</Heading>
-            <Field inline label="Obstacles"><Toggle value={options.obstacles} onChange={(obstacles: boolean) => manipulation.options.update({ obstacles })} /></Field>
-            <Field inline label="Grasp proposals"><Toggle value={options.grasps} onChange={(grasps: boolean) => manipulation.options.update({ grasps })} /></Field>
-            <p className="hint" data-testid="manip-scene">{view.obstacleCount} obstacles · {view.graspCount} grasp proposals</p>
-            {view.obstacleProblems.map((problem) => <p className="warn-text" key={problem}>⚠ Obstacle drawn as a stand-in: {problem}</p>)}
         </div>
     )
 }
