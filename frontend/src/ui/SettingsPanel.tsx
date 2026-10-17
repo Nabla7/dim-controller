@@ -85,7 +85,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
             <Field inline label="Robot model" title="the robot's URDF when it publishes one, else a box at its pose (an arm is drawn by its TF frames)"><Toggle value={view.robotModel !== false} onChange={(robotModel: any) => app.settings.update({ robotModel })} /></Field>
             <Field inline label="View cube" title="a cube in the 3D view's top-right corner: click a face, edge or corner to look from there, drag it to orbit"><Toggle value={view.viewCube === true} onChange={(viewCube: any) => app.settings.update({ viewCube })} /></Field>
             <Field inline label="Stats"><Toggle value={view.showStats} onChange={(showStats: any) => app.settings.update({ showStats })} /></Field>
-            <p className="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom. Follow is on the 3D view and in the dock. The panel arrangement: drag headers, or the palette's "Reset the layout".</p>
+            <p className="hint">Drag to pan · Shift+drag or right-drag to orbit · one finger orbits, two pan · scroll or pinch to zoom. Follow is on the 3D view and in the dock. The panel arrangement: drag headers, or the palette's "Reset the layout".</p>
         </div>
     )
 }

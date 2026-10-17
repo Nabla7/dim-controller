@@ -99,6 +99,8 @@ export class ViewerApp {
         this.robot = new Store({ type: first.type, auto: !chosenType(this.settings.get().profile), reason: first.reason })
         this.connection = new Connection(this.profile.drive.deadmanMs)
         this.viewer = new Viewer(host, { clock: () => this.connection.bridgeNow() })
+        // a drag pans (Shift+drag orbits: OrbitControls turns a modified pan into an orbit); a right-drag orbits
+        this.viewer.controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
         watchSplatBudget(this.viewer)
         this.highlight = new FrameHighlight(this.viewer, this.tf)
         this.video = new VideoSources(this.connection)
