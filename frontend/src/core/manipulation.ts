@@ -148,9 +148,8 @@ export class Manipulation {
         reach: null,
     })
     readonly options = persistentStore<ManipulationOptions>("lv.manip", { mode: "joint", speed: 1, display: "visual", obstacles: true, grasps: true, grid: true, interact: true, gizmoScalesWithView: false })
-    /** `dragging`: a gizmo's drag is moving the target and it isn't committed yet: polls keep it. `focused`: the group
-     * whose gizmo was grabbed last: the 3D view orbits it until doneManipulating() */
-    readonly gizmo = new Store<{ dragging: boolean; focused: string | null }>({ dragging: false, focused: null })
+    /** a gizmo's drag is moving the target and it isn't committed yet: polls keep it */
+    readonly gizmo = new Store<{ dragging: boolean }>({ dragging: false })
     #polling: ReturnType<typeof setInterval> | null = null
     #inFlight = false
     #uncommitted = false
@@ -472,11 +471,6 @@ export class Manipulation {
         }
         this.state.update({ preview: null })
         this.#act("execute", "api/manipulation/execute")
-    }
-
-    /** The 3D view orbits what it did before the gizmo was grabbed. */
-    doneManipulating() {
-        this.gizmo.update({ focused: null })
     }
 
     cancel() {

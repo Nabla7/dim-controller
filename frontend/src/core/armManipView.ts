@@ -342,7 +342,7 @@ export class ArmManipView {
                             other.control.enabled = !dragging
                         }
                     }
-                    this.manipulation.gizmo.update(dragging ? { dragging, focused: group } : { dragging })
+                    this.manipulation.gizmo.update({ dragging })
                     if (!dragging) {
                         // the drag ended: the backend (and every page) gets the target
                         const target = this.manipulation.state.get().target
@@ -596,12 +596,6 @@ export class ArmManipView {
             }
         }
         this.#labels.end()
-    }
-
-    /** Where `group`'s gizmo is (the fixed frame), while it's shown. */
-    gizmoPosition(group: string): THREE.Vector3 | null {
-        const gizmo = this.gizmos.get(group)
-        return gizmo && gizmo.control.enabled && this.root.visible ? gizmo.handle.getWorldPosition(new THREE.Vector3()) : null
     }
 
     /** another group's gizmo is mid-drag: this one stays out of the way */
