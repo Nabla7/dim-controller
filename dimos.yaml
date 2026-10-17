@@ -556,6 +556,31 @@ provides:
                     description: 'a venv or its python (default: every running dimos run''s)'
                     type: string
         -
+            method: GET
+            path: api/manipulation/poses
+            description: >-
+                The arm poses saved for a robot model (robot: its URDF name), from
+                ~/.dimos/app_data/manip_data/<robot>/poses.yaml: poses [{name, color, target}] (target as
+                api/manipulation/target takes it; setting it moves nothing).
+            params:
+                robot:
+                    description: 'the URDF''s name, e.g. r1pro'
+                    required: true
+                    type: string
+        -
+            method: PUT
+            path: api/manipulation/poses
+            description: 'Replace the arm poses saved for a robot model (the whole list, in order); every open page shows them.'
+            params:
+                poses:
+                    description: '[{name, color (CSS, optional), target {groups, joints, poses, source}}]'
+                    required: true
+                    type: array
+                robot:
+                    description: the URDF's name
+                    required: true
+                    type: string
+        -
             method: PATCH
             path: api/manipulation/options
             description: >-
