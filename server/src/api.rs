@@ -390,7 +390,7 @@ async fn manipulation_plan(Extract(api): Extract<Api>, Body(body): Body) -> Resp
     match api.manipulation.plan_to(&target, &mode, speed).await {
         Ok(result) => {
             api.manipulation.set_target(Some(target.clone()));
-            api.annotations.broadcast(json!({ "type": "manipulation", "target": target, "plan": result["plan"], "planned": result }));
+            api.annotations.broadcast(json!({ "type": "manipulation", "target": target, "plan": result["plan"], "planned": result, "from": body["from"] }));
             Json(result).into_response()
         }
         Err(error) => planner_error(error),

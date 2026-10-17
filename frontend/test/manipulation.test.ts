@@ -4,7 +4,7 @@ import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
 import * as THREE from "three"
 import { Kinematics, meshGeometries, type RobotDescription, RobotModel, urdfPositions } from "../src/core/robotDescription.ts"
 import { solveIk } from "../src/core/ik.ts"
-import { defaultSelection, jointControl, Manipulation, type ManipulationPlan, wholePlan, wrapAngle } from "../src/core/manipulation.ts"
+import { defaultSelection, jointControl, Manipulation, type ManipulationPlan, wholePlan, wrapAngle, canonical } from "../src/core/manipulation.ts"
 import { obstacleObject } from "../src/core/armManipView.ts"
 
 const I = { xyz: [0, 0, 0] as [number, number, number], quat: [0, 0, 0, 1] as [number, number, number, number] }
@@ -166,4 +166,11 @@ Deno.test("a plan lasts until its last point, so a preview reaches the target ev
     assertEquals(whole.duration, 2)
     assertEquals(Manipulation.sample(whole, whole.duration), { j: 1 })
     assertEquals(wholePlan(null), null)
+})
+
+Deno.test("the backend's copy of a target compares equal to the page's whatever its key order", () => {
+    const page = { groups: ["left_arm"], joints: { b: 0.2, a: 0.1 }, poses: {}, source: "cartesian" }
+    const backend = { source: "cartesian", poses: {}, joints: { a: 0.1, b: 0.2 }, groups: ["left_arm"] }
+    assertEquals(canonical(page), canonical(backend))
+    assert(canonical(page) !== canonical({ ...backend, joints: { a: 0.1, b: 0.3 } }))
 })

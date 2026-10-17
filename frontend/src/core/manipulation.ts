@@ -449,7 +449,7 @@ export class Manipulation {
 
     async plan() {
         const { target, targetSequence } = this.state.get()
-        const answer = await this.#act("plan", "api/manipulation/plan", target ? { ...target, mode: this.options.get().mode, speed: this.options.get().speed } : {})
+        const answer = await this.#act("plan", "api/manipulation/plan", target ? { ...target, mode: this.options.get().mode, speed: this.options.get().speed, from: "page" } : { from: "page" })
         if (answer) {
             this.#planEpoch++
             this.state.update({ plan: wholePlan(answer.plan as ManipulationPlan | null), planSequence: answer.plan ? targetSequence : null, preview: null })
@@ -569,7 +569,10 @@ export class Manipulation {
 
     /** The backend's `manipulation` event: another page's or the agent's target, plan, preview or execute. */
     applyEvent(event: Record<string, unknown>) {
-        if ("target" in event && event.from !== "page") {
+        // the target a plan was made for comes back with it: this page's own plan (it's planning), or the same target,
+        // is no edit (bumping the sequence would make the plan just made stale, and Preview would do nothing)
+        const ownPlan = "plan" in event && this.state.get().busy === "plan"
+        if ("target" in event && event.from !== "page" && !ownPlan && canonical(event.target) !== canonical(this.state.get().target)) {
             const target = event.target as ManipulationTarget | null
             this.#committedTarget = target
             this.state.update({ target, reach: null, ...(target?.groups.length ? { selected: target.groups } : {}) })
@@ -609,6 +612,12 @@ export class Manipulation {
         const fraction = index === 0 || span <= 0 ? 1 : Math.min(1, Math.max(0, (seconds - times[index - 1]) / span))
         return Object.fromEntries(jointNames.map((name, joint) => [name, before[joint] + (after[joint] - before[joint]) * fraction]))
     }
+}
+
+/** JSON with object keys sorted: the same value from the backend (its own key order) compares equal. */
+export function canonical(value: unknown): string {
+    return JSON.stringify(value, (_key, inner) =>
+        inner && typeof inner === "object" && !Array.isArray(inner) ? Object.fromEntries(Object.entries(inner).sort(([a], [b]) => a.localeCompare(b))) : inner)
 }
 
 /** A plan whose duration reaches its last point: a planner's speed scaling can stretch the points' times past the
