@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AsyncMutex;
 
+use crate::asks::{self, Asks};
 use crate::image::ImageFormat;
 use crate::labels::{self, Labels};
 use crate::logs::LogTailer;
@@ -158,6 +159,8 @@ struct Active {
     subscribers: Vec<zenoh::pubsub::Subscriber<()>>,
     keys: BTreeSet<String>,
     logs: LogTailer,
+    /// asks for the meshes and the sim world the recorded announcements name (asks.rs)
+    asks: Arc<Asks>,
 }
 
 /// Where dimos's jsonl logs are: run log dirs, and logs roots holding one dir per run (logs.rs).
@@ -194,6 +197,12 @@ pub struct State {
     meter: AsyncMutex<Option<Meter>>,
     /// the session's location labels (labels.rs); written into recordings
     pub labels: Labels,
+}
+
+/// The keys plus the answer streams their announcements bring (a recorded /urdf_info records /mesh_info too).
+fn with_answers(keys: Vec<String>) -> Vec<String> {
+    let answers: Vec<String> = keys.iter().flat_map(|key| asks::answer_keys(key)).collect();
+    keys.into_iter().chain(answers).collect()
 }
 
 /// `dimos/<topic>/<pkg.Type>` → ("/<topic>", "pkg.Type"); anything else is not a dimos channel.
@@ -277,12 +286,16 @@ impl State {
     async fn subscribe(
         &self,
         recorder: &Arc<Recorder>,
+        asks: &Arc<Asks>,
         key: &str,
     ) -> anyhow::Result<zenoh::pubsub::Subscriber<()>> {
         let (topic, msg_type) =
             split_key(key).ok_or_else(|| anyhow::anyhow!("not a dimos key: {key}"))?;
-        let recorder = recorder.clone();
+        let (recorder, asks) = (recorder.clone(), asks.clone());
         let session = self.session().await?;
+        if Asks::announces(key) {
+            asks.ask_on(session.clone());
+        }
         let (store, throttle, owned_key) =
             (self.settings.clone(), Throttle::default(), key.to_string());
         session
@@ -290,7 +303,9 @@ impl State {
             .callback(move |sample| {
                 // the rate is read per message, so a change applies to a running recording
                 if throttle.admit(record::now_nanos(), max_rate(&store, &owned_key)) {
-                    recorder.offer(&topic, Some(&msg_type), &sample.payload().to_bytes())
+                    let payload = sample.payload().to_bytes();
+                    asks.heard(&owned_key, &payload);
+                    recorder.offer(&topic, Some(&msg_type), &payload)
                 } else {
                     recorder.skip();
                 }
@@ -323,17 +338,23 @@ impl State {
         }
         let tailer = LogTailer::start(recorder.clone());
         logs.watch(&tailer);
+        let asks = Arc::new(Asks::default());
         let mut started = Active {
             recorder: recorder.clone(),
             subscribers: Vec::new(),
             keys: BTreeSet::new(),
             logs: tailer,
+            asks: asks.clone(),
         };
-        for key in keys {
+        for key in with_answers(keys) {
             if started.keys.insert(key.clone()) {
-                started
-                    .subscribers
-                    .push(self.subscribe(&recorder, &key).await?);
+                match self.subscribe(&recorder, &asks, &key).await {
+                    Ok(subscriber) => started.subscribers.push(subscriber),
+                    Err(error) => {
+                        asks.stop();
+                        return Err(error);
+                    }
+                }
             }
         }
         let status = recorder.status();
@@ -348,11 +369,11 @@ impl State {
             anyhow::bail!("not recording");
         };
         let mut added = 0;
-        for key in keys {
+        for key in with_answers(keys) {
             if active.keys.insert(key.clone()) {
                 active
                     .subscribers
-                    .push(self.subscribe(&active.recorder, &key).await?);
+                    .push(self.subscribe(&active.recorder, &active.asks, &key).await?);
                 added += 1;
             }
         }
@@ -384,6 +405,7 @@ impl State {
         let Some(active) = self.active.lock().await.take() else {
             anyhow::bail!("not recording");
         };
+        active.asks.stop();
         // undeclare first so nothing is offered after the writer closes
         for subscriber in active.subscribers {
             let _ = subscriber.undeclare().await;
@@ -999,6 +1021,62 @@ mod tests {
             .map(|message| message.unwrap().channel.topic.clone())
             .collect();
         assert_eq!(topics, vec!["/test_cmd"; 5]);
+        robot.close().await.unwrap();
+    }
+
+    /// A recorded /urdf_info asks for its meshes, so the file holds them on /mesh_info though no viewer asked.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_recording_asks_for_the_meshes_its_urdf_names() {
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let mut config = zenoh::Config::default();
+        config.insert_json5("listen/endpoints", &format!(r#"["tcp/127.0.0.1:{port}"]"#)).unwrap();
+        config.insert_json5("scouting/multicast/enabled", "false").unwrap();
+        let robot = zenoh::open(config).await.unwrap();
+        // the robot's UrdfManager: each name on /mesh_request answered with a MeshFile on /mesh_info
+        let answers = robot.clone();
+        let _manager = robot
+            .declare_subscriber("dimos/mesh_request/std_msgs.String")
+            .callback(move |sample| {
+                let bytes = sample.payload().to_bytes();
+                let uri = crate::msgs::Reader::new(&bytes);
+                let mut reader = uri;
+                reader.expect_fingerprint(&crate::msgs::STRING_FINGERPRINT).unwrap();
+                let uri = reader.string().unwrap();
+                let mut mesh = 0f64.to_le_bytes().to_vec();
+                mesh.extend_from_slice(&(uri.len() as u32).to_le_bytes());
+                mesh.extend_from_slice(uri.as_bytes());
+                mesh.extend_from_slice(b"solid x");
+                let answers = answers.clone();
+                tokio::spawn(async move { answers.put("dimos/mesh_info/shape_msgs.MeshFile", mesh).await.unwrap() });
+            })
+            .await
+            .unwrap();
+        let dir = temp_dir("meshes");
+        let state = Arc::new(State::new(dir.clone(), format!("tcp/127.0.0.1:{port}")));
+        let app = crate::api::test_router(state.clone());
+        let (status, body) = call(
+            &app,
+            "POST",
+            "/api/recorder/start",
+            r#"{"keys":["dimos/urdf_info/std_msgs.String"],"name":"meshes.mcap"}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let urdf = r#"<robot name="r"><link name="a"><visual><geometry><mesh filename="package://r/a.stl"/></geometry></visual></link><link name="b"><visual><geometry><mesh filename="package://r/b.stl"/></geometry></visual></link><link name="c"><visual><geometry><mesh filename="package://r/c.stl"/></geometry></visual></link></robot>"#;
+        robot.put("dimos/urdf_info/std_msgs.String", asks::encode_string(urdf)).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+        let (status, body) = call(&app, "POST", "/api/recorder/stop", "").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let bytes = std::fs::read(dir.join("meshes.mcap")).unwrap();
+        let mut meshes: Vec<String> = mcap::MessageStream::new(&bytes)
+            .unwrap()
+            .map(|message| message.unwrap())
+            .filter(|message| message.channel.topic == "/mesh_info")
+            .map(|message| asks::mesh_file_uri(&message.data).unwrap())
+            .collect();
+        meshes.sort();
+        assert_eq!(meshes, vec!["package://r/a.stl", "package://r/b.stl", "package://r/c.stl"]);
         robot.close().await.unwrap();
     }
 
