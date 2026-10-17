@@ -29,7 +29,7 @@ function fakeBridge() {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-Deno.test("no arming: forward at the linear speed, shift doubles linear and halves turning, a release flushes zeros then goes quiet", async () => {
+Deno.test("no arming: forward at the linear speed, shift doubles linear, and turns only gently at full speed but 1.5× standing still, a release flushes zeros then goes quiet", async () => {
     localStorage.clear()
     const { connection, puts, deadmen } = fakeBridge()
     const drive = new Drive(connection, go2)
@@ -45,7 +45,10 @@ Deno.test("no arming: forward at the linear speed, shift doubles linear and halv
     await wait(120)
     const boosted = puts.at(-1)!
     assertAlmostEquals(boosted.twist.linear.x, go2.drive.speeds.linear * 2)
-    assertAlmostEquals(boosted.twist.angular.z, go2.drive.speeds.angular * 0.5)
+    assertAlmostEquals(boosted.twist.angular.z, go2.drive.speeds.angular * 0.3)
+    drive.setAxes("keys", { turn: 1 })
+    await wait(120)
+    assertAlmostEquals(puts.at(-1)!.twist.angular.z, go2.drive.speeds.angular * 1.5)
     drive.setBoost(false)
     drive.setAxes("keys", {})
     await wait(1300)
