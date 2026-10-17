@@ -7,7 +7,7 @@ import { useEffect, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { isTypingTarget } from "./keymap.ts"
 import { useStore } from "../core/store.ts"
-import { jointControl, type ManipulationTarget, type PlanningMode, wrapAngle } from "../core/manipulation.ts"
+import { canonical, jointControl, type ManipulationTarget, type PlanningMode, wrapAngle } from "../core/manipulation.ts"
 import { Badge, Button, Field, Heading, NumberInput, Select, Slider, Toggle } from "dimos-react"
 
 const degrees = (radians: number) => `${((radians * 180) / Math.PI).toFixed(1)}°`
@@ -229,6 +229,8 @@ export function ManipActions({ app, testid = "manip" }: { app: ViewerApp; testid
     )
 }
 
+/** a saved pose's second press executes only this long after the first: a double click previews, it doesn't run */
+const ARM_DELAY_MS = 200
 const POSE_COLORS = ["#e5484d", "#f76b15", "#ffc53d", "#30a46c", "#12a594", "#3e63dd", "#8e4ec6", "#d6409f", "#8b8d98"]
 
 /** Saved poses (poses.yaml per URDF name): a button each that makes it the target, right-click to recolor, rename or
@@ -239,25 +241,68 @@ function SavedPoses({ app }: { app: ViewerApp }) {
     const [adding, setAdding] = useState<{ name: string; color: string } | null>(null)
     const [editing, setEditing] = useState<number | null>(null)
     const edited = editing === null ? null : saved.poses[editing]
+    const state = useStore(manipulation.state)
+    // first press previews (the pose becomes the target), a second one at least ARM_DELAY_MS later executes; while
+    // it runs the button is Stop. Armed only while the target is still that pose's.
+    const [armed, setArmed] = useState<{ index: number; at: number } | null>(null)
+    const [running, setRunning] = useState<number | null>(null)
+    const [runStarted, setRunStarted] = useState(0)
+    const executing = manipulation.canCancel() && state.busy !== "plan"
+    useEffect(() => {
+        // the planner's EXECUTING shows on its next poll: give it a moment before calling the run over
+        if (running !== null && !executing && state.busy === null && performance.now() - runStarted > 1500) {
+            setRunning(null)
+        }
+    }, [running, executing, state.busy, state.planner, runStarted])
+    const armedFor = (index: number) => armed?.index === index && running === null && canonical(saved.poses[index]?.target) === canonical(state.target)
+    const press = async (index: number) => {
+        if (running === index) {
+            manipulation.cancel()
+            setRunning(null)
+            return
+        }
+        if (state.busy === "plan") {
+            return
+        }
+        if (armedFor(index)) {
+            if (performance.now() - armed!.at < ARM_DELAY_MS) {
+                return
+            }
+            setArmed(null)
+            setRunning(index)
+            setRunStarted(performance.now())
+            await manipulation.execute()
+            return
+        }
+        setArmed({ index, at: performance.now() })
+        manipulation.applyPose(index)
+        await manipulation.preview()
+    }
     return (
         <>
             <Heading level={3}>Saved Poses</Heading>
             <div className="button-row saved-poses" data-testid="manip-saved-poses">
                 {saved.poses.map((pose, index) => (
-                    <Button
-                        key={`${index}-${pose.name}`}
-                        size="sm"
-                        className="saved-pose"
-                        style={pose.color ? { background: pose.color, borderColor: pose.color, color: "#fff" } : undefined}
-                        title={`${pose.name}: set as the target (${pose.target.groups.join(", ")}); right-click to edit`}
-                        onClick={() => manipulation.applyPose(index)}
-                        onContextMenu={(event: React.MouseEvent) => {
-                            event.preventDefault()
-                            setEditing(editing === index ? null : index)
-                        }}
-                    >
-                        {pose.name}
-                    </Button>
+                    <span key={`${index}-${pose.name}`} className="saved-pose-slot">
+                        {armedFor(index) && <span className="saved-pose-hint">click again to execute</span>}
+                        <Button
+                            size="sm"
+                            className={`saved-pose ${running === index ? "running" : ""}`}
+                            style={pose.color ? { background: pose.color, borderColor: pose.color, color: "#fff" } : undefined}
+                            title={`${pose.name} (${pose.target.groups.join(", ")}): press to preview, again to execute, again to stop; right-click to edit`}
+                            onClick={() => void press(index)}
+                            onContextMenu={(event: React.MouseEvent) => {
+                                event.preventDefault()
+                                setEditing(editing === index ? null : index)
+                            }}
+                        >
+                            {/* both labels in one cell: the button is as wide as the wider, Stop or the name */}
+                            <span className="saved-pose-labels">
+                                <span className={running === index ? "hidden" : ""}>{pose.name}</span>
+                                <span className={running === index ? "" : "hidden"}>Stop</span>
+                            </span>
+                        </Button>
+                    </span>
                 ))}
                 {!adding && (
                     <Button size="sm" variant="ghost" disabled={!saved.robot} title={saved.robot ? `save the target (or the arm as it is) for ${saved.robot}` : "no robot model loaded yet"} onClick={() => setAdding({ name: `Pose ${saved.poses.length + 1}`, color: POSE_COLORS[saved.poses.length % POSE_COLORS.length] })} data-testid="manip-save-pose">+ Save pose</Button>
