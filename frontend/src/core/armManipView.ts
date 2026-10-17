@@ -385,10 +385,10 @@ export class ArmManipView {
             // no planner to ask: the page's own IK (no collision check) places the ghost and says whether it reaches
             const tip = this.#tip(group)!
             const inRoot = model.rootInBase.clone().invert().multiply(handle.matrix)
-            // only the group's joints move (the torso stays where it is: the planner gets just these), by their URDF
-            // names (a planner's may be prefixed: "r1pro/left_arm_joint1")
+            // only the selected groups' joints move (the torso too when its group is on, else it stays where it is: the
+            // planner gets just these), by their URDF names (a planner's may be prefixed: "r1pro/left_arm_joint1")
             const urdfNames = new Map<string, string>()
-            for (const name of this.manipulation.groupById(group)?.joint_names ?? []) {
+            for (const name of selected.flatMap((id) => this.manipulation.groupById(id)?.joint_names ?? [])) {
                 const short = Object.keys(urdfPositions(model.kinematics, [{ name, position: 0 }], isGripperJoint))[0]
                 if (short) {
                     urdfNames.set(short, name)
