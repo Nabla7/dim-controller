@@ -157,6 +157,8 @@ export class Manipulation {
     #checkAgain = false
     /** the target sequence this page edited last: only its own edits take the check's other half (and send it on) */
     #localSequence = -1
+    /** bumps whenever this page sets the plan: a poll that started before then carries an older plan, not this one */
+    #planEpoch = 0
     /** committed targets before the current one, newest last: undo steps back through them */
     #history: (ManipulationTarget | null)[] = []
     #committedTarget: ManipulationTarget | null = null
@@ -200,6 +202,7 @@ export class Manipulation {
             return
         }
         this.#inFlight = true
+        const planEpoch = this.#planEpoch
         try {
             const answer = await this.#call("GET", "api/manipulation")
             if (answer.available) {
@@ -217,7 +220,7 @@ export class Manipulation {
                     groups,
                     hook: (answer.hook as HookInfo | null) ?? null,
                     target,
-                    plan: (answer.plan as ManipulationPlan | null) ?? null,
+                    ...(planEpoch === this.#planEpoch ? { plan: this.#samePlan(wholePlan(answer.plan as ManipulationPlan | null)) } : {}),
                     ...(this.state.get().selected.length && this.state.get().selected.every((group) => known.has(group)) ? {} : { selected: defaultSelection(groups) }),
                 })
                 if (target && target.groups.length && !this.#uncommitted) {
@@ -234,6 +237,12 @@ export class Manipulation {
         } finally {
             this.#inFlight = false
         }
+    }
+
+    /** the plan held already when it's the same one (the preview's id and freshness stay put) */
+    #samePlan(plan: ManipulationPlan | null): ManipulationPlan | null {
+        const held = this.state.get().plan
+        return plan && held && plan.id === held.id ? held : plan
     }
 
     groupById(id: string): PlanningGroup | undefined {
@@ -433,6 +442,7 @@ export class Manipulation {
         const { target, targetSequence } = this.state.get()
         const answer = await this.#act("plan", "api/manipulation/plan", target ? { ...target, mode: this.options.get().mode, speed: this.options.get().speed } : {})
         if (answer) {
+            this.#planEpoch++
             this.state.update({ plan: wholePlan(answer.plan as ManipulationPlan | null), planSequence: answer.plan ? targetSequence : null, preview: null })
         }
     }
@@ -480,6 +490,7 @@ export class Manipulation {
 
     /** The plan, its preview and the target the gizmo moved: the arm's gizmo goes back to its tip (undo brings the target back). */
     clear() {
+        this.#planEpoch++
         this.state.update({ plan: null, planSequence: null, preview: null })
         this.#act("clear", "api/manipulation/clear")
         if (this.state.get().target) {
@@ -497,8 +508,12 @@ export class Manipulation {
         }
         if ("plan" in event) {
             const plan = wholePlan(event.plan as ManipulationPlan | null)
-            // a plan made elsewhere for the target just set is fresh for it
-            this.state.update({ plan, planSequence: plan ? this.state.get().targetSequence : null, preview: null })
+            // this page's own plan coming back: nothing changes (its preview keeps playing)
+            if (!(plan && plan.id === this.state.get().plan?.id)) {
+                // a plan made elsewhere for the target just set is fresh for it
+                this.#planEpoch++
+                this.state.update({ plan, planSequence: plan ? this.state.get().targetSequence : null, preview: null })
+            }
         }
         if (typeof event.preview === "string") {
             this.startPreview(event.preview)

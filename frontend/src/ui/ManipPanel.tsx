@@ -220,7 +220,7 @@ export function ManipActions({ app, testid = "manip" }: { app: ViewerApp; testid
     const busy = state.busy !== null
     return (
         <div className="button-row manip-actions" data-testid={`${testid}-actions`}>
-            <Button size="sm" title="plans first if the target has no plan yet" disabled={!manipulation.canRun() || busy} loading={state.busy === "plan"} onClick={() => void manipulation.preview()} data-testid={`${testid}-preview`}>Preview</Button>
+            <Button size="sm" title="plans first if the target has no plan yet" disabled={!manipulation.canRun() || busy} loading={state.busy === "plan" || state.busy === "preview"} onClick={() => void manipulation.preview()} data-testid={`${testid}-preview`}>Preview</Button>
             <Button size="sm" variant="primary" title="plans first if the target has no plan yet" disabled={!manipulation.canRun()} loading={state.busy === "execute"} onClick={() => void manipulation.execute()} data-testid={`${testid}-execute`}>Execute</Button>
             {manipulation.canCancel() && <Button size="sm" variant="danger" onClick={() => manipulation.cancel()} data-testid={`${testid}-cancel`}>Cancel</Button>}
             <Button size="sm" variant="ghost" disabled={!state.plan && !state.target} title="drops the plan and the target: the gizmo goes back to the arm (Ctrl+Z brings the target back)" onClick={() => manipulation.clear()} data-testid={`${testid}-clear`}>Clear plan</Button>
