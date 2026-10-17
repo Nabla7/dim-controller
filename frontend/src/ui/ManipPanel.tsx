@@ -133,6 +133,31 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
             {view.model ? <p className="hint" data-testid="manip-model">3D arm: {view.model}</p> : view.problem && <p className="hint">3D arm: {view.problem}</p>}
 
             <Heading level={3}>Target</Heading>
+            {selected.map((group) => {
+                const { links, fallback } = app.manipView.gizmoChoices(group)
+                if (!links.length) {
+                    return null
+                }
+                const choose = (link: string) => {
+                    const gizmoLinks = { ...options.gizmoLinks }
+                    if (link) {
+                        gizmoLinks[group] = link
+                    } else {
+                        delete gizmoLinks[group]
+                    }
+                    manipulation.options.update({ gizmoLinks })
+                    // the gizmo starts over on its new link
+                    if (target?.poses[group]) {
+                        const { [group]: _dropped, ...poses } = target.poses
+                        manipulation.setTarget({ ...target, poses })
+                    }
+                }
+                return (
+                    <Field inline key={group} label={`${group} gizmo on`} title="the link the gizmo sits on and the IK moves (only this group's and the other selected groups' joints move)">
+                        <Select<string> aria-label={`${group} gizmo link`} value={options.gizmoLinks?.[group] ?? ""} options={[["", `${fallback} (default)`], ...links.filter((link) => link !== fallback).map((link) => [link, link] as [string, string])]} onChange={choose} />
+                    </Field>
+                )
+            })}
             <Field inline label="Preset">
                 <Select<string>
                     aria-label="Preset"

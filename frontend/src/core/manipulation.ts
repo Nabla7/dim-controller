@@ -89,6 +89,8 @@ export interface ManipulationOptions {
     interact: boolean
     /** the gizmo keeps one size on screen as the view zooms; off: a fixed size in the world, beside the arm */
     gizmoScalesWithView: boolean
+    /** group -> the link its gizmo sits on, when not the planner's tip (or, without one, the group's last link) */
+    gizmoLinks: Record<string, string>
 }
 
 /** a saved target, shown as a button (api/manipulation/poses: poses.yaml per URDF name) */
@@ -154,7 +156,7 @@ export class Manipulation {
         busy: null,
         reach: null,
     })
-    readonly options = persistentStore<ManipulationOptions>("lv.manip", { mode: "joint", speed: 1, display: "visual", obstacles: true, grasps: true, grid: true, interact: true, gizmoScalesWithView: false })
+    readonly options = persistentStore<ManipulationOptions>("lv.manip", { mode: "joint", speed: 1, display: "visual", obstacles: true, grasps: true, grid: true, interact: true, gizmoScalesWithView: false, gizmoLinks: {} })
     /** the poses saved for the loaded URDF (`robot`: its name; null until one loads) */
     readonly saved = new Store<{ robot: string | null; poses: SavedPose[]; error: string | null }>({ robot: null, poses: [], error: null })
     /** a gizmo's drag is moving the target and it isn't committed yet: polls keep it */
@@ -448,7 +450,13 @@ export class Manipulation {
     }
 
     async plan() {
-        const { target, targetSequence } = this.state.get()
+        const { targetSequence } = this.state.get()
+        let target = this.state.get().target
+        // a pose on another link than the planner's tip isn't a pose the planner can reach for: cartesian mode leaves it out
+        const moved = Object.keys(this.options.get().gizmoLinks ?? {})
+        if (target && this.options.get().mode === "cartesian" && moved.some((group) => group in target!.poses)) {
+            target = { ...target, poses: Object.fromEntries(Object.entries(target.poses).filter(([group]) => !moved.includes(group))) }
+        }
         const answer = await this.#act("plan", "api/manipulation/plan", target ? { ...target, mode: this.options.get().mode, speed: this.options.get().speed, from: "page" } : { from: "page" })
         if (answer) {
             this.#planEpoch++

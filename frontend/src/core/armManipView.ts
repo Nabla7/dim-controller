@@ -272,9 +272,26 @@ export class ArmManipView {
 
     /** A group's tip link: its planning group's tip, else the last link of the joint chain. */
     #tip(groupId: string): string | null {
-        const model = this.#model!
-        const tip = this.manipulation.groupById(groupId)?.tip_frame
-        return tip && model.description.links.some((link) => link.name === tip) ? tip : null
+        const { links, fallback } = this.gizmoChoices(groupId)
+        const chosen = this.manipulation.options.get().gizmoLinks?.[groupId]
+        return chosen && links.includes(chosen) ? chosen : fallback
+    }
+
+    /** The links a group's gizmo can sit on (its joints' child links, and the planner's tip), and where it sits unless
+     * one is picked: the planner's tip, else the group's last link (a torso has no tip). */
+    gizmoChoices(groupId: string): { links: string[]; fallback: string | null } {
+        const model = this.#model
+        const group = this.manipulation.groupById(groupId)
+        if (!model || !group) {
+            return { links: [], fallback: null }
+        }
+        const children = group.joint_names
+            .map((name) => Object.keys(urdfPositions(model.kinematics, [{ name, position: 0 }], isGripperJoint))[0])
+            .map((short) => short && model.kinematics.joints.get(short)?.child)
+            .filter((link): link is string => !!link)
+        const tip = group.tip_frame && model.description.links.some((link) => link.name === group.tip_frame) ? group.tip_frame : null
+        const links = [...new Set([...children, ...(tip ? [tip] : [])])]
+        return { links, fallback: tip ?? children.at(-1) ?? null }
     }
 
     #measured(): JointPositions {
