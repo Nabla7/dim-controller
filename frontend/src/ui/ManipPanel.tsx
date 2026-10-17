@@ -3,7 +3,7 @@
 // viser's Manipulation Panel in its order: status, target (preset, feasibility, the gizmo: arrows move, arcs rotate), planning (next plan speed, planning mode), and joint control. Every action is an
 // api/manipulation endpoint (core/manipulation.ts); the planner is dimos's ManipulationModule, and what the RPCs
 // don't give (the model, feasibility, obstacle shapes, grasps) comes from dim-controller's hook in its process.
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { isTypingTarget } from "./keymap.ts"
 import { useStore } from "../core/store.ts"
@@ -89,8 +89,9 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
             <ManipActions app={app} />
             {state.plan && <p className="hint" data-testid="manip-plan-info">Plan {state.plan.id.slice(0, 8)} ({state.plan.mode}): {state.plan.duration.toFixed(2)} s, {state.plan.positions.length} points{state.preview ? " · previewing" : ""}</p>}
 
+            <SavedPoses app={app} />
+
             <Heading level={3}>Planning Groups</Heading>
-            <p className="hint">Active planning groups for pose goals, planning, and joint edits.</p>
             <div className="button-row" data-testid="manip-groups">
                 {state.groups.map((group) => (
                     <Button key={group.id} size="sm" pressed={selected.includes(group.id)} onClick={() => manipulation.toggleGroup(group.id)} title="Toggle this planning group in the target set" data-group={group.id}>{group.id}</Button>
@@ -224,6 +225,81 @@ export function ManipActions({ app, testid = "manip" }: { app: ViewerApp; testid
             <Button size="sm" variant="primary" title="plans first if the target has no plan yet" disabled={!manipulation.canRun()} loading={state.busy === "execute"} onClick={() => void manipulation.execute()} data-testid={`${testid}-execute`}>Execute</Button>
             {manipulation.canCancel() && <Button size="sm" variant="danger" onClick={() => manipulation.cancel()} data-testid={`${testid}-cancel`}>Cancel</Button>}
             <Button size="sm" variant="ghost" disabled={!state.plan && !state.target} title="drops the plan and the target: the gizmo goes back to the arm (Ctrl+Z brings the target back)" onClick={() => manipulation.clear()} data-testid={`${testid}-clear`}>Clear plan</Button>
+        </div>
+    )
+}
+
+const POSE_COLORS = ["#e5484d", "#f76b15", "#ffc53d", "#30a46c", "#12a594", "#3e63dd", "#8e4ec6", "#d6409f", "#8b8d98"]
+
+/** Saved poses (poses.yaml per URDF name): a button each that makes it the target, right-click to recolor, rename or
+ * delete; Save pose keeps the target (or the arm as it is) under a name and color. */
+function SavedPoses({ app }: { app: ViewerApp }) {
+    const manipulation = app.manipulation
+    const saved = useStore(manipulation.saved)
+    const [adding, setAdding] = useState<{ name: string; color: string } | null>(null)
+    const [editing, setEditing] = useState<number | null>(null)
+    const edited = editing === null ? null : saved.poses[editing]
+    return (
+        <>
+            <Heading level={3}>Saved Poses</Heading>
+            <div className="button-row saved-poses" data-testid="manip-saved-poses">
+                {saved.poses.map((pose, index) => (
+                    <Button
+                        key={`${index}-${pose.name}`}
+                        size="sm"
+                        className="saved-pose"
+                        style={pose.color ? { background: pose.color, borderColor: pose.color, color: "#fff" } : undefined}
+                        title={`${pose.name}: set as the target (${pose.target.groups.join(", ")}); right-click to edit`}
+                        onClick={() => manipulation.applyPose(index)}
+                        onContextMenu={(event: React.MouseEvent) => {
+                            event.preventDefault()
+                            setEditing(editing === index ? null : index)
+                        }}
+                    >
+                        {pose.name}
+                    </Button>
+                ))}
+                {!adding && (
+                    <Button size="sm" variant="ghost" disabled={!saved.robot} title={saved.robot ? `save the target (or the arm as it is) for ${saved.robot}` : "no robot model loaded yet"} onClick={() => setAdding({ name: `Pose ${saved.poses.length + 1}`, color: POSE_COLORS[saved.poses.length % POSE_COLORS.length] })} data-testid="manip-save-pose">+ Save pose</Button>
+                )}
+            </div>
+            {adding && (
+                <PoseEditor
+                    name={adding.name}
+                    color={adding.color}
+                    onChange={(change) => setAdding({ ...adding, ...change })}
+                    done={{ label: "Save", run: () => { void manipulation.savePose(adding.name.trim() || "Pose", adding.color); setAdding(null) } }}
+                    other={{ label: "Cancel", run: () => setAdding(null) }}
+                />
+            )}
+            {edited && editing !== null && (
+                <PoseEditor
+                    name={edited.name}
+                    color={edited.color ?? ""}
+                    onChange={(change) => void manipulation.editPose(editing, change)}
+                    done={{ label: "Done", run: () => setEditing(null) }}
+                    other={{ label: "Delete", run: () => { void manipulation.editPose(editing, null); setEditing(null) } }}
+                />
+            )}
+            {saved.error && <p className="warn-text">Saved poses: {saved.error}</p>}
+        </>
+    )
+}
+
+function PoseEditor({ name, color, onChange, done, other }: { name: string; color: string; onChange: (change: { name?: string; color?: string }) => void; done: { label: string; run: () => void }; other: { label: string; run: () => void } }) {
+    return (
+        <div className="pose-editor" data-testid="manip-pose-editor">
+            <input className="pose-name" value={name} aria-label="pose name" autoFocus onChange={(event) => onChange({ name: event.target.value })} onKeyDown={(event) => event.key === "Enter" && done.run()} />
+            <div className="pose-swatches">
+                {POSE_COLORS.map((swatch) => (
+                    <button key={swatch} type="button" className={`pose-swatch ${swatch === color ? "on" : ""}`} style={{ background: swatch }} aria-label={swatch} onClick={() => onChange({ color: swatch })} />
+                ))}
+                <input type="color" className="pose-color" value={color || "#8b8d98"} aria-label="pose color" onChange={(event) => onChange({ color: event.target.value })} />
+            </div>
+            <div className="button-row">
+                <Button size="sm" variant="primary" onClick={done.run}>{done.label}</Button>
+                <Button size="sm" variant="ghost" onClick={other.run}>{other.label}</Button>
+            </div>
         </div>
     )
 }

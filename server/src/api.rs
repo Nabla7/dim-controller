@@ -152,6 +152,8 @@ pub fn routes() -> Routes<Api> {
         .endpoint("GET", "api/manipulation/description", "The planner's robot model as dimos.robot_description.v1 (links with visual and collision geometry, joints, base pose), from the hook.", json!({}), manipulation_description)
         .endpoint("GET", "api/manipulation/hook", "dim-controller's hook in the blueprint's process: loaded (its info: pid, python, groups, joint topology) and installed (per running dimos run's venv).", json!({}), manipulation_hook)
         .endpoint("POST", "api/manipulation/hook/install", "Install (uninstall=true: remove) the hook into the venv of every running dimos run, or venv; it loads when the blueprint restarts.", json!({ "venv": s("a venv or its python (default: every running dimos run's)"), "uninstall": b("") }), manipulation_hook_install)
+        .endpoint("GET", "api/manipulation/poses", "The arm poses saved for a robot model (robot: its URDF name), from ~/.dimos/app_data/manip_data/<robot>/poses.yaml: poses [{name, color, target}] (target as api/manipulation/target takes it; setting it moves nothing).", json!({ "robot": required(s("the URDF's name, e.g. r1pro")) }), manipulation_poses)
+        .endpoint("PUT", "api/manipulation/poses", "Replace the arm poses saved for a robot model (the whole list, in order); every open page shows them.", json!({ "robot": required(s("the URDF's name")), "poses": required(json!({ "type": "array", "description": "[{name, color (CSS, optional), target {groups, joints, poses, source}}]" })) }), save_manipulation_poses)
         .endpoint("PATCH", "api/manipulation/options", "The arm 3D view's planner options (lv.manip), applied in every open page: mode (joint | cartesian: what the gizmo and sliders set), speed (next plan's speed scale 0.05-1), display (visual | collision | both: the arm's geometry), obstacles (draw the planning scene's obstacles), grasps (draw the grasp proposals), grid (the ground grid), interact (the 3D arm and gizmo are shown).", json!({ "mode": s("joint | cartesian"), "speed": n("0.05-1"), "display": s("visual | collision | both"), "obstacles": b(""), "grasps": b(""), "grid": b(""), "interact": b("") }), manipulation_options)
         // the page's plumbing: its event socket, its reports, its answers to the backend's capture requests
         .plumbing("POST", "api/pages/{page}", annotations::report_page)
@@ -522,6 +524,36 @@ async fn manipulation_options(Extract(api): Extract<Api>, Body(body): Body) -> R
     let value = api.settings.merge("lv.manip", &patch);
     api.annotations.broadcast(json!({ "type": "settings", "key": "lv.manip", "value": value, "from": body["from"] }));
     Json(json!({ "key": "lv.manip", "value": value })).into_response()
+}
+
+async fn manipulation_poses(Query(query): Query<HashMap<String, String>>) -> Response {
+    let robot = query.get("robot").map(String::as_str).unwrap_or("");
+    if !crate::poses::valid_robot(robot) {
+        return error_response(StatusCode::BAD_REQUEST, "robot: the URDF's name (letters, digits, . _ -)");
+    }
+    let home = crate::poses::dimos_home();
+    match crate::poses::load(&home, robot) {
+        Ok(poses) => Json(json!({ "robot": robot, "file": crate::poses::file(&home, robot), "poses": poses })).into_response(),
+        Err(error) => error_response(StatusCode::INTERNAL_SERVER_ERROR, error),
+    }
+}
+
+async fn save_manipulation_poses(Extract(api): Extract<Api>, Body(body): Body) -> Response {
+    let robot = body["robot"].as_str().unwrap_or("");
+    if !crate::poses::valid_robot(robot) {
+        return error_response(StatusCode::BAD_REQUEST, "robot: the URDF's name (letters, digits, . _ -)");
+    }
+    let poses = match crate::poses::validate(&body["poses"]) {
+        Ok(poses) => poses,
+        Err(error) => return error_response(StatusCode::BAD_REQUEST, error),
+    };
+    match crate::poses::save(&crate::poses::dimos_home(), robot, &poses) {
+        Ok(file) => {
+            api.annotations.broadcast(json!({ "type": "manipulation", "savedPoses": { "robot": robot, "poses": poses }, "from": body["from"] }));
+            Json(json!({ "ok": true, "file": file, "poses": poses })).into_response()
+        }
+        Err(error) => error_response(StatusCode::INTERNAL_SERVER_ERROR, error),
+    }
 }
 
 #[cfg(test)]

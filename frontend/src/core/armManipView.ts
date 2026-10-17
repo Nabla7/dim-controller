@@ -205,6 +205,10 @@ export class ArmManipView {
         const { meshesLoaded, meshesWanted } = this.urdf.state.get()
         const from = model.source === "urdf" ? ` (URDF${meshesWanted && meshesLoaded < meshesWanted ? `, meshes ${meshesLoaded}/${meshesWanted}` : ""})` : ""
         this.status.update({ model: `${description.name}: ${description.links.length} links, ${description.joint_names.length} joints${from}` })
+        // its saved poses (poses.yaml under its name)
+        if (description.name) {
+            this.manipulation.loadSavedPoses(description.name.replace(/[^A-Za-z0-9._-]/g, "_").replace(/^\./, "_"))
+        }
     }
 
     #teardown() {

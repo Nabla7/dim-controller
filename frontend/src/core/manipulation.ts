@@ -91,6 +91,13 @@ export interface ManipulationOptions {
     gizmoScalesWithView: boolean
 }
 
+/** a saved target, shown as a button (api/manipulation/poses: poses.yaml per URDF name) */
+export interface SavedPose {
+    name: string
+    color?: string
+    target: ManipulationTarget
+}
+
 export interface ManipulationState {
     /** whether a ManipulationModule answers (null: not asked yet) */
     available: boolean | null
@@ -148,6 +155,8 @@ export class Manipulation {
         reach: null,
     })
     readonly options = persistentStore<ManipulationOptions>("lv.manip", { mode: "joint", speed: 1, display: "visual", obstacles: true, grasps: true, grid: true, interact: true, gizmoScalesWithView: false })
+    /** the poses saved for the loaded URDF (`robot`: its name; null until one loads) */
+    readonly saved = new Store<{ robot: string | null; poses: SavedPose[]; error: string | null }>({ robot: null, poses: [], error: null })
     /** a gizmo's drag is moving the target and it isn't committed yet: polls keep it */
     readonly gizmo = new Store<{ dragging: boolean }>({ dragging: false })
     #polling: ReturnType<typeof setInterval> | null = null
@@ -483,6 +492,66 @@ export class Manipulation {
         this.#act("execute", "api/manipulation/execute")
     }
 
+    /** Loads the poses saved for `robot` (the URDF's name), once per name. */
+    async loadSavedPoses(robot: string) {
+        if (this.saved.get().robot === robot) {
+            return
+        }
+        this.saved.update({ robot, poses: [], error: null })
+        try {
+            const answer = await this.#call("GET", `api/manipulation/poses?robot=${encodeURIComponent(robot)}`)
+            if (this.saved.get().robot === robot) {
+                this.saved.update({ poses: (answer.poses as SavedPose[]) ?? [] })
+            }
+        } catch (error) {
+            this.saved.update({ error: String(error) })
+        }
+    }
+
+    /** Writes the whole list (every open page follows). */
+    async #storePoses(poses: SavedPose[]) {
+        const robot = this.saved.get().robot
+        if (!robot) {
+            return
+        }
+        const before = this.saved.get().poses
+        this.saved.update({ poses, error: null })
+        try {
+            await this.#call("PUT", "api/manipulation/poses", { robot, poses, from: "page" })
+        } catch (error) {
+            this.saved.update({ poses: before, error: String(error) })
+        }
+    }
+
+    /** The target as a saved pose (no target: the selected groups' joints as they are now). */
+    savePose(name: string, color?: string) {
+        const { target, selected } = this.state.get()
+        const pose: SavedPose = { name, ...(color ? { color } : {}), target: target ?? { groups: selected, joints: this.currentJoints(), poses: {}, source: "joints" } }
+        return this.#storePoses([...this.saved.get().poses, pose])
+    }
+
+    editPose(index: number, change: Partial<SavedPose> | null) {
+        const poses = [...this.saved.get().poses]
+        if (change) {
+            poses[index] = { ...poses[index], ...change }
+        } else {
+            poses.splice(index, 1)
+        }
+        return this.#storePoses(poses)
+    }
+
+    /** A saved pose becomes the target (it moves nothing: Preview / Execute do). */
+    applyPose(index: number) {
+        const pose = this.saved.get().poses[index]
+        if (!pose) {
+            return
+        }
+        if (pose.target.groups.length) {
+            this.state.update({ selected: pose.target.groups })
+        }
+        this.setTarget(structuredClone(pose.target))
+    }
+
     cancel() {
         this.state.update({ preview: null })
         this.#act("cancel", "api/manipulation/cancel")
@@ -514,6 +583,10 @@ export class Manipulation {
                 this.#planEpoch++
                 this.state.update({ plan, planSequence: plan ? this.state.get().targetSequence : null, preview: null })
             }
+        }
+        const saved = event.savedPoses as { robot: string; poses: SavedPose[] } | undefined
+        if (saved && saved.robot === this.saved.get().robot) {
+            this.saved.update({ poses: saved.poses })
         }
         if (typeof event.preview === "string") {
             this.startPreview(event.preview)

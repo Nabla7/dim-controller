@@ -17,6 +17,7 @@ mod hook_install;
 mod manipulation;
 mod msgs;
 mod pickle;
+mod poses;
 mod record;
 mod recorder;
 mod routes;

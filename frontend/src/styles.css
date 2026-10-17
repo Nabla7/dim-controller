@@ -795,3 +795,10 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 /* a busy action keeps its width: the spinner sits over the label instead of beside it */
 .manip-actions .dr-btn[aria-busy] { position: relative; color: transparent; }
 .manip-actions .dr-btn[aria-busy] .dr-spinner--inline { position: absolute; left: calc(50% - 6.5px); top: calc(50% - 6.5px); }
+.saved-pose { font-weight: 600; text-shadow: 0 1px 1px rgb(0 0 0 / 0.35); }
+.pose-editor { display: flex; flex-direction: column; gap: 6px; padding: 8px; margin: 6px 0; border: 1px solid var(--border); border-radius: var(--radius); }
+.pose-name { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 6px; }
+.pose-swatches { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.pose-swatch { width: 20px; height: 20px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.pose-swatch.on { border-color: var(--fg); }
+.pose-color { width: 28px; height: 22px; padding: 0; border: 0; background: none; cursor: pointer; }

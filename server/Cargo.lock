@@ -666,6 +666,7 @@ dependencies = [
  "png",
  "serde",
  "serde_json",
+ "serde_yaml",
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
