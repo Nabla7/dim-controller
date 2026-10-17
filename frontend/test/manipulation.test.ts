@@ -81,6 +81,9 @@ Deno.test("IK reaches a pose the arm can reach and says when one is out of reach
     const armOnly = solveIk(kinematics, "tip", target, { j1: 0.4, j2: 0.1, j3: 0.1 }, new Set(["j2", "j3"]))
     assertEquals(armOnly.positions.j1, 0.4)
     assert(armOnly.reachable, `error ${armOnly.positionError} m`)
+    // a lightly weighted joint (a torso's) still moves where nothing else can make it up: this arm has no spare joint
+    const light = solveIk(kinematics, "tip", target, { j1: 0, j2: 0.1, j3: 0.1 }, undefined, false, { j1: 0.02 })
+    assert(light.reachable && Math.abs(light.positions.j1 - 0.4) < 0.05, `j1 ${light.positions.j1}`)
     // position only: a pose whose orientation can't be had still reaches its point
     const turned = target.clone().multiply(new THREE.Matrix4().makeRotationX(1.2))
     const anyWay = solveIk(kinematics, "tip", turned, { j1: 0, j2: 0.1, j3: 0.1 }, undefined, true)

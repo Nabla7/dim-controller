@@ -73,6 +73,9 @@ export interface GraspProposal {
     score: number
 }
 
+/** how readily another selected group's joints (a torso under an arm's gizmo) move in the gizmo's IK, against 1 */
+const HELPER_WEIGHT = 0.02
+
 export class ArmManipView {
     /** placed at the world frame in the fixed frame, every frame */
     readonly root = new THREE.Group()
@@ -414,7 +417,10 @@ export class ArmManipView {
             const previous = this.#targetPositions() ?? {}
             const seed = { ...this.#measured(), ...Object.fromEntries([...urdfNames.keys()].filter((short) => short in previous).map((short) => [short, previous[short]])) }
             const positionOnly = this.gizmos.get(group)?.control.positionOnly ?? false
-            const result = solveIk(model.kinematics, tip, inRoot, seed, new Set(urdfNames.keys()), positionOnly)
+            // the dragged group's own joints do the work; the other selected groups' (a torso) only help where they can't
+            const own = new Set(this.manipulation.groupById(group)?.joint_names ?? [])
+            const weights = Object.fromEntries([...urdfNames].filter(([, name]) => !own.has(name)).map(([short]) => [short, HELPER_WEIGHT]))
+            const result = solveIk(model.kinematics, tip, inRoot, seed, new Set(urdfNames.keys()), positionOnly, weights)
             if (positionOnly) {
                 // the gizmo (and the pose target) take the orientation the IK found
                 const reached = model.kinematics.linkPoses(result.positions).get(tip)

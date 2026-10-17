@@ -65,9 +65,10 @@ function solve(matrix: number[][], vector: number[]): number[] {
  * Moves the chain's joints so the link `tip` (pose relative to the kinematics' root) reaches `target`, starting from
  * `seed` (the joints not in the chain keep their seed value). `movable`: only these of the chain's joints move (an
  * arm's group, not the torso it hangs from). `positionOnly`: only the target's position counts; the tip turns however
- * reaches it.
+ * reaches it. `weights`: how readily each joint moves (default 1); a small one (a torso's) moves only as much as the
+ * others can't make up (weighted damped least squares).
  */
-export function solveIk(kinematics: Kinematics, tip: string, target: THREE.Matrix4, seed: JointPositions, movable?: Set<string>, positionOnly = false, iterations = 80): IkResult {
+export function solveIk(kinematics: Kinematics, tip: string, target: THREE.Matrix4, seed: JointPositions, movable?: Set<string>, positionOnly = false, weights: Record<string, number> = {}, iterations = 80): IkResult {
     const chain = kinematics.chain(tip).filter((joint) => !movable || movable.has(joint.name))
     const positions: JointPositions = { ...seed }
     const tipOf = (values: JointPositions) => kinematics.linkPoses(values).get(tip) ?? new THREE.Matrix4()
@@ -87,18 +88,20 @@ export function solveIk(kinematics: Kinematics, tip: string, target: THREE.Matri
             break
         }
         // the Jacobian, one column per joint, by finite differences
-        const jacobian = chain.map((joint) => {
+        // each column scaled by the joint's weight's root: dq = W^½ (J W^½)ᵀ (J W J ᵀ + λ² I)⁻¹ e
+        const scales = chain.map((joint) => Math.sqrt(weights[joint.name] ?? 1))
+        const jacobian = chain.map((joint, index) => {
             const moved = { ...positions, [joint.name]: (positions[joint.name] ?? 0) + STEP }
             const shifted = errorOf(tipOf(moved))
-            return error.map((value, row) => (value - shifted[row]) / STEP)
+            return error.map((value, row) => scales[index] * (value - shifted[row]) / STEP)
         })
         // dq = Jᵀ (J Jᵀ + λ² I)⁻¹ e
         const product = Array.from({ length: 6 }, (_, row) =>
             Array.from({ length: 6 }, (_, column) => jacobian.reduce((sum, joint) => sum + joint[row] * joint[column], 0) + (row === column ? DAMPING * DAMPING : 0))
         )
-        const weights = solve(product, error)
+        const step = solve(product, error)
         chain.forEach((joint, index) => {
-            const change = jacobian[index].reduce((sum, value, row) => sum + value * weights[row], 0)
+            const change = scales[index] * jacobian[index].reduce((sum, value, row) => sum + value * step[row], 0)
             positions[joint.name] = clamp(joint.name, (positions[joint.name] ?? 0) + change)
         })
         error = errorOf(tipOf(positions))
