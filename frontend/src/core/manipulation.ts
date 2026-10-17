@@ -441,7 +441,8 @@ export class Manipulation {
 
     canCancel(): boolean {
         const { busy, planner } = this.state.get()
-        return busy === "plan" || busy === "execute" || planner?.operation_status.name === "EXECUTING" || planner?.execution_status.name === "EXECUTING"
+        // a planner left PLANNING (a planning error it didn't recover from) is cancelled back to idle too
+        return busy === "plan" || busy === "execute" || ["EXECUTING", "PLANNING"].includes(planner?.operation_status.name ?? "") || planner?.execution_status.name === "EXECUTING"
     }
 
     #plannerIdle(): boolean {
