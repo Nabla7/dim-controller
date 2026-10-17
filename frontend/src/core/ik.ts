@@ -64,9 +64,10 @@ function solve(matrix: number[][], vector: number[]): number[] {
 /**
  * Moves the chain's joints so the link `tip` (pose relative to the kinematics' root) reaches `target`, starting from
  * `seed` (the joints not in the chain keep their seed value). `movable`: only these of the chain's joints move (an
- * arm's group, not the torso it hangs from).
+ * arm's group, not the torso it hangs from). `positionOnly`: only the target's position counts; the tip turns however
+ * reaches it.
  */
-export function solveIk(kinematics: Kinematics, tip: string, target: THREE.Matrix4, seed: JointPositions, movable?: Set<string>, iterations = 80): IkResult {
+export function solveIk(kinematics: Kinematics, tip: string, target: THREE.Matrix4, seed: JointPositions, movable?: Set<string>, positionOnly = false, iterations = 80): IkResult {
     const chain = kinematics.chain(tip).filter((joint) => !movable || movable.has(joint.name))
     const positions: JointPositions = { ...seed }
     const tipOf = (values: JointPositions) => kinematics.linkPoses(values).get(tip) ?? new THREE.Matrix4()
@@ -74,7 +75,11 @@ export function solveIk(kinematics: Kinematics, tip: string, target: THREE.Matri
         const limit = kinematics.joints.get(name)?.limit
         return limit ? Math.min(limit[1], Math.max(limit[0], value)) : value
     }
-    let error = errorVector(tipOf(positions), target)
+    const errorOf = (pose: THREE.Matrix4) => {
+        const error = errorVector(pose, target)
+        return positionOnly ? [error[0], error[1], error[2], 0, 0, 0] : error
+    }
+    let error = errorOf(tipOf(positions))
     for (let iteration = 0; iteration < iterations; iteration++) {
         const norm = Math.hypot(error[0], error[1], error[2])
         const angle = Math.hypot(error[3], error[4], error[5]) / ANGLE_WEIGHT
@@ -84,7 +89,7 @@ export function solveIk(kinematics: Kinematics, tip: string, target: THREE.Matri
         // the Jacobian, one column per joint, by finite differences
         const jacobian = chain.map((joint) => {
             const moved = { ...positions, [joint.name]: (positions[joint.name] ?? 0) + STEP }
-            const shifted = errorVector(tipOf(moved), target)
+            const shifted = errorOf(tipOf(moved))
             return error.map((value, row) => (value - shifted[row]) / STEP)
         })
         // dq = Jᵀ (J Jᵀ + λ² I)⁻¹ e
@@ -96,7 +101,7 @@ export function solveIk(kinematics: Kinematics, tip: string, target: THREE.Matri
             const change = jacobian[index].reduce((sum, value, row) => sum + value * weights[row], 0)
             positions[joint.name] = clamp(joint.name, (positions[joint.name] ?? 0) + change)
         })
-        error = errorVector(tipOf(positions), target)
+        error = errorOf(tipOf(positions))
     }
     const positionError = Math.hypot(error[0], error[1], error[2])
     const angleError = Math.hypot(error[3], error[4], error[5]) / ANGLE_WEIGHT

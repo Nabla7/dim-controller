@@ -392,7 +392,18 @@ export class ArmManipView {
             }
             const previous = this.#targetPositions() ?? {}
             const seed = { ...this.#measured(), ...Object.fromEntries([...urdfNames.keys()].filter((short) => short in previous).map((short) => [short, previous[short]])) }
-            const result = solveIk(model.kinematics, tip, inRoot, seed, new Set(urdfNames.keys()))
+            const positionOnly = this.gizmos.get(group)?.control.positionOnly ?? false
+            const result = solveIk(model.kinematics, tip, inRoot, seed, new Set(urdfNames.keys()), positionOnly)
+            if (positionOnly) {
+                // the gizmo (and the pose target) take the orientation the IK found
+                const reached = model.kinematics.linkPoses(result.positions).get(tip)
+                if (reached) {
+                    const turned = new THREE.Quaternion().setFromRotationMatrix(model.rootInBase.clone().multiply(reached))
+                    handle.quaternion.copy(turned)
+                    handle.updateMatrix()
+                    next.poses[group] = { ...pose, orientation: [turned.x, turned.y, turned.z, turned.w] }
+                }
+            }
             this.#solved = result.positions
             this.manipulation.setReach({ reachable: result.reachable, positionError: result.positionError, angleError: result.angleError })
             next.joints = { ...next.joints, ...Object.fromEntries([...urdfNames].map(([short, name]) => [name, result.positions[short]])) }

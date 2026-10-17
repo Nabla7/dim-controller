@@ -1,5 +1,5 @@
 // The arm target's gizmo: one thick arrow per axis (moves along it), a square between each pair of arrows (moves in
-// their plane) and a short arc between each pair of arrow heads (rotates about the third axis), in the handle's own axes. Each arrow points whichever way faces the camera, so the
+// their plane, the orientation left to the IK) and a short arc between each pair of arrow heads (rotates about the third axis), in the handle's own axes. Each arrow points whichever way faces the camera, so the
 // shown one is the visible one; the arcs follow the arrows. Drawn on top of the scene, at a fixed size in the world or (scalesWithView) on screen.
 import * as THREE from "three"
 
@@ -51,6 +51,11 @@ export class PoseGizmo {
 
     get dragging(): boolean {
         return this.#drag !== null
+    }
+
+    /** a square's drag: only the position is meant, the orientation is whatever reaches it */
+    get positionOnly(): boolean {
+        return this.#drag?.part.kind === "plane"
     }
 
     #material(color: number): THREE.MeshBasicMaterial {
