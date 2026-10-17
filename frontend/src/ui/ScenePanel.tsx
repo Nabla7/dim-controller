@@ -25,6 +25,7 @@ import { useWorkspaceApi } from "./Workspace.tsx"
 import { useDockActions } from "./dockActions.ts"
 import { Unavailable } from "./Unavailable.tsx"
 import { LayerList } from "./LayersPanel.tsx"
+import { ManipActions } from "./ManipPanel.tsx"
 
 const COLOR_MODES: [PointLook["colorMode"], string][] = [["height", "by height"], ["intensity", "by intensity"], ["range", "by distance"], ["solid", "solid"]]
 
@@ -102,9 +103,14 @@ function SceneViewCube({ app, host }: { app: ViewerApp; host: RefObject<HTMLDivE
     return null
 }
 
-/** While the view orbits a grabbed arm gizmo: Done (or Esc) gives the view back its usual center. */
+/** While the view orbits a grabbed arm gizmo: Done (or Esc) gives the view back its usual center. In focus mode, with a
+ * target: the arm panel's Preview / Execute / Clear too. */
 function ManipulatingNote({ app }: { app: ViewerApp }) {
     const { focused } = useStore(app.manipulation.gizmo)
+    const { target } = useStore(app.manipulation.state)
+    const api = useWorkspaceApi()
+    // focus mode hides the arm panel: its actions come here while there's a target to move to
+    const focusMode = !api.mobile && api.view.hide.length === 2
     useEffect(() => {
         if (!focused) {
             return
@@ -113,13 +119,14 @@ function ManipulatingNote({ app }: { app: ViewerApp }) {
         addEventListener("keydown", escape)
         return () => removeEventListener("keydown", escape)
     }, [app, focused])
-    if (!focused) {
+    if (!focused && !(focusMode && target)) {
         return null
     }
     return (
         <div className="manipulating-note" data-testid="manipulating-note">
-            <span>Orbiting {focused}'s gizmo</span>
-            <Button size="sm" onClick={() => app.manipulation.doneManipulating()} title="the view orbits what it did before (Esc)">Done manipulating</Button>
+            {focusMode && target && <ManipActions app={app} testid="scene-manip" />}
+            {focused && <span>Orbiting {focused}'s gizmo</span>}
+            {focused && <Button size="sm" onClick={() => app.manipulation.doneManipulating()} title="the view orbits what it did before (Esc)">Done manipulating</Button>}
         </div>
     )
 }

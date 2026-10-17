@@ -86,12 +86,7 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
 
     return (
         <div className="manip-panel" data-testid="manip-panel">
-            <div className="button-row manip-actions" data-testid="manip-actions">
-                <Button size="sm" title="plans first if the target has no plan yet" disabled={!manipulation.canRun() || busy} loading={state.busy === "plan"} onClick={() => void manipulation.preview()} data-testid="manip-preview">Preview</Button>
-                <Button size="sm" variant="primary" title="plans first if the target has no plan yet" disabled={!manipulation.canRun()} loading={state.busy === "execute"} onClick={() => void manipulation.execute()} data-testid="manip-execute">Execute</Button>
-                {manipulation.canCancel() && <Button size="sm" variant="danger" onClick={() => manipulation.cancel()} data-testid="manip-cancel">Cancel</Button>}
-                <Button size="sm" variant="ghost" disabled={!state.plan && !target} title="drops the plan and the target: the gizmo goes back to the arm (Ctrl+Z brings the target back)" onClick={() => manipulation.clear()} data-testid="manip-clear">Clear plan</Button>
-            </div>
+            <ManipActions app={app} />
             {state.plan && <p className="hint" data-testid="manip-plan-info">Plan {state.plan.id.slice(0, 8)} ({state.plan.mode}): {state.plan.duration.toFixed(2)} s, {state.plan.positions.length} points{state.preview ? " · previewing" : ""}</p>}
 
             <Heading level={3}>Planning Groups</Heading>
@@ -213,4 +208,21 @@ function HookInstall({ app }: { app: ViewerApp }) {
         app.manipulation.state.update({ last: { action: "install hook", ok: response.ok, message: String(answer.output ?? answer.error ?? "") } })
     }
     return <Button size="sm" onClick={install} data-testid="manip-hook-install" title="Install it into the running blueprint's venv; restart the blueprint to load it">Install hook</Button>
+}
+
+/** Preview / Execute (each planning first when needed) / Cancel / Clear plan: the panel's top row, and the focused 3D
+ * view's while there's a target (ui/ScenePanel.tsx). */
+export function ManipActions({ app, testid = "manip" }: { app: ViewerApp; testid?: string }) {
+    const manipulation = app.manipulation
+    const state = useStore(manipulation.state)
+    useStore(manipulation.options)
+    const busy = state.busy !== null
+    return (
+        <div className="button-row manip-actions" data-testid={`${testid}-actions`}>
+            <Button size="sm" title="plans first if the target has no plan yet" disabled={!manipulation.canRun() || busy} loading={state.busy === "plan"} onClick={() => void manipulation.preview()} data-testid={`${testid}-preview`}>Preview</Button>
+            <Button size="sm" variant="primary" title="plans first if the target has no plan yet" disabled={!manipulation.canRun()} loading={state.busy === "execute"} onClick={() => void manipulation.execute()} data-testid={`${testid}-execute`}>Execute</Button>
+            {manipulation.canCancel() && <Button size="sm" variant="danger" onClick={() => manipulation.cancel()} data-testid={`${testid}-cancel`}>Cancel</Button>}
+            <Button size="sm" variant="ghost" disabled={!state.plan && !state.target} title="drops the plan and the target: the gizmo goes back to the arm (Ctrl+Z brings the target back)" onClick={() => manipulation.clear()} data-testid={`${testid}-clear`}>Clear plan</Button>
+        </div>
+    )
 }
