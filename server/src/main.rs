@@ -127,7 +127,7 @@ async fn main() -> Result<()> {
     if args.agent_json {
         println!(
             "{}",
-            serde_json::to_string_pretty(&api::routes().manifest(api::DESCRIPTION))?
+            serde_json::to_string_pretty(&api::routes().manifest(api::WHEN, api::DESCRIPTION))?
         );
         return Ok(());
     }
