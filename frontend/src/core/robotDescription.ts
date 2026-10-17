@@ -285,6 +285,16 @@ export class RobotModel {
         }
     }
 
+    /** Hides each link that sits where `other`'s does (within ~3 mm and ~1°): a ghost shows only what would move, and
+     * never z-fights the real robot where they coincide. */
+    showOnlyMoved(other: RobotModel) {
+        for (const [name, group] of this.links) {
+            const there = other.links.get(name)?.matrix.elements
+            const here = group.matrix.elements
+            group.visible = !there || here.some((value, index) => Math.abs(value - there[index]) > (index >= 12 ? 0.003 : 0.02))
+        }
+    }
+
     /** One color for every visual mesh (viser's target and preview ghosts). */
     tint(color: THREE.ColorRepresentation, opacity: number) {
         this.#tint = { color, opacity }

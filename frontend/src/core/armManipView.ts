@@ -601,6 +601,7 @@ export class ArmManipView {
         model.target.root.visible = !!targetPositions
         if (targetPositions) {
             model.target.pose(targetPositions)
+            model.target.showOnlyMoved(model.real)
             const infeasible = hook ? feasibility.status !== "feasible" && feasibility.status !== "checking" : this.manipulation.state.get().reach?.reachable === false
             const look = infeasible ? TARGET_INFEASIBLE : TARGET_FEASIBLE
             model.target.tint(look.color, look.opacity)
@@ -609,6 +610,7 @@ export class ArmManipView {
         model.preview.root.visible = !!previewPositions
         if (previewPositions) {
             model.preview.pose(previewPositions)
+            model.preview.showOnlyMoved(model.real)
         }
         this.#updatePaths()
 
