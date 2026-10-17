@@ -134,7 +134,7 @@ h3.dr-h3 { display: block; margin: 14px 0 6px; }
 body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-select: none; }
 /* the header: icon + title, a live note, then the same four actions on every panel */
 .panel-head { flex: none; display: flex; align-items: center; gap: 8px; height: 34px; box-sizing: border-box; padding: 0 4px 0 10px; cursor: grab; touch-action: none; user-select: none;
-    background: var(--lv-bar); border-bottom: 1px solid var(--border); }
+    background: var(--backdrop, var(--lv-bar)); border-bottom: 1px solid var(--border); } /* a skin's backdrop (Research: frosted photo) */
 .lv-panel.collapsed > .panel-head { border-bottom: 0; }
 .mobile .panel-head { cursor: default; }
 .panel-title { display: inline-flex; align-items: center; gap: 6px; flex: none; font: 600 12px var(--sans); color: var(--fg); white-space: nowrap; }
