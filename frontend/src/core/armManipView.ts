@@ -99,6 +99,8 @@ export class ArmManipView {
     #active = false
     /** without the hook: the ghost's joints from the page's own IK of the dragged pose */
     #solved: JointPositions | null = null
+    /** the target #solved was solved for: any other (an undo, a preset, a slider) shows its own joints */
+    #solvedFor: ManipulationTarget | null = null
     #pathFor = ""
     #releaseUrdf: (() => void) | null = null
     #fixedFrame = ""
@@ -291,7 +293,7 @@ export class ArmManipView {
         if (!target) {
             return null
         }
-        if (target.source === "cartesian" && !hook && this.#solved) {
+        if (target.source === "cartesian" && !hook && this.#solved && this.#solvedFor === target) {
             return this.#solved
         }
         return this.#withJoints(this.#measured(), target.joints)
@@ -388,13 +390,14 @@ export class ArmManipView {
                     urdfNames.set(short, name)
                 }
             }
-            const previous = this.#solved ?? this.#targetPositions() ?? {}
+            const previous = this.#targetPositions() ?? {}
             const seed = { ...this.#measured(), ...Object.fromEntries([...urdfNames.keys()].filter((short) => short in previous).map((short) => [short, previous[short]])) }
             const result = solveIk(model.kinematics, tip, inRoot, seed, new Set(urdfNames.keys()))
             this.#solved = result.positions
             this.manipulation.setReach({ reachable: result.reachable, positionError: result.positionError, angleError: result.angleError })
             next.joints = { ...next.joints, ...Object.fromEntries([...urdfNames].map(([short, name]) => [name, result.positions[short]])) }
         }
+        this.#solvedFor = next
         this.manipulation.setTarget(next, false)
     }
 
