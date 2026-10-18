@@ -194,8 +194,11 @@ function CameraPanel({ app, panel, topics, onChange }: {
                             setDepthError("this browser couldn't start WebGL2")
                             return
                         }
-                        depthRenderer.current.canvas.className = "camera-media"
-                        depthHost.current.prepend(depthRenderer.current.canvas)
+                    }
+                    const canvas = depthRenderer.current.canvas
+                    if (canvas.parentElement !== depthHost.current) {
+                        canvas.className = "camera-media"
+                        depthHost.current.prepend(canvas)
                     }
                     const range = depthRenderer.current.draw(image, lookRef.current)
                     lastPaint.current = performance.now()
