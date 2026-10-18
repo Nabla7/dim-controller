@@ -5,7 +5,7 @@ import { DOMParser } from "https://esm.sh/@xmldom/xmldom@0.8.10"
 import { decode, encode } from "../src/core/lcm/lcm.ts"
 import { Store } from "../src/core/store.ts"
 import type { Connection, ConnectionState } from "../src/core/transport.ts"
-import { MESH_REQUEST, URDF_INFO, UrdfSource } from "../src/core/urdfSource.ts"
+import { fileRanks, MESH_REQUEST, URDF_INFO, UrdfSource } from "../src/core/urdfSource.ts"
 
 ;(globalThis as { DOMParser?: unknown }).DOMParser = DOMParser
 
@@ -85,5 +85,29 @@ Deno.test("an empty /urdf_info isn't a URDF: what's loaded stays", () => {
     urdf("")
     assertEquals(source.state.get().description?.name, "box")
     assertEquals(source.state.get().problem, null)
+    release()
+})
+
+Deno.test("the robot's meshes are asked for first: a scene fixed to the root after, its splats last", async () => {
+    const { connection, requests, urdf } = fakeConnection()
+    const source = new UrdfSource(connection)
+    const release = source.acquire()
+    const mesh = (name: string) => `<visual><geometry><mesh filename="package://p/${name}?hash=1"/></geometry></visual>`
+    urdf(`<?xml version="1.0"?><robot name="r">
+        <link name="world"/>
+        <link name="scene_splats">${mesh("splats.spz")}</link>
+        <link name="scene_mesh">${mesh("tile_0.stl")}${mesh("tile_1.stl")}</link>
+        <link name="base_link">${mesh("body.stl")}</link>
+        <link name="leg">${mesh("leg.stl")}</link>
+        <joint name="a" type="fixed"><parent link="world"/><child link="scene_splats"/></joint>
+        <joint name="b" type="fixed"><parent link="world"/><child link="scene_mesh"/></joint>
+        <joint name="c" type="floating"><parent link="world"/><child link="base_link"/></joint>
+        <joint name="d" type="revolute"><parent link="base_link"/><child link="leg"/><axis xyz="0 0 1"/></joint>
+    </robot>`)
+    // no IndexedDB here: every lookup comes back empty, then the first two are asked for
+    await wait(50)
+    assertEquals(requests.filter(Boolean), ["package://p/body.stl?hash=1", "package://p/leg.stl?hash=1"])
+    const ranks = fileRanks(source.state.get().description!)
+    assertEquals(Object.fromEntries([...ranks].map(([uri, rank]) => [uri.split("/").pop(), rank])), { "splats.spz?hash=1": 2, "tile_0.stl?hash=1": 1, "tile_1.stl?hash=1": 1, "body.stl?hash=1": 0, "leg.stl?hash=1": 0 })
     release()
 })

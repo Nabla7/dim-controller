@@ -17,7 +17,8 @@ import type { RobotDescription } from "./robotDescription.ts"
 export const URDF_INFO = dimosKey("/urdf_info", "std_msgs.String")
 export const MESH_REQUEST = dimosKey("/mesh_request", "std_msgs.String")
 export const MESH_INFO = dimosKey("/mesh_info", "shape_msgs.MeshFile")
-/** meshes asked for at once: one reply can be several MB, so two at a time keep the link for driving and video */
+/** files asked for at once: one reply can be several MB, so two at a time keep the link for driving and video (and a
+ * burst of them loses some on the way, each then waiting out MESH_RETRY_MS) */
 const MESHES_IN_FLIGHT = 2
 /** a mesh asked for this long ago without a reply is asked for again (an 8 MB STL over a 2 Mbit/s link takes ~30 s) */
 const MESH_RETRY_MS = 60000
@@ -62,6 +63,8 @@ export class UrdfSource {
     #timer: ReturnType<typeof setInterval> | null = null
     /** set once the cache has been looked at for this URDF's meshes (asking waits for that) */
     #cacheChecked = false
+    /** the URDF's files in the order they're wanted (fileRanks) */
+    #files: string[] = []
     /** while asking for /urdf_info: the re-ask timer, and when asking stops */
     #urdfAsk: { timer: ReturnType<typeof setInterval>; until: number } | null = null
 
@@ -152,6 +155,8 @@ export class UrdfSource {
             this.#have.clear()
             this.#failed.clear()
             this.#cacheChecked = false
+            const ranks = fileRanks(description)
+            this.#files = meshUris(description).sort((a, b) => ranks.get(a)! - ranks.get(b)!)
             this.state.update({ description, meshesWanted: meshUris(description).length, problem: null })
             this.#count()
             this.#loadCached(description)
@@ -210,12 +215,14 @@ export class UrdfSource {
         return true
     }
 
-    /** Uses each cached file whose hash is the URDF's; the rest are asked for (an outdated copy's hash as &have=). */
+    /** Looks every hashed file up in the cache at once, using each whose hash is the URDF's as soon as it's read (the
+     * robot's first); the rest are asked for (an outdated copy's hash as &have=) once every lookup is done. */
     async #loadCached(description: RobotDescription) {
-        for (const uri of meshUris(description)) {
+        const loads: Promise<unknown>[] = []
+        await Promise.all(this.#files.map(async (uri) => {
             const { base, hash } = splitHash(uri)
             if (!hash || this.#loaded(uri)) {
-                continue
+                return
             }
             const cached = await cachedFile(base)
             if (this.state.get().description !== description) {
@@ -223,14 +230,18 @@ export class UrdfSource {
             }
             if (cached?.hash === hash) {
                 // a copy that won't decode is asked for again
-                if (!await this.#load(uri, cached.data)) {
-                    this.#failed.delete(uri)
-                }
+                loads.push(this.#load(uri, cached.data).then((loaded) => loaded || this.#failed.delete(uri)))
             } else if (cached) {
                 this.#have.set(uri, cached.hash)
             }
+        }))
+        if (this.state.get().description !== description) {
+            return
         }
         this.#cacheChecked = true
+        this.#askForMeshes()
+        // a cached copy that didn't decode is asked for now
+        await Promise.all(loads)
         this.#askForMeshes()
     }
 
@@ -247,11 +258,11 @@ export class UrdfSource {
         }
         const now = Date.now()
         for (const [uri, at] of this.#asked) {
-            if (now - at > (this.#isSplatName(uri) ? SPLAT_RETRY_MS : MESH_RETRY_MS)) {
+            if (now - at > (isSplatName(uri) ? SPLAT_RETRY_MS : MESH_RETRY_MS)) {
                 this.#asked.delete(uri)
             }
         }
-        const missing = meshUris(description).filter((uri) => !this.#loaded(uri) && !this.#decoding.has(uri) && !this.#failed.has(uri) && !this.#asked.has(uri))
+        const missing = this.#files.filter((uri) => !this.#loaded(uri) && !this.#decoding.has(uri) && !this.#failed.has(uri) && !this.#asked.has(uri))
         const requests = this.#publisher()!
         for (const uri of missing.slice(0, Math.max(0, MESHES_IN_FLIGHT - this.#asked.size))) {
             const have = this.#have.get(uri)
@@ -265,13 +276,38 @@ export class UrdfSource {
         }
     }
 
-    /** a splat file by its name alone (a .ply could be either: treated as a mesh until it arrives) */
-    #isSplatName = (uri: string) => splatFileType(uri, new Uint8Array()) !== null
-
     /** a layer instance starts or stops drawing the model */
     drawing(change: 1 | -1) {
         this.state.update({ drawing: Math.max(0, this.state.get().drawing + change) })
     }
+}
+
+/** a splat file by its name alone (a .ply could be either: treated as a mesh until it arrives) */
+const isSplatName = (uri: string) => splatFileType(uri, new Uint8Array()) !== null
+
+/** Each file the URDF names, ranked by when it's wanted: 0 the robot's own, 1 those on links fixed to the root (a
+ * scene's big tiles), 2 splat files. */
+export function fileRanks(description: RobotDescription): Map<string, number> {
+    const children = new Set(description.joints.map((joint) => joint.child))
+    const fixed = new Set(description.links.filter((link) => !children.has(link.name)).map((link) => link.name))
+    for (let grew = true; grew;) {
+        grew = false
+        for (const joint of description.joints) {
+            if (joint.type === "fixed" && fixed.has(joint.parent) && !fixed.has(joint.child)) {
+                fixed.add(joint.child)
+                grew = true
+            }
+        }
+    }
+    const ranks = new Map<string, number>()
+    for (const link of description.links) {
+        for (const { mesh } of [...link.visuals, ...link.collisions]) {
+            if (mesh) {
+                ranks.set(mesh, Math.min(ranks.get(mesh) ?? 2, isSplatName(mesh) ? 2 : fixed.has(link.name) ? 1 : 0))
+            }
+        }
+    }
+    return ranks
 }
 
 const sources = new WeakMap<Connection, UrdfSource>()
