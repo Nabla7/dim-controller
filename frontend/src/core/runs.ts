@@ -20,7 +20,11 @@ export interface RunState {
     blueprints: Record<string, Module[] | null>
 }
 
-type Runs = { launch?: { blueprint?: string; phase?: string } | null; runs?: { blueprint: string }[] }
+type Run = { blueprint: string; blueprints?: string[] }
+type Runs = { launch?: { blueprint?: string; phase?: string } | null; runs?: Run[] }
+
+/** A composed run is one process, but each component contributes module metadata. */
+export const runningBlueprints = (runs: Run[]) => [...new Set(runs.flatMap((run) => run.blueprints?.length ? run.blueprints : [run.blueprint]).filter(Boolean))]
 type Blueprint = { modules?: Module[] }
 
 const desktopUrl = (path: string) => new URL(`../../${path}`, location.href)
@@ -87,7 +91,7 @@ export class RunWatch {
             }
             const runs: Runs = await response.json()
             const phase = runs.launch?.phase
-            const running = new Set<string>((runs.runs ?? []).map((run) => run.blueprint).filter(Boolean))
+            const running = new Set<string>(runningBlueprints(runs.runs ?? []))
             if (phase === "running" && runs.launch?.blueprint) {
                 running.add(runs.launch.blueprint)
             }

@@ -451,3 +451,15 @@ nix build .#dimosApp                           # what Desktop builds: bin/dimos-
 `server/` is the app's `dimos-app-server` (Desktop's app contract): it serves the built page and every endpoint
 under `/apps/<name>/`, and talks zenoh itself only to record, find topics, drive and call the arm's planner: to DIMOS_APP's `zenohConnect` when Desktop gives one, else to the local dimos the way dimos's own sessions meet (scouting and links on loopback, no gossip autoconnect), never to whatever zenoh peers the LAN or tailnet has. The page reaches Desktop's zenoh-gateway at
 `../../zenoh-gateway`; its client is dimos-react's vendored copy (zenoh-gateway 48ad46b, `dimos-react/dim-app/*`; gateway 0.5.8: lossy channels retransmit for 1 s, a reliable publisher drops puts queued over 2 s). The page is built on dimos-react (`frontend/package.json`): its controls, theme, 3D viewer, TF tree, thumb sticks and dim-app helpers; the workspace, panels and menus are this app's.
+
+### SONIC policy controls and composed simulation runs
+
+The `feat/policy-control` branch adds SONIC activation, deactivation, stop walking
+and damping stop through DimOS's `/control` API. Driving requires fresh live
+balancing status. Opening Controller never activates the policy.
+
+Use the matching DimOS `pim/feat/sonic-desktop-sim2` integration branch for sim2.
+A run such as `unitree-g1-sonic-wbc nav-test-course.scene-data` keeps both its
+policy panel and its World Builder scene: Controller discovers the individual
+blueprints from the gateway's `runs[].blueprints` field. Older gateways still
+work with single-blueprint runs.
