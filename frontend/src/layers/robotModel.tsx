@@ -1,17 +1,23 @@
 // The robot's own model from its URDF (dimos's UrdfManager: /urdf_info, meshes on /mesh_request → /mesh_info), any
 // robot. Each link sits at its TF frame (UrdfManager puts every joint on tf, frames named by link), its visuals at
 // their URDF origins; a link with no TF frame follows its parent through the joint's origin. Meshes fill in as they arrive.
+// A visual naming a splat file (a scene: a Gaussian-splat home next to its collision meshes) is drawn with Spark.
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { useStore, type Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { Field, Select, Slider } from "dimos-react"
-import { type DisplayMode, Kinematics, RobotModel } from "../core/robotDescription.ts"
+import { type DisplayMode, Kinematics, RobotModel, type SplatView } from "../core/robotDescription.ts"
 import { type UrdfSource, urdfSource } from "../core/urdfSource.ts"
+import { ensureSparkRenderer, splatFiles } from "../core/splats.ts"
 
 export interface RobotModelSettings {
     opacity: number
     display: DisplayMode
+    /** on a link drawn by splats: the splats, its meshes, or both */
+    splatView: SplatView
+    /** splats above this height (m) are hidden, so ceilings don't hide the view from above */
+    splatCutAbove: number
 }
 
 class RobotModelLayer {
@@ -43,6 +49,9 @@ class RobotModelLayer {
             this.#tfVersion = -1
             this.context.viewer.requestRender()
         }
+        if (this.#source.splats.size) {
+            ensureSparkRenderer(this.context.viewer)
+        }
         this.#status()
     }
 
@@ -55,9 +64,11 @@ class RobotModelLayer {
         if (!this.#kinematics) {
             return
         }
-        const { opacity, display } = this.settings.get()
-        this.#model = new RobotModel(this.#kinematics, this.#source.geometries, { opacity })
+        const { opacity, display, splatView, splatCutAbove } = this.settings.get()
+        this.#model = new RobotModel(this.#kinematics, this.#source.geometries, { opacity }, this.#source.splats)
         this.#model.setDisplay(display)
+        this.#model.setSplatView(splatView ?? "splats")
+        this.#model.setSplatCutAbove(splatCutAbove ?? 2.5)
         this.root.add(this.#model.root)
         this.#tfVersion = -1
         this.context.viewer.requestRender()
@@ -71,8 +82,10 @@ class RobotModelLayer {
             return
         }
         const meshes = meshesWanted ? ` · meshes ${meshesLoaded}/${meshesWanted}` : ""
+        const splatCount = [...this.#source.splats.values()].reduce((sum, splats) => sum + splats.count, 0)
+        const splats = splatCount ? ` · ${(splatCount / 1e6).toFixed(2)}M splats` : ""
         this.context.setStatus({
-            info: `${description.name}: ${description.links.length} links${meshes}${armDraws ? " · drawn by the arm view" : ""}`,
+            info: `${description.name}: ${description.links.length} links${meshes}${splats}${armDraws ? " · drawn by the arm view" : ""}`,
             problem: this.#problem ?? problem,
             frame: description.base_link,
         })
@@ -141,6 +154,7 @@ class RobotModelLayer {
 
 function RobotModelSettingsEditor({ settings }: { settings: Store<RobotModelSettings>; topic: Topic }) {
     const value = useStore(settings)
+    const { count: splatFileCount } = useStore(splatFiles)
     return (
         <>
             <Field inline label="Opacity">
@@ -154,6 +168,21 @@ function RobotModelSettingsEditor({ settings }: { settings: Store<RobotModelSett
                     onChange={(display: string) => settings.update({ display: display as DisplayMode })}
                 />
             </Field>
+            {splatFileCount > 0 && (
+                <Field inline label="Splats" title="a link drawn by Gaussian splats also has meshes (a scene's collision geometry): which show">
+                    <Select<string>
+                        aria-label="Splats or meshes"
+                        value={value.splatView ?? "splats"}
+                        options={[["splats", "Splats"], ["meshes", "Meshes"], ["both", "Both"]]}
+                        onChange={(splatView: string) => settings.update({ splatView: splatView as SplatView })}
+                    />
+                </Field>
+            )}
+            {splatFileCount > 0 && (
+                <Field inline label="Cut splats above" title="splats higher than this are hidden, so ceilings and upper floors don't hide the robot">
+                    <Slider min={0.5} max={30} step={0.1} value={value.splatCutAbove ?? 2.5} format={(height: number) => `${height.toFixed(1)} m`} onChange={(splatCutAbove: number) => settings.update({ splatCutAbove })} />
+                </Field>
+            )}
         </>
     )
 }
@@ -163,7 +192,7 @@ registerLayer<RobotModelSettings>({
     label: "Robot model (URDF)",
     types: ["std_msgs.String"],
     names: ["/urdf_info"],
-    defaults: { opacity: 1, display: "visual" },
+    defaults: { opacity: 1, display: "visual", splatView: "splats", splatCutAbove: 2.5 },
     create: (context, _topic, settings) => new RobotModelLayer(context, settings),
     Settings: RobotModelSettingsEditor,
 })

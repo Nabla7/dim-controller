@@ -105,7 +105,7 @@ Deno.test("STL meshes load, binary and ASCII", () => {
         assertEquals(geometry.attributes.position.count, 3)
         assert(geometry.attributes.normal)
     }
-    assertThrows(() => meshGeometry("package://x/a.ply", binaryStl()))
+    assertThrows(() => meshGeometry("package://x/a.3ds", binaryStl()))
 })
 
 Deno.test("joint positions read back from link poses (TF)", () => {

@@ -51,11 +51,24 @@ to the fixed frame is not drawn; the layer list says why.
 
 **Robot model (URDF).** When a blueprint runs dimos's `UrdfManager`, the robot is drawn from its URDF, for any robot:
 `/urdf_info` carries the XML (re-sent every 5 s), each mesh is asked for once by its `package://` name on
-`/mesh_request` and arrives on `/mesh_info` (`shape_msgs.MeshFile`: the file's bytes, matched by name; STL, OBJ and
-DAE), a few at a time, so the model fills in. Each link sits at its TF frame (UrdfManager puts every joint on TF), its
+`/mesh_request` and arrives on `/mesh_info` (`shape_msgs.MeshFile`: the file's bytes, matched by name; STL, OBJ, DAE
+and PLY), a few at a time, so the model fills in. Each link sits at its TF frame (UrdfManager puts every joint on TF), its
 visuals at their URDF origins. The layer ("Robot model (URDF)") turns on by itself, has opacity and visual / collision /
 both, and replaces the robot type's stand-in model while it's drawn ([layers/robotModel.tsx](frontend/src/layers/robotModel.tsx),
 [core/urdfSource.ts](frontend/src/core/urdfSource.ts)).
+
+- **Cached by hash.** A mesh named `package://<pkg>/<path>?hash=<sha256>` is kept in IndexedDB (the 200 used most
+  recently, keyed by the name without its query) and used with no request while its hash is the URDF's; otherwise it's
+  asked for as `<name as the URDF gives it>&have=<the cached copy's hash>` (no `&have=` with nothing cached). The
+  publisher answers unless `have` is current, its MeshFile's uri carrying the current `?hash=`, which is what gets
+  cached. A name without `?hash=` is asked for on every load and never cached ([core/meshCache.ts](frontend/src/core/meshCache.ts)).
+- **Gaussian splats.** A visual whose mesh is a splat file (`.spz`, `.splat`, `.ksplat`, `.sog`, or a `.ply` with
+  `f_dc_0`/`scale_0` properties) arrives the same way and is drawn with [Spark](https://sparkjs.dev) at the link's pose,
+  its URDF origin and scale applied ([core/splats.ts](frontend/src/core/splats.ts); Spark draws on three's WebGL
+  renderer, three's own GaussianSplat needs WebGPU). A sim publishes a scene as a link with a splat visual next to its
+  collision meshes as visuals; the layer's **Splats** setting (shown once a splat file loads) picks splats, meshes or
+  both for such a link. No chunking is needed: zenoh carries a message of any size and the gateway splits it into
+  64 KiB frames; a splat file is asked for again only after 10 minutes without a reply (a mesh after 1).
 
 Point clouds are GL point sprites, never meshes. The styles (Settings → Rendering for the default, each cloud's
 settings to override): **Glow** (default: soft gaussian splats fading into the background with distance), **Cubes**

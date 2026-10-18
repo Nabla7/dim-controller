@@ -3,6 +3,7 @@
 // vertices and uint32 faces), joints (origin, axis, limits, mimic), the base link and the base's pose in the world.
 // Kinematics does the forward kinematics from joint positions; buildRobot makes the three.js model it poses.
 import * as THREE from "three"
+import type { SplatAsset, SplatObject } from "./splats.ts"
 
 type V3 = [number, number, number]
 type Q = [number, number, number, number]
@@ -189,6 +190,9 @@ function decodeArray<T extends Float32Array | Uint32Array>(base64: string, Kind:
 }
 
 export type DisplayMode = "visual" | "collision" | "both"
+/** A scene drawn by Gaussian splats also has meshes (its collision geometry as visuals) on its links, or on links fixed
+ * to them: which of them show. */
+export type SplatView = "splats" | "meshes" | "both"
 
 /** The three.js arm: a group per link (named by it) placed by `pose`, holding its visual and collision meshes. */
 export class RobotModel {
@@ -196,7 +200,8 @@ export class RobotModel {
     readonly links = new Map<string, THREE.Group>()
     readonly materials: THREE.MeshStandardMaterial[] = []
 
-    constructor(readonly kinematics: Kinematics, geometries: Map<string, THREE.BufferGeometry>, look: { color?: string; opacity?: number; collisionColor?: string } = {}) {
+    /** `splats`: splat files by URI (core/urdfSource.ts), drawn where a visual names one; none for ghosts */
+    constructor(readonly kinematics: Kinematics, geometries: Map<string, THREE.BufferGeometry>, look: { color?: string; opacity?: number; collisionColor?: string } = {}, readonly splats?: Map<string, SplatAsset>) {
         const material = (color: THREE.ColorRepresentation, alpha: number) => {
             const made = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.1, transparent: alpha < 1, opacity: alpha, depthWrite: alpha >= 1 })
             this.materials.push(made)
@@ -241,6 +246,8 @@ export class RobotModel {
     readonly #material: (color: THREE.ColorRepresentation, alpha: number) => THREE.MeshStandardMaterial
     readonly #look: { color?: string; opacity?: number; collisionColor?: string }
     #display: DisplayMode = "visual"
+    #splatView: SplatView = "splats"
+    #cutAbove: number | null = null
     #tint: { color: THREE.ColorRepresentation; opacity: number } | null = null
 
     /** Adds the meshes that have arrived since (a URDF's meshes load one by one); true if any was added. */
@@ -249,6 +256,24 @@ export class RobotModel {
         let added = false
         for (let index = this.#pending.length - 1; index >= 0; index--) {
             const { group, kind, item } = this.#pending[index]
+            const splats = item.mesh ? this.splats?.get(item.mesh) : undefined
+            if (splats) {
+                this.#pending.splice(index, 1)
+                const splatMesh = splats.mesh()
+                splatMesh.opacity = opacity
+                splatMesh.setCutAbove(this.#cutAbove)
+                splatMesh.userData.kind = kind
+                splatMesh.userData.splat = true
+                splatMesh.matrixAutoUpdate = false
+                splatMesh.matrix.copy(originMatrix(item.origin))
+                if (item.scale) {
+                    splatMesh.matrix.scale(new THREE.Vector3(...item.scale))
+                }
+                group.userData.hasSplats = true
+                group.add(splatMesh)
+                added = true
+                continue
+            }
             const shape = this.#shapeOf(item, geometries)
             if (!shape) {
                 continue
@@ -264,14 +289,52 @@ export class RobotModel {
             if (item.scale) {
                 mesh.matrix.scale(new THREE.Vector3(...item.scale))
             }
-            mesh.visible = this.#display === "both" || this.#display === kind
             group.add(mesh)
             added = true
         }
-        if (added && this.#tint) {
-            this.tint(this.#tint.color, this.#tint.opacity)
+        if (added) {
+            this.#applyVisibility()
+            if (this.#tint) {
+                this.tint(this.#tint.color, this.#tint.opacity)
+            }
         }
         return added
+    }
+
+    /** true once any link draws splats */
+    get hasSplats(): boolean {
+        return [...this.links.values()].some((group) => group.userData.hasSplats)
+    }
+
+    /** Links with splats and every link joined to them by fixed joints: the scene the splat view applies to. */
+    #sceneLinks(): Set<string> {
+        const scene = new Set([...this.links].filter(([, group]) => group.userData.hasSplats).map(([name]) => name))
+        const fixed = this.kinematics.description.joints.filter((joint) => joint.type === "fixed")
+        for (let grew = scene.size > 0; grew;) {
+            grew = false
+            for (const joint of fixed) {
+                if (scene.has(joint.parent) !== scene.has(joint.child)) {
+                    scene.add(joint.parent).add(joint.child)
+                    grew = true
+                }
+            }
+        }
+        return scene
+    }
+
+    /** Each part shown by the display mode (visual / collision) and, on the scene's links, the splat view. */
+    #applyVisibility() {
+        const scene = this.#sceneLinks()
+        for (const [name, group] of this.links) {
+            for (const object of group.children) {
+                const kind = object.userData.kind as string | undefined
+                if (!kind) {
+                    continue
+                }
+                const bySplatView = object.userData.splat ? this.#splatView !== "meshes" : !scene.has(name) || this.#splatView !== "splats"
+                object.visible = (this.#display === "both" || this.#display === kind) && bySplatView
+            }
+        }
     }
 
     /** Places every link for these joint positions. */
@@ -312,12 +375,18 @@ export class RobotModel {
 
     setDisplay(mode: DisplayMode) {
         this.#display = mode
-        this.root.traverse((object) => {
-            const kind = object.userData.kind as string | undefined
-            if (kind) {
-                object.visible = mode === "both" || mode === kind
-            }
-        })
+        this.#applyVisibility()
+    }
+
+    setSplatView(view: SplatView) {
+        this.#splatView = view
+        this.#applyVisibility()
+    }
+
+    /** Hides splats above this height (m) in their file's frame (a scene's is the world); null shows them all. */
+    setSplatCutAbove(height: number | null) {
+        this.#cutAbove = height
+        this.root.traverse((object) => object.userData.splat && (object as SplatObject).setCutAbove(height))
     }
 
     dispose() {

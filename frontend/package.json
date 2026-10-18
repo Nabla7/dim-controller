@@ -9,6 +9,7 @@
         "test": "deno test -A --no-check --no-lock --import-map test/deno_imports.json test/"
     },
     "dependencies": {
+        "@sparkjsdev/spark": "^2.3.1",
         "dimos-react": "git+https://github.com/jeff-hykin/dimos-react.git#v0.2.0-beta9",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",

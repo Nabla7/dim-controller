@@ -6,6 +6,7 @@ import * as THREE from "three"
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js"
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js"
 import { ColladaLoader } from "three/examples/jsm/loaders/ColladaLoader.js"
+import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js"
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js"
 import { ROBOT_DESCRIPTION_FORMAT, type DescriptionGeometry, type DescriptionJoint, type Origin, type RobotDescription } from "./robotDescription.ts"
 
@@ -159,13 +160,15 @@ function mergedMeshes(scene: THREE.Object3D): THREE.BufferGeometry {
     return merged
 }
 
-/** A mesh file (STL binary or ASCII, OBJ, DAE) as a BufferGeometry in meters, its kind told by the URI's extension. */
+/** A mesh file (STL binary or ASCII, OBJ, DAE, PLY) as a BufferGeometry in meters, its kind told by the URI's extension. */
 export function meshGeometry(uri: string, data: Uint8Array): THREE.BufferGeometry {
     const extension = uri.split("?")[0].split(".").pop()?.toLowerCase()
     const buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
     let geometry: THREE.BufferGeometry
     if (extension === "stl") {
         geometry = new STLLoader().parse(buffer)
+    } else if (extension === "ply") {
+        geometry = new PLYLoader().parse(buffer)
     } else if (extension === "obj") {
         geometry = mergedMeshes(new OBJLoader().parse(new TextDecoder().decode(data)))
     } else if (extension === "dae") {
