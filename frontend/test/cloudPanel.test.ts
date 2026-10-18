@@ -111,7 +111,7 @@ Deno.test("off unsubscribes every cloud; on resubscribes only the clouds that we
     setCloudQuality(globalMap.key, "low")
     const { connection, status, open } = fakeConnection({ inPlace: true })
     const { viewer, added } = fakeViewer()
-    const manager = new LayerManager(viewer as never, { lookup: () => null } as never, connection, {} as never, {} as never)
+    const manager = new LayerManager(viewer as never, { lookup: () => null } as never, {} as never, connection, {} as never, {} as never)
     status.set({ topics: [lidar, globalMap] })
     assertEquals(cloudKeys(open()), [globalMap.key, lidar.key], "both clouds drawn, each subscribed")
     assertEquals(open().find((entry) => entry.key === globalMap.key && entry.options.encoding)!.options.maxHz, 5, "the map at its own preset")

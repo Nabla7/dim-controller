@@ -61,7 +61,7 @@ export class AgentLink {
     #camera: { topic: Topic; element: HTMLVideoElement } | null = null
     #info: CameraInfo | null = null
     #infoTopic: string | null = null
-    #cloud: { positions: Float32Array; frame: string | null; at: number } | null = null
+    #cloud: { positions: Float32Array; frame: string | null; at: number; stamp: number } | null = null
     #stops: (() => void)[] = []
 
     constructor(readonly app: ViewerApp) {
@@ -247,13 +247,14 @@ export class AgentLink {
             const clouds = topics.filter((topic) => topic.type === "sensor_msgs.PointCloud2" && !/map|global|accum/i.test(topic.name))
             const topic = clouds.find((cloud) => /lidar|scan|points|registered/i.test(cloud.name)) ?? clouds[0]
             if (topic) {
-                this.#cloud = { positions: new Float32Array(), frame: null, at: 0 }
+                this.#cloud = { positions: new Float32Array(), frame: null, at: 0, stamp: 0 }
                 const cloud = this.#cloud
                 this.#stops.push(this.app.connection.subscribe(topic.key, { delivery: "latest", maxHz: 2, encoding: "dimos_lcm_pointcloud2", minQuality: 1 }, (message) => {
                     const decoded = message.decoded as { positions?: Float32Array } | undefined
                     if (decoded?.positions) {
                         cloud.positions = decoded.positions
                         cloud.at = performance.now()
+                        cloud.stamp = message.timestamp
                     }
                 }))
                 const stopFrame = this.app.connection.subscribe(topic.key, { delivery: "latest", maxHz: 1 }, (message) => {
@@ -496,7 +497,7 @@ export class AgentLink {
         if (!cloud || cloud.frame === null) {
             return []
         }
-        const transform = this.app.tf.lookup(cloud.frame, this.app.viewer.fixedFrame)
+        const transform = this.app.tfHistory.lookupAt(cloud.frame, this.app.viewer.fixedFrame, cloud.stamp) // as of the scan, not now
         if (!transform) {
             return []
         }

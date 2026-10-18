@@ -3,7 +3,6 @@
 // the shader, so a new scan costs one buffer upload and nothing is allocated per frame.
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
-import { placeInFixedFrame } from "../core/layers/helpers.ts"
 import { headerFrameId } from "../core/lcm/lcm.ts"
 import { applyLook, makePointMaterial } from "dimos-react/three"
 import type { Store } from "../core/store.ts"
@@ -16,7 +15,7 @@ import { CLOUD_PRESETS, cloudQualities, cloudQualityOf, CloudStream, type CloudQ
 
 export interface CloudSettings {
     look: PointLook
-    /** "latest": only the newest scan, moved by TF every frame; "accumulate": scans stay where they were seen */
+    /** "latest": only the newest scan; "accumulate": scans stay kept. Either way a scan is placed by TF as of when it was seen. */
     mode: "latest" | "accumulate"
     /** accumulate: forget points older than this (0 = never) */
     windowSeconds: number
@@ -54,7 +53,9 @@ class CloudLayer {
     #stream: CloudStream
     #rateSince = performance.now()
     #frameTimer: ReturnType<typeof setInterval>
-    #fixedFrame = ""
+    #fixedFrame: string
+    /** the newest scan's timestamp (gateway ms): its TF is looked up as of then */
+    #stamp: number | null = null
     #lastCount = 0
     #settings: Store<CloudSettings>
     #mode: CloudSettings["mode"]
@@ -62,6 +63,7 @@ class CloudLayer {
     constructor(readonly context: LayerContext, readonly topic: Topic, settings: Store<CloudSettings>) {
         this.#settings = settings
         this.#mode = settings.get().mode
+        this.#fixedFrame = context.viewer.fixedFrame // a scan before the first frame isn't cleared as a fixed frame change
         this.#material = makePointMaterial(context.viewer.pixelsPerMeter)
         this.#points = new THREE.Points(this.#geometry, this.#material)
         this.#points.frustumCulled = false
@@ -137,6 +139,7 @@ class CloudLayer {
     }
 
     #clear() {
+        this.#stamp = null
         this.#write = 0
         this.#filled = 0
         this.#rangeSeen = false
@@ -152,14 +155,14 @@ class CloudLayer {
         const count = positions.length / 3
         this.#lastCount = count
         const accumulate = settings.mode === "accumulate"
-        let transform: THREE.Matrix4 | null = null
-        if (accumulate) {
-            transform = this.context.tf.lookup(this.#frame, this.context.viewer.fixedFrame)
-            if (!transform) {
-                this.context.setStatus({ problem: `no TF path from "${this.#frame}" to "${this.context.viewer.fixedFrame}"`, frame: this.#frame })
-                return
-            }
+        // looked up once, as of the scan's own time, then frozen: odom at 50 Hz must not drag a 10 Hz scan along
+        const placement = this.context.tfHistory.lookupAt(this.#frame, this.context.viewer.fixedFrame, timestamp)
+        if (!placement) {
+            this.#unplaced()
+            return
         }
+        this.#stamp = timestamp
+        const transform = accumulate ? placement : null
         const wanted = accumulate ? Math.max(count, settings.maxPoints) : count
         if (wanted > this.#capacity || (!accumulate && this.#capacity > 4 * Math.max(wanted, 1024))) {
             this.#resize(accumulate ? wanted : Math.max(1024, 2 ** Math.ceil(Math.log2(wanted))))
@@ -202,14 +205,33 @@ class CloudLayer {
         if (accumulate) {
             this.#write = (start + count) % this.#capacity
             this.#filled = Math.min(this.#capacity, this.#filled + count)
-            this.#points.matrix.identity()
+            this.#place(new THREE.Matrix4())
         } else {
             this.#filled = count
+            this.#place(placement)
         }
+        this.#material.uniforms.uSensor.value.setFromMatrixPosition(placement)
         this.#geometry.setDrawRange(0, this.#filled)
         this.#syncSplatBudget()
-        this.#updateRange(positions, intensity, transform ?? this.context.tf.lookup(this.#frame, this.context.viewer.fixedFrame))
+        this.#updateRange(positions, intensity, placement)
         this.context.viewer.noteData(timestamp)
+    }
+
+    #place(matrix: THREE.Matrix4) {
+        this.#points.matrix.copy(matrix)
+        this.#points.matrixWorldNeedsUpdate = true
+        this.#points.visible = true
+        this.context.viewer.requestRender()
+        this.context.setStatus({ problem: this.#frame === "" ? "no frame_id: drawn in the fixed frame" : null, frame: this.#frame ?? undefined })
+    }
+
+    /** No TF path: a latest scan is hidden (it would sit at the wrong pose), kept scans stay where they were placed. */
+    #unplaced() {
+        if (this.#settings.get().mode === "latest" && this.#points.visible) {
+            this.#points.visible = false
+            this.context.viewer.requestRender()
+        }
+        this.context.setStatus({ problem: `no TF path from "${this.#frame}" to "${this.context.viewer.fixedFrame}"`, frame: this.#frame ?? undefined })
     }
 
     /** Auto color range: 5th-95th percentile (MemWorld's) of a sample, eased so it doesn't flicker scan to scan. */
@@ -253,20 +275,20 @@ class CloudLayer {
             this.#fixedFrame = frame.fixedFrame
             if (this.#settings.get().mode === "accumulate") {
                 this.#clear()
+            } else if (this.#frame !== null && this.#stamp !== null) {
+                // the shown scan re-placed in the new fixed frame, still as of its own time
+                const placement = this.context.tfHistory.lookupAt(this.#frame, frame.fixedFrame, this.#stamp)
+                if (placement) {
+                    this.#place(placement)
+                    this.#material.uniforms.uSensor.value.setFromMatrixPosition(placement)
+                } else {
+                    this.#unplaced()
+                }
             }
         }
         this.#material.uniforms.uNow.value = frame.now / 1000
         if (this.#settings.get().mode === "accumulate" && this.#settings.get().windowSeconds > 0) {
             this.context.viewer.requestRender() // old points fade out by time even with no new scans
-        }
-        if (this.#frame !== null) {
-            const placed = this.#settings.get().mode === "accumulate" ? true : placeInFixedFrame(this.context, this.#points, this.#frame, frame.fixedFrame)
-            if (placed) {
-                const sensor = this.context.tf.lookup(this.#frame, frame.fixedFrame)
-                if (sensor) {
-                    this.#material.uniforms.uSensor.value.setFromMatrixPosition(sensor)
-                }
-            }
         }
         if (frame.now - this.#rateSince > 1000) {
             this.#rateSince = frame.now
