@@ -67,7 +67,8 @@ both, and replaces the robot type's stand-in model while it's drawn ([layers/rob
   its URDF origin and scale applied ([core/splats.ts](frontend/src/core/splats.ts); Spark draws on three's WebGL
   renderer, three's own GaussianSplat needs WebGPU). A sim publishes a scene as a link with a splat visual next to its
   collision meshes as visuals; the layer's **Splats** setting (shown once a splat file loads) picks splats, meshes or
-  both for such a link. No chunking is needed: zenoh carries a message of any size and the gateway splits it into
+  both for the scene (the links with splats and every link fixed to them), and **Cut splats above** (2.5 m) hides
+  splats higher than that in their file's frame, so ceilings don't hide the view from above. No chunking is needed: zenoh carries a message of any size and the gateway splits it into
   64 KiB frames; a splat file is asked for again only after 10 minutes without a reply (a mesh after 1).
 
 Point clouds are GL point sprites, never meshes. The styles (Settings → Rendering for the default, each cloud's
