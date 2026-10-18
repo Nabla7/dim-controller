@@ -6,16 +6,22 @@ import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { useStore, type Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
-import { Field, Select, Slider } from "dimos-react"
-import { type DisplayMode, Kinematics, RobotModel, type SplatView } from "../core/robotDescription.ts"
+import { Field, Select, Slider, Toggle } from "dimos-react"
+import { type DisplayMode, Kinematics, RobotModel, scenePartsOf } from "../core/robotDescription.ts"
 import { type UrdfSource, urdfSource } from "../core/urdfSource.ts"
 import { ensureSparkRenderer, splatFiles } from "../core/splats.ts"
 
 export interface RobotModelSettings {
     opacity: number
     display: DisplayMode
-    /** on a link drawn by splats: the splats, its meshes, or both */
-    splatView: SplatView
+    /** a splat scene's splats shown (unset: from `splatView`) */
+    splats?: boolean
+    /** a splat scene's meshes shown (unset: from `splatView`) */
+    meshes?: boolean
+    /** before the two toggles: "splats", "meshes" or "both"; read only to migrate */
+    splatView?: string
+    /** visual meshes in their materials, or plain flat grey */
+    textures?: boolean
     /** splats above this height (m) are hidden, so ceilings don't hide the view from above */
     splatCutAbove: number
 }
@@ -64,10 +70,11 @@ class RobotModelLayer {
         if (!this.#kinematics) {
             return
         }
-        const { opacity, display, splatView, splatCutAbove } = this.settings.get()
+        const { opacity, display, textures, splatCutAbove } = this.settings.get()
         this.#model = new RobotModel(this.#kinematics, this.#source.geometries, { opacity }, this.#source.splats)
         this.#model.setDisplay(display)
-        this.#model.setSplatView(splatView ?? "splats")
+        this.#model.setSceneParts(scenePartsOf(this.settings.get()))
+        this.#model.setTextures(textures ?? true)
         this.#model.setSplatCutAbove(splatCutAbove ?? 2.5)
         this.root.add(this.#model.root)
         this.#tfVersion = -1
@@ -155,6 +162,7 @@ class RobotModelLayer {
 function RobotModelSettingsEditor({ settings }: { settings: Store<RobotModelSettings>; topic: Topic }) {
     const value = useStore(settings)
     const { count: splatFileCount } = useStore(splatFiles)
+    const parts = scenePartsOf(value)
     return (
         <>
             <Field inline label="Opacity">
@@ -169,15 +177,18 @@ function RobotModelSettingsEditor({ settings }: { settings: Store<RobotModelSett
                 />
             </Field>
             {splatFileCount > 0 && (
-                <Field inline label="Splats" title="a link drawn by Gaussian splats also has meshes (a scene's collision geometry): which show">
-                    <Select<string>
-                        aria-label="Splats or meshes"
-                        value={value.splatView ?? "splats"}
-                        options={[["splats", "Splats"], ["meshes", "Meshes"], ["both", "Both"]]}
-                        onChange={(splatView: string) => settings.update({ splatView: splatView as SplatView })}
-                    />
+                <Field inline label="Splats" title="the scene's Gaussian splats">
+                    <Toggle aria-label="Splats" value={parts.splats} onChange={(splats: boolean) => settings.update({ ...parts, splats })} />
                 </Field>
             )}
+            {splatFileCount > 0 && (
+                <Field inline label="Meshes" title="the splat scene's meshes (its collision geometry); the robot always shows">
+                    <Toggle aria-label="Meshes" value={parts.meshes} onChange={(meshes: boolean) => settings.update({ ...parts, meshes })} />
+                </Field>
+            )}
+            <Field inline label="Textures" title="off: meshes in plain flat grey, to see their geometry">
+                <Toggle aria-label="Textures" value={value.textures ?? true} onChange={(textures: boolean) => settings.update({ textures })} />
+            </Field>
             {splatFileCount > 0 && (
                 <Field inline label="Cut splats above" title="splats higher than this are hidden, so ceilings and upper floors don't hide the robot">
                     <Slider min={0.5} max={30} step={0.1} value={value.splatCutAbove ?? 2.5} format={(height: number) => `${height.toFixed(1)} m`} onChange={(splatCutAbove: number) => settings.update({ splatCutAbove })} />
@@ -192,7 +203,7 @@ registerLayer<RobotModelSettings>({
     label: "Robot model (URDF)",
     types: ["std_msgs.String"],
     names: ["/urdf_info"],
-    defaults: { opacity: 1, display: "visual", splatView: "splats", splatCutAbove: 2.5 },
+    defaults: { opacity: 1, display: "visual", textures: true, splatCutAbove: 2.5 },
     create: (context, _topic, settings) => new RobotModelLayer(context, settings),
     Settings: RobotModelSettingsEditor,
 })

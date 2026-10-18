@@ -191,8 +191,17 @@ function decodeArray<T extends Float32Array | Uint32Array>(base64: string, Kind:
 
 export type DisplayMode = "visual" | "collision" | "both"
 /** A scene drawn by Gaussian splats also has meshes (its collision geometry as visuals) on its links, or on links fixed
- * to them: which of them show. */
-export type SplatView = "splats" | "meshes" | "both"
+ * to them: whether each shows, independently. */
+export interface SceneParts {
+    splats: boolean
+    meshes: boolean
+}
+
+/** The scene parts a layer's saved settings show; a setting saved before the toggles had one choice (`splatView`:
+ * splats, meshes or both), which still decides a toggle not yet set. */
+export function scenePartsOf(saved: { splats?: boolean; meshes?: boolean; splatView?: string }): SceneParts {
+    return { splats: saved.splats ?? saved.splatView !== "meshes", meshes: saved.meshes ?? saved.splatView !== "splats" }
+}
 
 /** The three.js arm: a group per link (named by it) placed by `pose`, holding its visual and collision meshes. */
 export class RobotModel {
@@ -246,7 +255,8 @@ export class RobotModel {
     readonly #material: (color: THREE.ColorRepresentation, alpha: number) => THREE.MeshStandardMaterial
     readonly #look: { color?: string; opacity?: number; collisionColor?: string }
     #display: DisplayMode = "visual"
-    #splatView: SplatView = "splats"
+    #sceneParts: SceneParts = { splats: true, meshes: true }
+    #textures = true
     #cutAbove: number | null = null
     #tint: { color: THREE.ColorRepresentation; opacity: number } | null = null
 
@@ -284,6 +294,7 @@ export class RobotModel {
                 : this.#look.color ?? (item.color ? new THREE.Color(item.color[0], item.color[1], item.color[2]) : "#d9dde3")
             const mesh = new THREE.Mesh(shape, this.#material(color, kind === "collision" ? Math.min(opacity, 0.45) : opacity * (item.color?.[3] ?? 1)))
             mesh.userData.kind = kind
+            mesh.userData.textured = mesh.material
             mesh.matrixAutoUpdate = false
             mesh.matrix.copy(originMatrix(item.origin))
             if (item.scale) {
@@ -294,6 +305,7 @@ export class RobotModel {
         }
         if (added) {
             this.#applyVisibility()
+            this.#applyTextures()
             if (this.#tint) {
                 this.tint(this.#tint.color, this.#tint.opacity)
             }
@@ -331,8 +343,8 @@ export class RobotModel {
                 if (!kind) {
                     continue
                 }
-                const bySplatView = object.userData.splat ? this.#splatView !== "meshes" : !scene.has(name) || this.#splatView !== "splats"
-                object.visible = (this.#display === "both" || this.#display === kind) && bySplatView
+                const byScene = object.userData.splat ? this.#sceneParts.splats : !scene.has(name) || this.#sceneParts.meshes
+                object.visible = (this.#display === "both" || this.#display === kind) && byScene
             }
         }
     }
@@ -364,12 +376,32 @@ export class RobotModel {
         this.root.traverse((object) => {
             const mesh = object as THREE.Mesh
             if (mesh.isMesh && mesh.userData.kind === "visual") {
-                const material = mesh.material as THREE.MeshStandardMaterial
-                material.color.set(color)
-                material.opacity = opacity
-                material.transparent = opacity < 1
-                material.depthWrite = opacity >= 1
+                for (const material of [mesh.userData.textured, mesh.userData.plain] as (THREE.MeshStandardMaterial | undefined)[]) {
+                    if (material) {
+                        material.color.set(color)
+                        material.opacity = opacity
+                        material.transparent = opacity < 1
+                        material.depthWrite = opacity >= 1
+                    }
+                }
             }
+        })
+    }
+
+    /** Each visual mesh in its own material (URDF colours), or with textures off a flat-shaded grey at the same opacity. */
+    #applyTextures() {
+        this.root.traverse((object) => {
+            const mesh = object as THREE.Mesh
+            if (!mesh.isMesh || mesh.userData.kind !== "visual" || !mesh.userData.textured) {
+                return
+            }
+            const textured = mesh.userData.textured as THREE.MeshStandardMaterial
+            if (!this.#textures && !mesh.userData.plain) {
+                const plain = this.#material(this.#tint?.color ?? "#9aa0a6", textured.opacity)
+                plain.flatShading = true
+                mesh.userData.plain = plain
+            }
+            mesh.material = this.#textures ? textured : mesh.userData.plain
         })
     }
 
@@ -378,9 +410,16 @@ export class RobotModel {
         this.#applyVisibility()
     }
 
-    setSplatView(view: SplatView) {
-        this.#splatView = view
+    /** Which of a splat scene's parts show: its splats, its meshes, each on or off. */
+    setSceneParts(parts: SceneParts) {
+        this.#sceneParts = { ...parts }
         this.#applyVisibility()
+    }
+
+    /** Visual meshes in their materials (on) or plain flat grey, to see the geometry (off). */
+    setTextures(on: boolean) {
+        this.#textures = on
+        this.#applyTextures()
     }
 
     /** Hides splats above this height (m) in their file's frame (a scene's is the world); null shows them all. */

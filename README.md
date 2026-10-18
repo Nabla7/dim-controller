@@ -66,8 +66,10 @@ both, and replaces the robot type's stand-in model while it's drawn ([layers/rob
   `f_dc_0`/`scale_0` properties) arrives the same way and is drawn with [Spark](https://sparkjs.dev) at the link's pose,
   its URDF origin and scale applied ([core/splats.ts](frontend/src/core/splats.ts); Spark draws on three's WebGL
   renderer, three's own GaussianSplat needs WebGPU). A sim publishes a scene as a link with a splat visual next to its
-  collision meshes as visuals; the layer's **Splats** setting (shown once a splat file loads) picks splats, meshes or
-  both for the scene (the links with splats and every link fixed to them), and **Cut splats above** (2.5 m) hides
+  collision meshes as visuals; the layer's **Splats** and **Meshes** toggles (shown once a splat file loads, both on)
+  show or hide each independently for the scene (the links with splats and every link fixed to them; the robot always
+  shows), **Textures** (on) draws meshes in their URDF colours or, off, in flat-shaded grey to see the geometry, and
+  **Cut splats above** (2.5 m) hides
   splats higher than that in their file's frame, so ceilings don't hide the view from above. No chunking is needed: zenoh carries a message of any size and the gateway splits it into
   64 KiB frames; a splat file is asked for again only after 10 minutes without a reply (a mesh after 1).
 
