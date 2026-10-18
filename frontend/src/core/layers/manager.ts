@@ -5,6 +5,7 @@ import { layerTypeFor } from "./registry.ts"
 import { persistentStore, Store } from "../store.ts"
 import type { Connection, Topic } from "../transport.ts"
 import type { TfTree } from "dimos-react/three"
+import type { TfHistory } from "../tfHistory.ts"
 import type { Viewer } from "dimos-react/three"
 import type { VideoSources } from "../video.ts"
 import type { RobotProfile } from "../../profile/types.ts"
@@ -28,7 +29,7 @@ export class LayerManager {
     /** a layer type switched on or off as a whole (camera3d: Settings → 3D view → Cameras in 3D); its topics follow */
     #typeEnabled: Record<string, boolean> = {}
 
-    constructor(readonly viewer: Viewer, readonly tf: TfTree, readonly connection: Connection, readonly video: VideoSources, public profile: RobotProfile) {
+    constructor(readonly viewer: Viewer, readonly tf: TfTree, readonly tfHistory: TfHistory, readonly connection: Connection, readonly video: VideoSources, public profile: RobotProfile) {
         connection.status.subscribe(() => this.#sync(connection.status.get().topics))
         // turned on or off elsewhere (another viewer, the agent: PATCH api/settings lv.layers.enabled)
         this.#enabled.subscribe(() => {
@@ -137,6 +138,7 @@ export class LayerManager {
         const context = {
             viewer: this.viewer,
             tf: this.tf,
+            tfHistory: this.tfHistory,
             connection: this.connection,
             video: this.video,
             topics: () => this.connection.status.get().topics,

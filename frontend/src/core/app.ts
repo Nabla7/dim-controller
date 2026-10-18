@@ -5,6 +5,7 @@ import { Connection, dimosKey } from "./transport.ts"
 import { zenohKey } from "./cmdvel.ts"
 import { TfTree } from "dimos-react/three"
 import { feedTf } from "./tfFeed.ts"
+import { TfHistory } from "./tfHistory.ts"
 import { checkTf, confirmed, type TfIssue } from "./tfCheck.ts"
 import { feedBattery } from "./batteryFeed.ts"
 import { Viewer } from "dimos-react/three"
@@ -53,6 +54,8 @@ export interface ViewSettings {
 export class ViewerApp {
     readonly connection: Connection
     readonly tf = new TfTree()
+    /** a few seconds of tf, so clouds are placed as of when they were seen */
+    readonly tfHistory = new TfHistory(this.tf)
     readonly viewer: Viewer
     /** the TF frame picked out in the view (the TF panel's hovered row) */
     readonly highlight: FrameHighlight
@@ -104,7 +107,7 @@ export class ViewerApp {
         watchSplatBudget(this.viewer)
         this.highlight = new FrameHighlight(this.viewer, this.tf)
         this.video = new VideoSources(this.connection)
-        this.layers = new LayerManager(this.viewer, this.tf, this.connection, this.video, this.profile)
+        this.layers = new LayerManager(this.viewer, this.tf, this.tfHistory, this.connection, this.video, this.profile)
         this.drive = new Drive(this.connection, this.profile)
         this.joy = new JoyPublisher(this.connection)
         // the lease also keeps the drive topics (and the gamepad's) to this viewer
@@ -114,7 +117,7 @@ export class ViewerApp {
         this.arm = new ArmControl(this.connection, this.drive, profileFor("arm").arm!)
         this.manipView = new ArmManipView(this.viewer, this.tf, this.arm, this.manipulation, urdfSource(this.connection), () => this.robot.get().type === "arm" || plannerRunning(this.runs.state.get()) || this.manipulation.state.get().available === true)
         this.manipulation.watch()
-        feedTf(this.connection, this.tf, this.viewer)
+        feedTf(this.connection, this.tf, this.viewer, this.tfHistory)
         feedBattery(this.connection, () => this.profile.name)
         this.connection.status.subscribe(() => this.#updateDriveCandidates())
         this.viewer.onFrame(() => this.#eachFrame())

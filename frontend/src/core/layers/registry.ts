@@ -5,6 +5,7 @@ import type * as THREE from "three"
 import type { Connection, Topic } from "../transport.ts"
 import type { FrameInfo, TfTree, Viewer } from "dimos-react/three"
 import type { Store } from "../store.ts"
+import type { TfHistory } from "../tfHistory.ts"
 import type { VideoSources } from "../video.ts"
 import type { RobotProfile } from "../../profile/types.ts"
 
@@ -12,6 +13,8 @@ import type { RobotProfile } from "../../profile/types.ts"
 export interface LayerContext {
     viewer: Viewer
     tf: TfTree
+    /** tf as of a past moment: for data placed once, as of when it was seen (point clouds) */
+    tfHistory: TfHistory
     connection: Connection
     /** shared camera streams */
     video: VideoSources
