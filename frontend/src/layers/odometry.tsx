@@ -53,11 +53,11 @@ class PoseLayer {
         this.#trail.material.color.set(settings.color)
         this.#trail.material.linewidth = settings.width
         this.#trail.object.visible = settings.trail
-        this.#trail.material.depthTest = settings.onTop === false
+        this.#trail.material.depthTest = !settings.onTop
         // three draws every transparent object after every opaque one: on top of blended (glow) clouds needs the
         // trail in the transparent list too, where renderOrder puts it last
-        this.#trail.material.transparent = settings.onTop !== false
-        this.#trail.object.renderOrder = settings.onTop === false ? 0 : 10
+        this.#trail.material.transparent = Boolean(settings.onTop)
+        this.#trail.object.renderOrder = settings.onTop ? 10 : 0
         this.#axes.scale.setScalar(settings.axesSize)
         this.context.viewer.requestRender()
     }
@@ -133,7 +133,7 @@ function PoseSettingsEditor({ settings }: { settings: Store<PoseSettings>; topic
             <Field inline label="Length">
                 <Select value={String(value.trailLength)} options={[["500", "500 steps"], ["5000", "5k steps"], ["20000", "20k steps"], ["100000", "100k steps"]]} onChange={(length: string) => settings.update({ trailLength: Number(length) })} />
             </Field>
-            <Field inline label="On top"><Toggle value={value.onTop !== false} onChange={(onTop: boolean) => settings.update({ onTop })} /></Field>
+            <Field inline label="On top"><Toggle value={Boolean(value.onTop)} onChange={(onTop: boolean) => settings.update({ onTop })} /></Field>
             <Field inline label="Color"><ColorSwatch value={value.color} onChange={(color: string) => settings.update({ color })} /></Field>
             <Field inline label="Width"><Slider min={1} max={8} step={0.5} value={value.width} format={(width: number) => `${width}px`} onChange={(width: number) => settings.update({ width })} /></Field>
             <Field inline label="Axes"><Slider min={0} max={2} step={0.1} value={value.axesSize} format={(size: number) => `${size} m`} onChange={(axesSize: number) => settings.update({ axesSize })} /></Field>
@@ -146,7 +146,7 @@ registerLayer<PoseSettings>({
     label: "Pose + trail",
     types: ["nav_msgs.Odometry", "geometry_msgs.PoseStamped", "geometry_msgs.PoseWithCovarianceStamped"],
     // magenta: no point-cloud gradient uses it, so the path reads over any map
-    defaults: () => ({ trail: true, trailLength: 20000, jumpMeters: 2.5, color: "#7cc8ec", width: 4, axesSize: 0.6, onTop: true }),
+    defaults: () => ({ trail: true, trailLength: 20000, jumpMeters: 2.5, color: "#7cc8ec", width: 4, axesSize: 0.6, onTop: false }),
     create: (context, topic, settings) => new PoseLayer(context, topic, settings),
     Settings: PoseSettingsEditor,
 })
