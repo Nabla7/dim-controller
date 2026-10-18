@@ -81,7 +81,7 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
                 <div className="hud-center">
                     {app.profile.joint && <JointHud app={app} />}
                     <Badge className="hud-note" data-testid="drive-readout">
-                        {command ? `${command.dryRun ? "dry run" : command.source} · ${velocity(command.linear, command.angular)}` : velocity(state.twist.linear, state.twist.angular)}
+                        {state.policyBlock || (command ? `${command.dryRun ? "dry run" : command.source} · ${velocity(command.linear, command.angular)}` : velocity(state.twist.linear, state.twist.angular))}
                     </Badge>
                     <Button
                         className="stop-button"
@@ -134,6 +134,7 @@ function DriveTopicChip({ app }: { app: ViewerApp }) {
     const drive = app.drive
     const state = useStore(drive.state)
     const settings = useStore(drive.settings)
+    const policy = useStore(app.policy.state)
     useStore(app.connection.status)
     const [open, setOpen] = useState(false)
     const [custom, setCustom] = useState("")
@@ -164,12 +165,13 @@ function DriveTopicChip({ app }: { app: ViewerApp }) {
                 type="button"
                 className="drive-topic-chip"
                 data-testid="drive-topic-chip"
-                title={`Drive topic${auto ? " (auto)" : ""}: ${state.topic || "none"} (click to change; Settings → Drive has the same)`}
+                title={policy.required ? "Teleoperation is routed through the robot's movement manager" : `Drive topic${auto ? " (auto)" : ""}: ${state.topic || "none"} (click to change; Settings → Drive has the same)`}
+                disabled={policy.required}
                 aria-haspopup="menu"
                 aria-expanded={open}
                 onClick={() => setOpen(!open)}
             >
-                → {state.topic || "no drive topic"} ▾
+                → {state.topic || "no drive topic"} {policy.required ? "" : "▾"}
             </button>
             {open && createPortal(
                 <Card padded={false} className="quality-menu drive-topic-menu" role="menu" aria-label="Drive topic" style={popoverPosition(chip.current, 260)}>
@@ -233,7 +235,9 @@ export function DriveKeys({ app }: { app: ViewerApp }) {
                 ? <DisengagedNotice app={app} halt={state.halt} />
                 : (
                     <div className="hud-readout" data-testid="drive-readout" style={{ width: readoutWidth }}>
-                        {command
+                        {state.policyBlock
+                            ? <><div className="line" title={state.policyBlock}>{state.policyBlock}</div><DriveTopicChip app={app} /></>
+                            : command
                             ? <><div className="line">{command.dryRun ? "dry run · nothing sent" : `${command.source} driving`}</div><div className="line dim">{velocity(command.linear, command.angular)} · {command.seconds} s</div></>
                             : <><div className="line">{velocity(state.twist.linear, state.twist.angular)}</div><DriveTopicChip app={app} /></>}
                     </div>

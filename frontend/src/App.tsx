@@ -53,15 +53,19 @@ export function App() {
         }
         theme()
         addEventListener("dimos-react-theme", theme)
-        return () => removeEventListener("dimos-react-theme", theme)
+        return () => {
+            removeEventListener("dimos-react-theme", theme)
+            created.policy.dispose()
+        }
     }, [])
 
     const cameras = useStore(cameraLayout)
     const robot = useStore(app?.robot ?? placeholderRobot)
     const runs = useStore(app?.runs.state ?? placeholderRuns)
     const manipulation = useStore(app?.manipulation.state ?? placeholderManipulation)
+    const policy = useStore(app?.policy.state ?? placeholderPolicy)
     const arms = app !== null && armsPanelShown(robot.type, runs, manipulation.available)
-    const ids = [...cameras.panels.map((panel) => cameraId(panel.id)), ...FIXED_PANELS, ...(arms ? [ARMS_PANEL] : [])]
+    const ids = [...cameras.panels.map((panel) => cameraId(panel.id)), ...FIXED_PANELS, ...(arms ? [ARMS_PANEL] : []), ...(policy.required ? ["policy"] : [])]
     const cameraActions = useCameraActions(app)
     const api = useWorkspace(ids, mobile)
     // the profile changes with the robot type: keys follow it
@@ -98,6 +102,7 @@ export function App() {
 const placeholderRobot = new Store({ type: "dog" as const, auto: true, reason: "" })
 const placeholderRuns = new Store<RunState>({ known: false, desktop: false, dimosInstalled: null, running: [], starting: null, blueprints: {} })
 const placeholderManipulation = new Store({ available: null as boolean | null })
+const placeholderPolicy = new Store({ required: false })
 
 function EmptyStage() {
     return (

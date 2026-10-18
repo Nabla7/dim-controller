@@ -2,6 +2,7 @@
 // The UI reads the stores; window.__lv exposes this for tests.
 import * as THREE from "three"
 import { Connection, dimosKey } from "./transport.ts"
+import { driveBlock, PolicyControl } from "./policyControl.ts"
 import { zenohKey } from "./cmdvel.ts"
 import { TfTree } from "dimos-react/three"
 import { feedTf } from "./tfFeed.ts"
@@ -63,6 +64,7 @@ export class ViewerApp {
     /** the robot type in use, whether it was picked or auto, and why */
     readonly robot: Store<{ type: RobotType; auto: boolean; reason: string }>
     readonly drive: Drive
+    readonly policy: PolicyControl
     /** the raw input as Joy on /joystick (core/joy.ts) */
     readonly joy: JoyPublisher
     /** the arm panel's commands (used when the robot type is arm; core/arm.ts) */
@@ -106,6 +108,14 @@ export class ViewerApp {
         this.video = new VideoSources(this.connection)
         this.layers = new LayerManager(this.viewer, this.tf, this.connection, this.video, this.profile)
         this.drive = new Drive(this.connection, this.profile)
+        this.policy = new PolicyControl(() => this.drive.clearInput())
+        this.policy.state.subscribe(() => {
+            const state = this.policy.state.get()
+            this.drive.setPolicy(driveBlock(state), state.required ? state.status?.controller?.teleop_topic ?? "/tele_cmd_vel" : null)
+        })
+        this.drive.onStop(() => {
+            if (!this.policy.state.get().pending) void this.policy.act("stop-motion")
+        })
         this.joy = new JoyPublisher(this.connection)
         // the lease also keeps the drive topics (and the gamepad's) to this viewer
         const leasePublish = () => this.connection.lease.setPublish([...this.drive.state.get().topics.map((topic) => zenohKey(topic.topic, topic.type)), dimosKey(JOY_TOPIC, JOY_TYPE)])
@@ -122,6 +132,7 @@ export class ViewerApp {
         this.labels = new LocationLabels(this)
         this.agent = new AgentLink(this)
         this.runs.state.subscribe(() => {
+            this.policy.setRunning(this.runs.state.get().running)
             this.#updateDriveCandidates()
             this.#updateRobot()
             this.#loadRobots()

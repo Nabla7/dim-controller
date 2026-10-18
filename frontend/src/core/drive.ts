@@ -45,6 +45,7 @@ export interface DriveState {
     command: DriveCommand | null
     /** driving is disengaged (link too slow, or lost) until a reconnect; nothing but the stop goes out */
     halt: DriveHalt | null
+    policyBlock?: string | null
 }
 
 /** Why driving is disengaged: the link's latency went over Settings' max, or the link dropped. */
@@ -95,6 +96,7 @@ export class Drive {
     #blueprints: Record<string, Module[] | null> = {}
     /** Twist topics seen on the bridge (someone publishes them; maybe nobody reads them) */
     #onBridge: string[] = []
+    #policyTopic: string | null = null
 
     constructor(readonly connection: Connection, public profile: RobotProfile) {
         this.settings = this.#settingsFor(profile)
@@ -159,7 +161,7 @@ export class Drive {
 
     #refreshTopics() {
         const chosen = this.settings.get().topics ?? []
-        const topics = chosen.length ? parseTopics(chosen, this.#blueprints) : this.autoTopics()
+        const topics = this.#policyTopic ? parseTopics([this.#policyTopic], this.#blueprints) : chosen.length ? parseTopics(chosen, this.#blueprints) : this.autoTopics()
         const topic = topics.map((each) => each.topic + (each.type === TWIST_STAMPED ? " (stamped)" : "")).join(", ")
         if (topic !== this.state.get().topic) {
             this.state.update({ topics, topic })
@@ -177,11 +179,24 @@ export class Drive {
 
     /** A source (e.g. "keys", "stick") sets its share of the axes; the sum (clamped to ±1) drives. Ignored while halted. */
     setAxes(source: string, axes: Partial<Axes>) {
-        if (this.state.get().halt) {
+        if (this.state.get().halt || this.state.get().policyBlock) {
             return
         }
         this.#sources.set(source, axes)
         this.#recompute()
+    }
+
+    /** Lifecycle state gates input and selects the controller's declared teleop route. */
+    setPolicy(reason: string | null, topic: string | null) {
+        if (this.state.get().policyBlock !== reason) {
+            this.#sources.clear()
+            this.state.update({ policyBlock: reason })
+            this.#recompute()
+        }
+        if (this.#policyTopic !== topic) {
+            this.#policyTopic = topic
+            this.#refreshTopics()
+        }
     }
 
     /** Holds driving (latency over the max, or the link lost): stopped now (the usual zeros if it was moving), input ignored until resume(). */
@@ -222,10 +237,15 @@ export class Drive {
         }
     }
 
-    /** Stop: every source released at once (space, the STOP button), and the agent's command too. */
-    stop() {
+    /** Forget held input when the controller state or target robot changes. */
+    clearInput() {
         this.#sources.clear()
         this.#recompute()
+    }
+
+    /** Stop: every source released at once (space, the STOP button), and the agent's command too. */
+    stop() {
+        this.clearInput()
         this.#stopListeners.forEach((listener) => listener())
         const command = this.state.get().command
         if (command && !command.dryRun && typeof location !== "undefined") {

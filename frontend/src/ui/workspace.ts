@@ -50,6 +50,7 @@ const MIN_BODY = 72
 
 /** Where each panel lives until it's moved, and its share of a rail. */
 const HOMES: Record<string, { side: Side; collapsed?: boolean; weight: number; float: { width: number; height: number } }> = {
+    policy: { side: "right", weight: 1.7, float: { width: 370, height: 470 } },
     map: { side: "left", weight: 1, float: { width: 340, height: 340 } },
     scene: { side: "left", weight: 1.15, float: { width: 420, height: 320 } },
     status: { side: "right", weight: 0.75, float: { width: 320, height: 300 } },
@@ -64,7 +65,7 @@ export const homeOf = (id: string) => HOMES[id] ?? CAMERA_HOME
 /** shown only while there are arms to control (ui/ArmsPanel.tsx) */
 export const ARMS_PANEL = "arms"
 /** the panels that always exist (cameras come and go: camera:<n>, and so do the arms) */
-export const FIXED_PANELS = Object.keys(HOMES).filter((id) => id !== ARMS_PANEL)
+export const FIXED_PANELS = Object.keys(HOMES).filter((id) => id !== ARMS_PANEL && id !== "policy")
 
 export function defaultArrangement(ids: string[]): Arrangement {
     return normalizeArrangement(null, ids)
@@ -106,7 +107,9 @@ export function normalizeArrangement(saved: Partial<Arrangement> | null | undefi
             // a camera added later: top of the left rail
             left.unshift(id)
         } else {
-            ;(home.side === "left" ? left : right).push(id)
+            const rail = home.side === "left" ? left : right
+            if (id === "policy") rail.unshift(id)
+            else rail.push(id)
             if (home.collapsed) {
                 collapsed.add(id)
             }

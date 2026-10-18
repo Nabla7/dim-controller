@@ -6,6 +6,8 @@ uses:
         - GET /runs
         - GET /blueprints/{name}
         - GET /info
+        - GET /control
+        - POST /control/actions
     "@desktop-gateway":
         # recordings go to Desktop's shared folder; the recorder panel lists, downloads and deletes them there
         - GET /recordings

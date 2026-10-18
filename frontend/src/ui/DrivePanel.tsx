@@ -9,6 +9,7 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
     const drive = app.drive
     const state = useStore(drive.state)
     const settings = useStore(drive.settings)
+    const policy = useStore(app.policy.state)
     const values = useStore(drive.controlValues)
     useStore(app.connection.status)
     const candidates = drive.candidates()
@@ -20,15 +21,15 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
                 label="Topics"
                 title="Auto: each running blueprint's cmd_vel entry point (one per module that takes velocity commands, never a mux's own output), else /cmd_vel and /tele_cmd_vel. One topic per line; add TwistStamped after a name for a stamped one."
             >
-                <Checkbox
+                {policy.required ? <span className="hint">Managed by the motion controller</span> : <Checkbox
                     label="auto"
                     value={!(settings.topics?.length)}
                     onChange={(auto) => drive.settings.update({ topics: auto ? [] : drive.autoTopics().map((topic) => topic.topic) })}
-                />
-                {settings.topics?.length ? <TopicsEditor topics={settings.topics} onChange={(topics) => drive.settings.update({ topics })} /> : null}
+                />}
+                {!policy.required && settings.topics?.length ? <TopicsEditor topics={settings.topics} onChange={(topics) => drive.settings.update({ topics })} /> : null}
                 <div className="hint" data-testid="drive-topics-resolved">→ {state.topic || "nothing"}</div>
             </Field>
-            {candidates.length > 0 && settings.topics?.length
+            {!policy.required && candidates.length > 0 && settings.topics?.length
                 ? <p className="hint">Seen: {candidates.join(", ")}</p>
                 : null}
             <Field inline label="Linear"><Slider min={0.05} max={3} step={0.05} value={settings.linear} format={(speed) => `${speed.toFixed(2)} m/s`} onChange={(linear) => drive.settings.update({ linear })} /></Field>

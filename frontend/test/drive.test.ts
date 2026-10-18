@@ -2,6 +2,7 @@
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
 import { Drive } from "../src/core/drive.ts"
 import { decode } from "../src/core/lcm/lcm.ts"
+import { FakeTime } from "jsr:@std/testing@1/time"
 import go2 from "../src/profile/dog.ts"
 import drone from "../src/profile/drone.ts"
 import type { Connection } from "../src/core/transport.ts"
@@ -28,6 +29,35 @@ function fakeBridge() {
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+Deno.test("policy state gates input, routes through the movement manager, and forgets keys when state becomes stale", () => {
+    using time = new FakeTime()
+    const { connection, puts } = fakeBridge()
+    const drive = new Drive(connection, go2)
+    const settings = drive.settings.get()
+    try {
+        drive.settings.update({ topics: ["/cmd_vel"] })
+        drive.setPolicy("Activate the policy to drive", "/tele_cmd_vel")
+        drive.setAxes("keys", { forward: 1 })
+        time.tick(100)
+        assertEquals(puts.length, 0)
+        drive.setPolicy(null, "/tele_cmd_vel")
+        time.tick(100)
+        assertEquals(puts.length, 0, "blocked input is not queued")
+        drive.setAxes("keys", { forward: 1 })
+        time.tick(100)
+        assertEquals(puts.at(-1)?.key, "dimos/tele_cmd_vel/geometry_msgs.Twist")
+        assert(puts.at(-1)!.twist.linear.x > 0)
+        drive.setPolicy("Waiting for fresh policy state", "/tele_cmd_vel")
+        assertEquals(puts.at(-1)!.twist.linear.x, 0, "stale status stops immediately")
+        drive.setPolicy(null, "/tele_cmd_vel")
+        time.tick(100)
+        assertEquals(puts.at(-1)!.twist.linear.x, 0, "fresh status does not resume old input")
+    } finally {
+        drive.settings.set(settings)
+        drive.dispose()
+    }
+})
 
 Deno.test("no arming: forward at the linear speed, shift doubles linear and halves turning, a release flushes zeros then goes quiet", async () => {
     localStorage.clear()
