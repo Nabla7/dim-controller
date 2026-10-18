@@ -261,6 +261,12 @@ export class Drive {
         const raw = (this.profile.drive.twist ?? defaultTwist)(axes, speeds)
         const finite = (values: number[]) => values.map((value) => (Number.isFinite(value) ? value : 0)) as [number, number, number]
         const twist = { linear: finite(raw.linear), angular: finite(raw.angular) }
+        if (boosted && speeds.linear > 0 && speeds.angular > 0) {
+            // fast: turning eases off as the robot speeds up, and turns quicker than normal standing still
+            const going = Math.min(1, Math.hypot(twist.linear[0], twist.linear[1]) / speeds.linear)
+            const scale = (settings.angular * fastTurnScale(going)) / speeds.angular
+            twist.angular = twist.angular.map((value) => value * scale) as [number, number, number]
+        }
         const wasMoving = isMoving(this.state.get().twist)
         this.state.update({ axes, twist })
         // a release (or stop) is heard now, not at the next tick: the zero goes out at once, then the usual flush
@@ -398,6 +404,13 @@ export class Drive {
 }
 
 // a NaN (e.g. a speed setting that's missing) is not a drive: it would publish while nobody touches anything
+/** In fast mode, the turn rate against the normal one at `going` (0 stopped … 1 full linear speed): 1.5× standing
+ * still, down to 0.3× at full speed, so a fast drive only bends while a stopped one spins quicker. */
+export function fastTurnScale(going: number): number {
+    const clamped = Math.max(0, Math.min(1, going))
+    return 1.5 - 1.2 * clamped
+}
+
 const isMoving = (twist: Twist) => [...twist.linear, ...twist.angular].some((value) => Number.isFinite(value) && value !== 0)
 
 const xyz = ([x, y, z]: [number, number, number]) => ({ x, y, z })

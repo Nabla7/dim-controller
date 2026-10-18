@@ -597,7 +597,9 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .net-table h4 { margin: 0 0 4px; font-size: 12px; font-weight: 600; }
 .net-table h4 .dim { font-weight: 400; }
 /* a fixed height (about 6 rows) that scrolls on its own, so the modal never grows or shrinks with the stream count */
-.net-table-scroll { height: 268px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.net-table-scroll { height: 268px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+/* never narrower than its columns plus a readable stream name: a phone scrolls it sideways instead */
+.net-streams { min-width: 520px; }
 .net-streams th { position: sticky; top: 0; z-index: 1; background: var(--raised, var(--card)); text-align: left; font: 10px var(--mono); color: var(--muted-fg); font-weight: 400; border-bottom: 1px solid var(--border); padding: 2px 0 2px 6px; height: 24px; box-sizing: border-box; }
 .net-streams td { height: 40px; box-sizing: border-box; padding: 0 0 0 6px; border-bottom: 1px solid var(--hair, var(--border)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
 .net-streams .net-col-on { width: 44px; padding-left: 0; text-align: center; }
