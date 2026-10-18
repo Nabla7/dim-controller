@@ -8,6 +8,10 @@ const DB_NAME = "dim-controller-files"
 const OLD_DB_NAME = "dim-controller-meshes"
 export const MAX_CACHED_FILES = 200
 
+/** One line about the model's files in the console ([mesh-cache] …), to see on a phone what came from the cache and when. */
+export const meshLog = (...args: unknown[]) => console.info("[mesh-cache]", ...args)
+const megabytes = (bytes: number) => `${(bytes / 1e6).toFixed(1)} MB`
+
 export interface CachedFile {
     hash: string
     data: Uint8Array
@@ -24,6 +28,10 @@ export function splitHash(uri: string): { base: string; hash: string | null } {
 }
 
 let database: Promise<IDBDatabase | null> | null = null
+/** forgets the open database (tests) */
+export function resetCacheConnection() {
+    database = null
+}
 function openCache(): Promise<IDBDatabase | null> {
     database ??= new Promise((resolve) => {
         try {
@@ -38,9 +46,25 @@ function openCache(): Promise<IDBDatabase | null> {
                 db.createObjectStore("files")
                 db.createObjectStore("used")
             }
-            request.onsuccess = () => resolve(request.result)
-            request.onerror = () => resolve(null)
-        } catch {
+            request.onsuccess = () => {
+                // a newer page's upgrade isn't held up by this one: it lets go (and goes without a cache from then on)
+                request.result.onversionchange = () => {
+                    request.result.close()
+                    database = Promise.resolve(null)
+                }
+                resolve(request.result)
+            }
+            request.onerror = () => {
+                meshLog("no cache: can't open IndexedDB:", request.error)
+                resolve(null)
+            }
+            // another tab still has the old version open: this load goes without a cache rather than waiting on it
+            request.onblocked = () => {
+                meshLog("no cache this load: another tab holds the cache's old version open")
+                resolve(null)
+            }
+        } catch (error) {
+            meshLog("no cache: IndexedDB unavailable:", error)
             // no IndexedDB (a private window, tests): no cache
             resolve(null)
         }
@@ -76,6 +100,9 @@ export async function storeFile(base: string, hash: string, data: Uint8Array) {
     try {
         const transaction = db!.transaction(["files", "used"], "readwrite")
         const [files, used] = [transaction.objectStore("files"), transaction.objectStore("used")]
+        const started = performance.now()
+        transaction.oncomplete = () => meshLog(`stored ${base.split("/").pop()} (${megabytes(data.byteLength)}) in ${Math.round(performance.now() - started)} ms`)
+        transaction.onabort = () => meshLog(`storing ${base} failed:`, transaction.error)
         files.put({ hash, data } satisfies CachedFile, base)
         used.put(Date.now(), base)
         const keys = used.getAllKeys()
@@ -87,7 +114,8 @@ export async function storeFile(base: string, hash: string, data: Uint8Array) {
                 used.delete(key)
             }
         }
-    } catch {
+    } catch (error) {
         // full or unavailable: the next load asks the robot again
+        meshLog(`storing ${base} failed:`, error)
     }
 }

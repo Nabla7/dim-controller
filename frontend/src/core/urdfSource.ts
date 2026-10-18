@@ -10,7 +10,7 @@ import { decode, encode } from "./lcm/lcm.ts"
 import { Store } from "./store.ts"
 import { type Connection, dimosKey, Priority, type Publisher } from "./transport.ts"
 import { decodeMeshFile, meshGeometry, meshUris, parseUrdf } from "./urdf.ts"
-import { cachedFile, splitHash, storeFile } from "./meshCache.ts"
+import { cachedFile, meshLog, splitHash, storeFile } from "./meshCache.ts"
 import { loadSplats, type SplatAsset, splatFileType } from "./splats.ts"
 import type { RobotDescription } from "./robotDescription.ts"
 
@@ -65,6 +65,10 @@ export class UrdfSource {
     #cacheChecked = false
     /** the URDF's files in the order they're wanted (fileRanks) */
     #files: string[] = []
+    /** for the console: when the URDF came (performance.now()), each file's rank, the ranks logged as drawn */
+    #urdfAt = 0
+    #ranks = new Map<string, number>()
+    #drawnRanks = new Set<number>()
     /** while asking for /urdf_info: the re-ask timer, and when asking stops */
     #urdfAsk: { timer: ReturnType<typeof setInterval>; until: number } | null = null
 
@@ -157,6 +161,10 @@ export class UrdfSource {
             this.#cacheChecked = false
             const ranks = fileRanks(description)
             this.#files = meshUris(description).sort((a, b) => ranks.get(a)! - ranks.get(b)!)
+            this.#urdfAt = performance.now()
+            this.#ranks = ranks
+            this.#drawnRanks.clear()
+            meshLog(`URDF: ${this.#files.length} files, ${this.#files.filter((uri) => splitHash(uri).hash).length} with a hash (cacheable)`)
             this.state.update({ description, meshesWanted: meshUris(description).length, problem: null })
             this.#count()
             this.#loadCached(description)
@@ -187,6 +195,7 @@ export class UrdfSource {
             return
         }
         this.#asked.delete(uri)
+        meshLog(`got ${file.uri.split("/").pop()?.split("?")[0]} (${(file.data.byteLength / 1e6).toFixed(1)} MB) ${this.#sinceUrdf()}`)
         if (reply.hash && splitHash(uri).hash) {
             storeFile(reply.base, reply.hash, file.data.slice())
         }
@@ -198,12 +207,14 @@ export class UrdfSource {
     async #load(uri: string, data: Uint8Array): Promise<boolean> {
         const fileType = splatFileType(uri, data)
         this.#decoding.add(uri)
+        const started = performance.now()
         try {
             if (fileType) {
                 this.splats.set(uri, await loadSplats(data, fileType))
             } else {
                 this.geometries.set(uri, meshGeometry(uri, data))
             }
+            meshLog(`decoded ${uri.split("/").pop()?.split("?")[0]} in ${Math.round(performance.now() - started)} ms, ${this.#sinceUrdf()}`)
         } catch (error) {
             this.#failed.add(uri)
             this.state.update({ problem: `${uri}: ${error}` })
@@ -219,6 +230,7 @@ export class UrdfSource {
      * robot's first); the rest are asked for (an outdated copy's hash as &have=) once every lookup is done. */
     async #loadCached(description: RobotDescription) {
         const loads: Promise<unknown>[] = []
+        const counts = { hit: 0, hitBytes: 0, stale: 0, missing: 0 }
         await Promise.all(this.#files.map(async (uri) => {
             const { base, hash } = splitHash(uri)
             if (!hash || this.#loaded(uri)) {
@@ -229,16 +241,22 @@ export class UrdfSource {
                 return
             }
             if (cached?.hash === hash) {
+                counts.hit++
+                counts.hitBytes += cached.data.byteLength
                 // a copy that won't decode is asked for again
                 loads.push(this.#load(uri, cached.data).then((loaded) => loaded || this.#failed.delete(uri)))
             } else if (cached) {
+                counts.stale++
                 this.#have.set(uri, cached.hash)
+            } else {
+                counts.missing++
             }
         }))
         if (this.state.get().description !== description) {
             return
         }
         this.#cacheChecked = true
+        meshLog(`cache: ${counts.hit} hits (${(counts.hitBytes / 1e6).toFixed(1)} MB), ${counts.stale} outdated, ${counts.missing} not cached; looked up ${this.#sinceUrdf()}`)
         this.#askForMeshes()
         // a cached copy that didn't decode is asked for now
         await Promise.all(loads)
@@ -249,6 +267,13 @@ export class UrdfSource {
         const description = this.state.get().description
         const loaded = description ? meshUris(description).filter(this.#loaded).length : 0
         this.state.update({ meshesLoaded: loaded, meshVersion: this.state.get().meshVersion + 1 })
+        for (const [rank, name] of ["robot", "scene tiles", "splats"].entries()) {
+            const files = this.#files.filter((uri) => this.#ranks.get(uri) === rank)
+            if (files.length && !this.#drawnRanks.has(rank) && files.every(this.#loaded)) {
+                this.#drawnRanks.add(rank)
+                meshLog(`${name} ready (${files.length} files) ${this.#sinceUrdf()}`)
+            }
+        }
     }
 
     #askForMeshes() {
@@ -268,6 +293,7 @@ export class UrdfSource {
             const have = this.#have.get(uri)
             try {
                 requests.put(encode("std_msgs.String", { data: have ? `${uri}&have=${have}` : uri }))
+                meshLog(`asked for ${uri.split("/").pop()?.split("?")[0]}${have ? " (cached copy outdated)" : ""} ${this.#sinceUrdf()}`)
                 this.#asked.set(uri, now)
             } catch {
                 // not open yet: the next tick asks
@@ -275,6 +301,8 @@ export class UrdfSource {
             }
         }
     }
+
+    #sinceUrdf = () => `${Math.round(performance.now() - this.#urdfAt)} ms after the URDF`
 
     /** a layer instance starts or stops drawing the model */
     drawing(change: 1 | -1) {
