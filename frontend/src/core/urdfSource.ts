@@ -1,5 +1,6 @@
 // The robot's URDF and its meshes from dimos's UrdfManager, one per page, shared by the robot model layer and the arm
-// view: /urdf_info's XML (re-sent every 5 s, nothing is latched) and each mesh asked for on /mesh_request, its reply on
+// view: /urdf_info's XML (re-sent every 5 s, nothing is latched; an empty /mesh_request has it sent now, which the page
+// sends on subscribing and on every connect) and each mesh asked for on /mesh_request, its reply on
 // /mesh_info matched by URL (replies come in any order, possibly from more than one publisher). Subscribed only while
 // something uses it (acquire). A mesh named with ?hash=<sha256> is kept in IndexedDB (core/meshCache.ts) and asked for
 // with `&have=<the cached hash>` only when that isn't the URDF's; one without a hash is asked for each load, uncached.
@@ -22,6 +23,10 @@ const MESHES_IN_FLIGHT = 2
 const MESH_RETRY_MS = 60000
 /** a splat file is tens of MB (a 1.2M-splat home's SPZ is ~27 MB, ~2 min at 2 Mbit/s): asking again sooner would send it twice */
 const SPLAT_RETRY_MS = 600000
+/** an empty /mesh_request (asking for /urdf_info now) is re-sent this often until it comes: the first can go out before the subscription is open */
+const URDF_ASK_MS = 250
+/** ...for at most this long: by then the 5 s re-send has come, if anything publishes it */
+const URDF_ASK_FOR_MS = 5000
 
 export interface UrdfState {
     description: RobotDescription | null
@@ -57,6 +62,8 @@ export class UrdfSource {
     #timer: ReturnType<typeof setInterval> | null = null
     /** set once the cache has been looked at for this URDF's meshes (asking waits for that) */
     #cacheChecked = false
+    /** while asking for /urdf_info: the re-ask timer, and when asking stops */
+    #urdfAsk: { timer: ReturnType<typeof setInterval>; until: number } | null = null
 
     constructor(readonly connection: Connection) {}
 
@@ -67,6 +74,15 @@ export class UrdfSource {
             // the model loads once, behind everything live
             this.#stops.push(this.connection.subscribe(MESH_INFO, { delivery: "reliable", compress: "zstd", priority: Priority.BACKGROUND, bandwidthPriority: 0.2 }, (message) => this.#onMesh(message.bytes)))
             this.#timer = setInterval(() => this.#askForMeshes(), 1000)
+            let state = this.connection.status.get().state
+            this.#stops.push(this.connection.status.subscribe(() => {
+                const now = this.connection.status.get().state
+                if (now === "connected" && state !== "connected" && state !== "degraded") {
+                    this.#askForUrdf()
+                }
+                state = now
+            }))
+            this.#askForUrdf()
         }
         let released = false
         return () => {
@@ -77,6 +93,7 @@ export class UrdfSource {
             if (--this.#users === 0) {
                 this.#stops.splice(0).forEach((stop) => stop())
                 clearInterval(this.#timer!)
+                this.#stopAskingForUrdf()
                 this.#requests?.close()
                 this.#requests = null
                 this.#asked.clear()
@@ -84,7 +101,39 @@ export class UrdfSource {
         }
     }
 
+    /** Asks for /urdf_info now (an empty /mesh_request), again every URDF_ASK_MS until it comes. */
+    #askForUrdf() {
+        this.#stopAskingForUrdf()
+        const ask = () => {
+            if (Date.now() > this.#urdfAsk!.until) {
+                this.#stopAskingForUrdf()
+                return
+            }
+            try {
+                this.#publisher()?.put(encode("std_msgs.String", { data: "" }))
+            } catch {
+                // not open yet: the next one goes
+            }
+        }
+        this.#urdfAsk = { timer: setInterval(ask, URDF_ASK_MS), until: Date.now() + URDF_ASK_FOR_MS }
+        ask()
+    }
+
+    #stopAskingForUrdf() {
+        clearInterval(this.#urdfAsk?.timer)
+        this.#urdfAsk = null
+    }
+
+    #publisher(): Publisher | null {
+        const client = this.connection.client
+        if (client) {
+            this.#requests ??= client.publisher(MESH_REQUEST, { delivery: "reliable" })
+        }
+        return this.#requests
+    }
+
     #onUrdf(bytes: Uint8Array) {
+        this.#stopAskingForUrdf()
         let xml: string
         try {
             xml = String(decode("std_msgs.String", bytes).data)
@@ -92,7 +141,8 @@ export class UrdfSource {
             this.state.update({ problem: `/urdf_info isn't a std_msgs.String: ${error}` })
             return
         }
-        if (xml === this.#xml) {
+        // nothing yet (or an empty one) isn't a URDF
+        if (xml === this.#xml || !xml) {
             return
         }
         try {
@@ -192,8 +242,7 @@ export class UrdfSource {
 
     #askForMeshes() {
         const description = this.state.get().description
-        const client = this.connection.client
-        if (!description || !client || !this.#users || !this.#cacheChecked) {
+        if (!description || !this.connection.client || !this.#users || !this.#cacheChecked) {
             return
         }
         const now = Date.now()
@@ -203,11 +252,11 @@ export class UrdfSource {
             }
         }
         const missing = meshUris(description).filter((uri) => !this.#loaded(uri) && !this.#decoding.has(uri) && !this.#failed.has(uri) && !this.#asked.has(uri))
-        this.#requests ??= client.publisher(MESH_REQUEST, { delivery: "reliable" })
+        const requests = this.#publisher()!
         for (const uri of missing.slice(0, Math.max(0, MESHES_IN_FLIGHT - this.#asked.size))) {
             const have = this.#have.get(uri)
             try {
-                this.#requests.put(encode("std_msgs.String", { data: have ? `${uri}&have=${have}` : uri }))
+                requests.put(encode("std_msgs.String", { data: have ? `${uri}&have=${have}` : uri }))
                 this.#asked.set(uri, now)
             } catch {
                 // not open yet: the next tick asks
