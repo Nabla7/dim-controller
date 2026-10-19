@@ -70,6 +70,14 @@ class LabeledPoints {
         } else {
             this.#stop = subscribeDecoded(context, topic, { maxHz: 10 }, (message, timestamp) => {
                 const point = message.point ?? {}
+                // A NaN point is a cleared goal (dimos's cancel), stamped in whatever frame: show nothing, place nothing.
+                if (![point.x, point.y, point.z].every(Number.isFinite)) {
+                    show([], "", timestamp)
+                    this.#frame = null
+                    this.root.visible = false
+                    context.setStatus({ info: "cleared", problem: null })
+                    return
+                }
                 show([{ label: topic.name, color: `#${colorFor(topic.name).getHexString()}`, position: new THREE.Vector3(point.x, point.y, point.z) }], message.header?.frame_id ?? "", timestamp)
             })
         }
