@@ -231,7 +231,7 @@ Settings → Drive's **Topics** is **auto** by default, or a list you type (one 
 `/my_cmd_vel TwistStamped`; saved like the other settings). Auto ([core/cmdvel.ts](frontend/src/core/cmdvel.ts)):
 
 - A **velocity input** is a module input whose name contains `cmd_vel` (`cmd_vel`, `tele_cmd_vel`, `cmd_vel_in`, …) and
-  whose type is Twist or TwistStamped. The running blueprints' modules come from Desktop's `/dimos-gateway/blueprints/<name>`.
+  whose type is Twist or TwistStamped. The running blueprints' modules come from Desktop's `/dimos-gateway/catalog/blueprints/<name>`.
 - Every module with velocity inputs gets **one** topic, its entry point, so two topics never feed the same module:
   - an input that a velocity-consuming module of the same blueprint outputs is internal and skipped (a teleop mux such
     as MovementManager outputs `cmd_vel` to the robot; publishing there too would bypass it);

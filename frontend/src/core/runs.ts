@@ -16,7 +16,7 @@ export interface RunState {
     running: string[]
     /** a blueprint the Launcher is starting, or null */
     starting: string | null
-    /** each running blueprint's modules and their streams (Desktop's /dimos-gateway/blueprints/<name>); null = unknown */
+    /** each running blueprint's modules and their streams (Desktop's /dimos-gateway/catalog/blueprints/<name>); null = unknown */
     blueprints: Record<string, Module[] | null>
 }
 
@@ -62,7 +62,7 @@ export class RunWatch {
         if (cached) {
             return cached
         }
-        const response = await fetch(desktopUrl(`dimos-gateway/blueprints/${encodeURIComponent(name)}`))
+        const response = await fetch(desktopUrl(`dimos-gateway/catalog/blueprints/${encodeURIComponent(name)}`))
         if (!response.ok) {
             throw new Error(String(response.status))
         }

@@ -4,7 +4,7 @@ uses:
     "@dimos-gateway":
         # the running blueprint's Twist inputs, for the drive topic picker
         - GET /runs
-        - GET /blueprints/{name}
+        - GET /catalog/blueprints/{name}
         - GET /info
     "@desktop-gateway":
         # recordings go to Desktop's shared folder; the recorder panel lists, downloads and deletes them there
