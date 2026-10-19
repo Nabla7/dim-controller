@@ -1,33 +1,37 @@
 // Splat files in a URDF and the hashed mesh names: ?hash= split off for the cache key, splat files told from meshes
-// (a .ply by its header), the robot, a scene's meshes and splats, and people each shown by its own toggle, meshes
-// untextured, and /people switched with the robot model's people.
+// (a .ply by its header); the robot (links in no group) and each <group> shown by its own toggle, a link fixed to a
+// grouped one in its group; mesh files and splat files each shown by theirs across them, meshes untextured; old
+// settings carried over.
 import { assert, assertEquals } from "jsr:@std/assert@1"
 import { DOMParser } from "https://esm.sh/@xmldom/xmldom@0.8.10"
 import * as THREE from "three"
 import { parseUrdf } from "../src/core/urdf.ts"
 import { splitHash } from "../src/core/meshCache.ts"
 import { type SplatAsset, splatFileType } from "../src/core/splats.ts"
-import { LayerManager } from "../src/core/layers/manager.ts"
-import { registerLayer } from "../src/core/layers/registry.ts"
-import { Store } from "../src/core/store.ts"
-import type { Connection, Topic } from "../src/core/transport.ts"
-import { Kinematics, linkPart, modelPartsOf, RobotModel } from "../src/core/robotDescription.ts"
+import { groupNames, Kinematics, linkGroups, modelPartsOf, RobotModel } from "../src/core/robotDescription.ts"
 
 ;(globalThis as { DOMParser?: unknown }).DOMParser = DOMParser
 
 const SPLATS = "package://dim_go2_sim/scenes/home/splats.spz?hash=aa11"
 const COLLISION = "package://dim_go2_sim/scenes/home/collision.stl?hash=bb22"
-// as dim-go2-sim publishes a scene: splats and collision meshes on their own links, fixed to world; the robot floats
+const BODY = "package://dim_go2_sim/go2/base.stl?hash=cc33"
+// as dim-go2-sim publishes a scene: splats and collision meshes on their own links in <group>scene</group>, fixed to
+// world (a tile fixed to the meshes, in no group of its own, is the scene's too); people in <group>people</group>; the
+// robot floats, in no group. Names don't matter: "person_0" here is the robot's, "visitor" a person.
 const SCENE = `<robot name="home">
   <link name="world"/>
-  <link name="scene_splats"><visual><origin xyz="1 2 0"/><geometry><mesh filename="${SPLATS}" scale="2 2 2"/></geometry></visual></link>
-  <link name="scene_mesh"><visual><geometry><mesh filename="${COLLISION}"/></geometry></visual></link>
-  <link name="base_link"><visual><geometry><box size="0.1 0.1 0.1"/></geometry></visual></link>
+  <link name="scene_splats"><group>scene</group><visual><origin xyz="1 2 0"/><geometry><mesh filename="${SPLATS}" scale="2 2 2"/></geometry></visual></link>
+  <link name="collision"><group> scene </group><visual><geometry><mesh filename="${COLLISION}"/></geometry></visual></link>
+  <link name="tile"><visual><geometry><box size="1 1 0.1"/></geometry></visual></link>
+  <link name="base_link"><visual><geometry><mesh filename="${BODY}"/></geometry></visual><visual><geometry><box size="0.1 0.1 0.1"/></geometry></visual></link>
+  <link name="person_0"><visual><geometry><box size="0.1 0.1 0.1"/></geometry></visual></link>
   <joint name="splats" type="fixed"><parent link="world"/><child link="scene_splats"/></joint>
-  <joint name="mesh" type="fixed"><parent link="world"/><child link="scene_mesh"/></joint>
+  <joint name="mesh" type="fixed"><parent link="world"/><child link="collision"/></joint>
+  <joint name="tile" type="fixed"><parent link="collision"/><child link="tile"/></joint>
   <joint name="base" type="floating"><parent link="world"/><child link="base_link"/></joint>
-  <link name="person_0"><visual><geometry><box size="0.3 0.3 1.7"/></geometry></visual></link>
-  <joint name="person_0_joint" type="floating"><parent link="world"/><child link="person_0"/></joint>
+  <joint name="arm" type="fixed"><parent link="base_link"/><child link="person_0"/></joint>
+  <link name="visitor"><group>people</group><visual><geometry><box size="0.3 0.3 1.7"/></geometry></visual></link>
+  <joint name="visitor_joint" type="floating"><parent link="world"/><child link="visitor"/></joint>
 </robot>`
 
 Deno.test("a hashed name splits into the cache key and its hash", () => {
@@ -48,48 +52,60 @@ Deno.test("splat files are told from meshes, a .ply by its properties", () => {
     assertEquals(splatFileType("package://a/m.ply", ply("property float x\nproperty float nx\n")), null)
 })
 
-Deno.test("the robot, the scene's meshes, its splats and people each show by their own toggle", () => {
+Deno.test("a link's <group> is read; a link fixed below a grouped one is in its group; the rest in none", () => {
+    const description = parseUrdf(SCENE)
+    assertEquals(groupNames(description), ["scene", "people"])
+    assertEquals(Object.fromEntries(linkGroups(description)), { scene_splats: "scene", collision: "scene", tile: "scene", visitor: "people" })
+})
+
+Deno.test("the robot and each group show by their own toggle, mesh and splat files by theirs across them", () => {
     const cuts: (number | null)[] = []
     const fake: SplatAsset = { count: 3, mesh: () => Object.assign(new THREE.Object3D(), { opacity: 1, setCutAbove: (height: number | null) => cuts.push(height) }), dispose: () => {} }
-    const geometries = new Map([[COLLISION, new THREE.BoxGeometry()]])
+    const geometries = new Map([[COLLISION, new THREE.BoxGeometry()], [BODY, new THREE.BoxGeometry()]])
     const model = new RobotModel(new Kinematics(parseUrdf(SCENE)), geometries, { opacity: 0.5 }, new Map([[SPLATS, fake]]))
     const splat = model.links.get("scene_splats")!.children[0] as THREE.Object3D & { opacity: number }
-    const mesh = model.links.get("scene_mesh")!.children[0]
-    const robot = model.links.get("base_link")!.children[0]
-    const person = model.links.get("person_0")!.children[0]
+    const collision = model.links.get("collision")!.children[0]
+    const tile = model.links.get("tile")!.children[0]
+    const [body, box] = [true, false].map((meshFile) => model.links.get("base_link")!.children.find((object) => !!object.userData.meshFile === meshFile)!)
+    const arm = model.links.get("person_0")!.children[0]
+    const visitor = model.links.get("visitor")!.children[0]
     assert(model.hasSplats)
     // the URDF origin and scale, and the layer's opacity
     assertEquals(new THREE.Vector3().setFromMatrixPosition(splat.matrix).toArray(), [1, 2, 0])
     assertEquals(new THREE.Vector3().setFromMatrixScale(splat.matrix).toArray(), [2, 2, 2])
     assertEquals(splat.opacity, 0.5)
-    const shown = () => [robot.visible, mesh.visible, splat.visible, person.visible]
-    const all = { robot: true, meshes: true, splats: true, people: true }
-    assertEquals(shown(), [true, true, true, true])
-    for (const [index, part] of (["robot", "meshes", "splats", "people"] as const).entries()) {
-        model.setParts({ ...all, [part]: false })
-        assertEquals(shown(), [0, 1, 2, 3].map((other) => other !== index))
-    }
+    const shown = () => ({ body: body.visible, box: box.visible, arm: arm.visible, collision: collision.visible, tile: tile.visible, splat: splat.visible, visitor: visitor.visible })
+    const all = { robot: true, groups: {}, meshes: true, splats: true }
+    const every = { body: true, box: true, arm: true, collision: true, tile: true, splat: true, visitor: true }
+    assertEquals(shown(), every)
+    model.setParts({ ...all, robot: false })
+    assertEquals(shown(), { ...every, body: false, box: false, arm: false })
+    model.setParts({ ...all, groups: { scene: false } })
+    assertEquals(shown(), { ...every, collision: false, tile: false, splat: false })
+    model.setParts({ ...all, groups: { people: false } })
+    assertEquals(shown(), { ...every, visitor: false })
+    // meshes and splats are files, whoever's: a primitive is neither
+    model.setParts({ ...all, meshes: false })
+    assertEquals(shown(), { ...every, body: false, collision: false })
+    model.setParts({ ...all, splats: false })
+    assertEquals(shown(), { ...every, splat: false })
     // textures off doesn't touch what shows
     model.setTextures(false)
-    model.setParts({ robot: false, meshes: true, splats: false, people: true })
-    assertEquals(shown(), [false, true, false, true])
+    model.setParts({ ...all, robot: false, splats: false })
+    assertEquals(shown(), { ...every, body: false, box: false, arm: false, splat: false })
     model.setTextures(true)
     model.setParts(all)
     model.setDisplay("collision")
-    assertEquals(shown(), [false, false, false, false])
+    assertEquals(Object.values(shown()).some(Boolean), false)
     // the ceiling cut reaches every splat object
     model.setSplatCutAbove(2.5)
     assertEquals(cuts, [null, 2.5])
 })
 
-Deno.test("links are told apart by name: a scene's, a person's, the robot's", () => {
-    assertEquals(["scene_mesh", "go2_scene_splats", "person_0", "sim/person_12", "base_link", "salesperson_1", "FL_calf"].map(linkPart), ["scene", "scene", "person", "person", "robot", "robot", "robot"])
-})
-
 Deno.test("textures off draws meshes flat grey at their opacity, on puts their own material back, meshes arriving later too", () => {
     const geometries = new Map<string, THREE.BufferGeometry>()
     const description = parseUrdf(SCENE)
-    description.links.find((link) => link.name === "base_link")!.visuals[0].color = [1, 0, 0, 1]
+    description.links.find((link) => link.name === "base_link")!.visuals[1].color = [1, 0, 0, 1]
     const model = new RobotModel(new Kinematics(description), geometries, { opacity: 0.5 })
     const box = model.links.get("base_link")!.children[0] as THREE.Mesh
     const own = box.material as THREE.MeshStandardMaterial
@@ -102,45 +118,21 @@ Deno.test("textures off draws meshes flat grey at their opacity, on puts their o
     // a mesh that arrives while textures are off comes in plain
     geometries.set(COLLISION, new THREE.BoxGeometry())
     model.fill(geometries)
-    const late = model.links.get("scene_mesh")!.children[0] as THREE.Mesh
+    const late = model.links.get("collision")!.children[0] as THREE.Mesh
     assert((late.material as THREE.MeshStandardMaterial).flatShading)
     model.setTextures(true)
     assertEquals(box.material, own)
     assertEquals(late.material, late.userData.textured)
 })
 
-Deno.test("the old Splats / Meshes / Both setting seeds the toggles; a toggle once set wins; robot and people default on", () => {
-    const parts = (splats: boolean, meshes: boolean) => ({ robot: true, meshes, splats, people: true })
-    assertEquals(modelPartsOf({}), parts(true, true))
-    assertEquals(modelPartsOf({ splatView: "splats" }), parts(true, false))
-    assertEquals(modelPartsOf({ splatView: "meshes" }), parts(false, true))
-    assertEquals(modelPartsOf({ splatView: "both" }), parts(true, true))
-    assertEquals(modelPartsOf({ splatView: "splats", meshes: true }), parts(true, true))
-    assertEquals(modelPartsOf({ splats: false, meshes: false, splatView: "both" }), parts(false, false))
-    assertEquals(modelPartsOf({ robot: false, people: false }), { robot: false, meshes: true, splats: true, people: false })
-})
-
-Deno.test("a topic a layer absorbs (the robot model's /people) is on just while that layer is and its part is", () => {
-    localStorage.clear()
-    const make = () => ({ root: new THREE.Object3D(), dispose: () => {} })
-    registerLayer<{ people: boolean }>({ id: "test-owner", label: "owner", types: ["test.Owner"], defaults: { people: true }, create: make, absorbs: { names: ["/people"], on: (settings) => settings.people } })
-    registerLayer({ id: "test-poses", label: "poses", types: ["test.Poses"], defaults: {}, create: make })
-    const status = new Store<{ topics: Topic[] }>({ topics: [] })
-    const viewer = { scene: { add: () => {}, remove: () => {} }, onFrame: () => () => {}, requestRender: () => {} }
-    const manager = new LayerManager(viewer as never, {} as never, {} as never, { status } as unknown as Connection, {} as never, {} as never)
-    const owner: Topic = { key: "owner", name: "/urdf_info", type: "test.Owner" }
-    const people: Topic = { key: "people", name: "/people", type: "test.Poses" }
-    const enabled = () => manager.entries.get().list.map((entry) => entry.enabled)
-    status.set({ topics: [owner] })
-    const ownerEntry = manager.entries.get().list[0]
-    ownerEntry.settings.update({ people: false })
-    manager.setEnabled(owner.key, true)
-    // showing up after the owner's people were switched off, it starts off
-    status.set({ topics: [owner, people] })
-    assertEquals(enabled(), [false, true])
-    ownerEntry.settings.update({ people: true })
-    manager.setEnabled(owner.key, true)
-    assertEquals(enabled(), [true, true])
-    manager.setEnabled(owner.key, false)
-    assertEquals(enabled(), [false, false])
+Deno.test("settings from before groups: People becomes the people group, the scene-only Meshes is dropped, the old Splats / Meshes / Both seeds Splats", () => {
+    const parts = (splats: boolean, groups: Record<string, boolean> = {}) => ({ robot: true, groups, meshes: true, splats })
+    assertEquals(modelPartsOf({}), parts(true))
+    assertEquals(modelPartsOf({ splatView: "splats", meshes: false }), parts(true))
+    assertEquals(modelPartsOf({ splatView: "meshes" }), parts(false))
+    assertEquals(modelPartsOf({ splats: false, splatView: "both" }), parts(false))
+    assertEquals(modelPartsOf({ robot: false, people: false }), { ...parts(true, { people: false }), robot: false })
+    assertEquals(modelPartsOf({ people: true }), parts(true, { people: true }))
+    // once groups are saved, they and Meshes are read as they are, and People isn't
+    assertEquals(modelPartsOf({ groups: { scene: false }, meshes: false, people: false }), { robot: true, groups: { scene: false }, meshes: false, splats: true })
 })

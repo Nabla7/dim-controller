@@ -30,6 +30,8 @@ export interface DescriptionLink {
     name: string
     visuals: DescriptionGeometry[]
     collisions: DescriptionGeometry[]
+    /** shown and hidden with the other links of its group (a URDF link's `<group>`, e.g. a sim's scene or people) */
+    group?: string
 }
 
 export interface DescriptionJoint {
@@ -190,24 +192,52 @@ function decodeArray<T extends Float32Array | Uint32Array>(base64: string, Kind:
 }
 
 export type DisplayMode = "visual" | "collision" | "both"
-/** What the model draws, each part shown or not on its own: the robot's own links, a scene's meshes and its Gaussian
- * splats, and people (dim-go2-sim puts its scene and its people in the robot's URDF). */
+/** What the model draws, each shown or not: the links in no group (the robot's own), each group's links (by name;
+ * unset: shown), and across those, mesh files and Gaussian splat files. */
 export interface ModelParts {
     robot: boolean
+    groups: Record<string, boolean>
     meshes: boolean
     splats: boolean
-    people: boolean
 }
 
-/** The parts a layer's saved settings show; one saved before the splats / meshes toggles had one choice (`splatView`:
- * splats, meshes or both), which still decides a toggle not yet set. */
-export function modelPartsOf(saved: { robot?: boolean; splats?: boolean; meshes?: boolean; splatView?: string; people?: boolean }): ModelParts {
-    return { robot: saved.robot ?? true, meshes: saved.meshes ?? saved.splatView !== "splats", splats: saved.splats ?? saved.splatView !== "meshes", people: saved.people ?? true }
+/** Settings saved before groups: `people` (dim-go2-sim's people), `meshes` (then the scene's alone) and `splatView`
+ * ("splats", "meshes" or "both", before the splats / meshes toggles). */
+interface OldParts {
+    people?: boolean
+    splatView?: string
 }
 
-/** A link by its name (after any prefix): a scene's (dim-go2-sim's scene_mesh, scene_splats), a person's (person_<i>) or the robot's. */
-export function linkPart(name: string): "scene" | "person" | "robot" {
-    return /(^|[/_])scene_/.test(name) ? "scene" : /(^|[/_])person_\d+$/.test(name) ? "person" : "robot"
+/** The parts a layer's saved settings show. One saved before groups carries its People toggle over to the "people"
+ * group; its Meshes toggle (then the scene's meshes alone, now every mesh) is dropped. */
+export function modelPartsOf(saved: Partial<ModelParts> & OldParts): ModelParts {
+    const splats = saved.splats ?? saved.splatView !== "meshes"
+    if (!saved.groups) {
+        return { robot: saved.robot ?? true, groups: saved.people === undefined ? {} : { people: saved.people }, meshes: true, splats }
+    }
+    return { robot: saved.robot ?? true, groups: saved.groups, meshes: saved.meshes ?? true, splats }
+}
+
+/** Each link's group: its own `<group>`, else that of the link it's fixed to (the parent of a fixed joint), else none. */
+export function linkGroups(description: RobotDescription): Map<string, string> {
+    const groups = new Map(description.links.filter((link) => link.group).map((link) => [link.name, link.group!]))
+    const fixed = description.joints.filter((joint) => joint.type === "fixed")
+    for (let grew = true; grew;) {
+        grew = false
+        for (const joint of fixed) {
+            const inherited = groups.get(joint.parent)
+            if (inherited && !groups.has(joint.child)) {
+                groups.set(joint.child, inherited)
+                grew = true
+            }
+        }
+    }
+    return groups
+}
+
+/** The groups the description's links name, first seen first. */
+export function groupNames(description: RobotDescription): string[] {
+    return [...new Set(description.links.map((link) => link.group).filter((group): group is string => !!group))]
 }
 
 /** The three.js arm: a group per link (named by it) placed by `pose`, holding its visual and collision meshes. */
@@ -242,6 +272,7 @@ export class RobotModel {
         this.#shapeOf = shapeOf
         this.#material = material
         this.#look = look
+        this.#groups = linkGroups(kinematics.description)
         for (const link of kinematics.description.links) {
             const group = new THREE.Group()
             group.name = link.name
@@ -262,7 +293,8 @@ export class RobotModel {
     readonly #material: (color: THREE.ColorRepresentation, alpha: number) => THREE.MeshStandardMaterial
     readonly #look: { color?: string; opacity?: number; collisionColor?: string }
     #display: DisplayMode = "visual"
-    #parts: ModelParts = { robot: true, meshes: true, splats: true, people: true }
+    #parts: ModelParts = { robot: true, groups: {}, meshes: true, splats: true }
+    readonly #groups: Map<string, string>
     #textures = true
     #cutAbove: number | null = null
     #tint: { color: THREE.ColorRepresentation; opacity: number } | null = null
@@ -301,6 +333,7 @@ export class RobotModel {
                 : this.#look.color ?? (item.color ? new THREE.Color(item.color[0], item.color[1], item.color[2]) : "#d9dde3")
             const mesh = new THREE.Mesh(shape, this.#material(color, kind === "collision" ? Math.min(opacity, 0.45) : opacity * (item.color?.[3] ?? 1)))
             mesh.userData.kind = kind
+            mesh.userData.meshFile = item.type === "mesh"
             mesh.userData.textured = mesh.material
             mesh.matrixAutoUpdate = false
             mesh.matrix.copy(originMatrix(item.origin))
@@ -325,33 +358,19 @@ export class RobotModel {
         return [...this.links.values()].some((group) => group.userData.hasSplats)
     }
 
-    /** Links named as a scene's or with splats, and every link joined to them by fixed joints: the scene. */
-    #sceneLinks(): Set<string> {
-        const scene = new Set([...this.links].filter(([name, group]) => group.userData.hasSplats || linkPart(name) === "scene").map(([name]) => name))
-        const fixed = this.kinematics.description.joints.filter((joint) => joint.type === "fixed")
-        for (let grew = scene.size > 0; grew;) {
-            grew = false
-            for (const joint of fixed) {
-                if (scene.has(joint.parent) !== scene.has(joint.child)) {
-                    scene.add(joint.parent).add(joint.child)
-                    grew = true
-                }
-            }
-        }
-        return scene
-    }
-
-    /** Each object shown by the display mode (visual / collision) and its part's toggle. */
+    /** Each object shown by the display mode (visual / collision), its link's group (or, in none, the robot's) toggle,
+     * and its file's: splats or meshes. */
     #applyVisibility() {
-        const scene = this.#sceneLinks()
-        for (const [name, group] of this.links) {
-            for (const object of group.children) {
+        for (const [name, link] of this.links) {
+            const group = this.#groups.get(name)
+            const linkShown = group === undefined ? this.#parts.robot : this.#parts.groups[group] ?? true
+            for (const object of link.children) {
                 const kind = object.userData.kind as string | undefined
                 if (!kind) {
                     continue
                 }
-                const part = object.userData.splat ? "splats" : scene.has(name) ? "meshes" : linkPart(name) === "person" ? "people" : "robot"
-                object.visible = (this.#display === "both" || this.#display === kind) && this.#parts[part]
+                const fileShown = object.userData.splat ? this.#parts.splats : object.userData.meshFile ? this.#parts.meshes : true
+                object.visible = (this.#display === "both" || this.#display === kind) && linkShown && fileShown
             }
         }
     }
@@ -417,9 +436,9 @@ export class RobotModel {
         this.#applyVisibility()
     }
 
-    /** Which parts show: the robot, a scene's meshes, its splats, people, each on or off. */
+    /** Which parts show: the robot, each group, mesh files, splat files, each on or off. */
     setParts(parts: ModelParts) {
-        this.#parts = { ...parts }
+        this.#parts = { ...parts, groups: { ...parts.groups } }
         this.#applyVisibility()
     }
 

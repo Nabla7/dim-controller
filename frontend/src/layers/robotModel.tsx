@@ -1,29 +1,32 @@
 // The robot's own model from its URDF (dimos's UrdfManager: /urdf_info, meshes on /mesh_request → /mesh_info), any
 // robot. Each link sits at its TF frame (UrdfManager puts every joint on tf, frames named by link), its visuals at
 // their URDF origins; a link with no TF frame follows its parent through the joint's origin. Meshes fill in as they arrive.
-// A visual naming a splat file (a scene: a Gaussian-splat home next to its collision meshes) is drawn with Spark.
+// A visual naming a splat file (a scene: a Gaussian-splat home next to its collision meshes) is drawn with Spark. A
+// link's <group> (core/urdf.ts) puts it in a row of its own, apart from the robot's.
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import type { LayerEntry, LayerManager } from "../core/layers/manager.ts"
 import { LayerStatusLine, Row } from "../ui/LayersPanel.tsx"
 import { useStore, type Store } from "../core/store.ts"
 import { Field, Select, Slider } from "dimos-react"
-import { type DisplayMode, Kinematics, linkPart, type ModelParts, modelPartsOf, RobotModel } from "../core/robotDescription.ts"
+import { type DisplayMode, groupNames, Kinematics, modelPartsOf, RobotModel } from "../core/robotDescription.ts"
 import { type UrdfSource, urdfSource } from "../core/urdfSource.ts"
 import { ensureSparkRenderer, splatFiles } from "../core/splats.ts"
 
 export interface RobotModelSettings {
     opacity: number
     display: DisplayMode
-    /** the robot's own links shown (unset: on) */
+    /** the links in no group (the robot's own) shown (unset: on) */
     robot?: boolean
-    /** a scene's splats shown (unset: from `splatView`) */
+    /** each group's links shown, by the group's name (unset: on); unset before groups (`people` is read then) */
+    groups?: Record<string, boolean>
+    /** splat files shown (unset: on) */
     splats?: boolean
-    /** a scene's meshes shown (unset: from `splatView`) */
+    /** mesh files (not splats) shown (unset: on) */
     meshes?: boolean
-    /** people shown (unset: on) */
+    /** before groups, dim-go2-sim's people shown; read only to migrate */
     people?: boolean
-    /** before the two toggles: "splats", "meshes" or "both"; read only to migrate */
+    /** before the splats / meshes toggles: "splats", "meshes" or "both"; read only to migrate */
     splatView?: string
     /** visual meshes in their materials, or plain flat grey */
     textures?: boolean
@@ -164,30 +167,31 @@ class RobotModelLayer {
     }
 }
 
-/** A dim-go2-sim's people as poses (geometry_msgs.PoseArray): switched with the people the URDF draws. */
-const PEOPLE_TOPICS = ["/people"]
+const SPLAT_EXTENSIONS = new Set(["spz", "splat", "ksplat", "sog"])
 
-/** The layer's rows, top level in the list: URDF (the robot itself), Meshes, Textures, Splats, People. A part shows
- * while the layer is on; the layer runs (subscribed) while any part is on. A row only shows if the model has its part. */
+/** The layer's rows, top level in the list: URDF (the links in no group: the robot), Meshes, Textures, Splats, then a
+ * row per group the URDF's links name. URDF and the groups say which links show: one shows while the layer is on, and
+ * the layer runs (subscribed) while any is. Meshes, Textures and Splats apply across them, to their files. A row only
+ * shows if the model has its part. */
 function RobotModelRows({ entry, layers }: { entry: LayerEntry; layers: LayerManager }) {
     const settings = entry.settings as Store<RobotModelSettings>
     const value = useStore(settings)
     const { count: splatFileCount } = useStore(splatFiles)
     const { description } = useStore(urdfSource(layers.connection).state)
-    const peopleTopics = useStore(layers.entries).list.filter((other) => PEOPLE_TOPICS.includes(other.topic.name))
-    const kinds = new Set(description?.links.map((link) => linkPart(link.name)))
+    const groups = description ? groupNames(description) : []
+    const hasMeshFiles = !!description?.links.some((link) => [...link.visuals, ...link.collisions].some((item) => item.mesh && !SPLAT_EXTENSIONS.has(item.mesh.split("?")[0].split(".").pop()?.toLowerCase() ?? "")))
     const parts = modelPartsOf(value)
-    const shown = (part: keyof ModelParts) => entry.enabled && parts[part]
-    const set = (part: keyof ModelParts, on: boolean) => {
-        // turning one on while the layer is off shows that one alone
-        const next = { ...(entry.enabled ? parts : { robot: false, meshes: false, splats: false, people: false }), [part]: on }
-        settings.update(next)
-        // the /people poses follow (LayerManager)
-        layers.setEnabled(entry.topic.key, Object.values(next).some(Boolean))
+    const groupShown = (group: string) => entry.enabled && (parts.groups[group] ?? true)
+    /** turning one of URDF or the groups on while the layer is off shows that one alone */
+    const show = (which: { robot: boolean } | { group: string; on: boolean }) => {
+        const before = entry.enabled ? parts : { ...parts, robot: false, groups: Object.fromEntries(groups.map((group) => [group, false])) }
+        const next = "group" in which ? { ...before, groups: { ...before.groups, [which.group]: which.on } } : { ...before, robot: which.robot }
+        settings.update({ robot: next.robot, groups: next.groups, meshes: next.meshes, splats: next.splats })
+        layers.setEnabled(entry.topic.key, next.robot || groups.some((group) => next.groups[group] ?? true))
     }
     return (
         <>
-            <Row value={shown("robot")} onChange={(on) => set("robot", on)} name="URDF" type={entry.topic.name} title="the robot's own links" className={entry.status.problem ? "problem" : ""} testKey={entry.topic.key} below={<LayerStatusLine entry={entry} />}>
+            <Row value={entry.enabled && parts.robot} onChange={(robot) => show({ robot })} name="URDF" type={entry.topic.name} title="the robot's own links (in no group)" className={entry.status.problem ? "problem" : ""} testKey={entry.topic.key} below={<LayerStatusLine entry={entry} />}>
                 <Field inline label="Opacity">
                     <Slider min={0.1} max={1} step={0.05} value={value.opacity} format={(opacity: number) => `${Math.round(opacity * 100)}%`} onChange={(opacity: number) => settings.update({ opacity })} />
                 </Field>
@@ -200,16 +204,16 @@ function RobotModelRows({ entry, layers }: { entry: LayerEntry; layers: LayerMan
                     />
                 </Field>
             </Row>
-            {(kinds.has("scene") || splatFileCount > 0) && <Row value={shown("meshes")} onChange={(on) => set("meshes", on)} name="Meshes" title="the scene's meshes (its collision geometry)" />}
+            {hasMeshFiles && <Row value={parts.meshes} onChange={(meshes) => settings.update({ ...parts, meshes })} name="Meshes" title="mesh files (not splats), in every row's links" />}
             <Row value={value.textures ?? true} onChange={(textures) => settings.update({ textures })} name="Textures" title="off: meshes in plain flat grey, to see their geometry" />
             {splatFileCount > 0 && (
-                <Row value={shown("splats")} onChange={(on) => set("splats", on)} name="Splats" title="the scene's Gaussian splats">
+                <Row value={parts.splats} onChange={(splats) => settings.update({ ...parts, splats })} name="Splats" title="Gaussian splat files, in every row's links">
                     <Field inline label="Cut above" title="splats higher than this are hidden, so ceilings and upper floors don't hide the robot">
                         <Slider min={0.5} max={30} step={0.1} value={value.splatCutAbove ?? 2.5} format={(height: number) => `${height.toFixed(1)} m`} onChange={(splatCutAbove: number) => settings.update({ splatCutAbove })} />
                     </Field>
                 </Row>
             )}
-            {(kinds.has("person") || peopleTopics.length > 0) && <Row value={shown("people")} onChange={(on) => set("people", on)} name="People" title="the sim's people, and their poses (/people)" />}
+            {groups.map((group) => <Row key={group} value={groupShown(group)} onChange={(on) => show({ group, on })} name={group} title={`the URDF's links in <group>${group}</group>`} />)}
         </>
     )
 }
@@ -222,5 +226,4 @@ registerLayer<RobotModelSettings>({
     defaults: { opacity: 1, display: "visual", textures: true, splatCutAbove: 2.5 },
     create: (context, _topic, settings) => new RobotModelLayer(context, settings),
     Rows: RobotModelRows,
-    absorbs: { names: PEOPLE_TOPICS, on: (settings) => modelPartsOf(settings).people },
 })

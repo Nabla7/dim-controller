@@ -74,9 +74,7 @@ function LayerRow({ app, entry }: { app: ViewerApp; entry: LayerEntry }) {
 
 export function LayerList({ app, skip }: { app: ViewerApp; skip: (entry: LayerEntry) => boolean }) {
     const all = useStore(app.layers.entries).list
-    // a topic another layer's rows switch (the robot model's /people) isn't listed on its own
-    const absorbed = new Set(all.flatMap((entry) => entry.type.absorbs?.names ?? []))
-    const list = all.filter((entry) => !skip(entry) && !absorbed.has(entry.topic.name))
+    const list = all.filter((entry) => !skip(entry))
     const connection = useStore(app.connection.status)
     const groups = new Map<string, LayerEntry[]>()
     for (const entry of list) {

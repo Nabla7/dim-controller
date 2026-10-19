@@ -72,25 +72,11 @@ export class LayerManager {
                 this.#start(entry)
             }
         }
-        this.#followOwners()
     }
 
     setEnabled(key: string, enabled: boolean) {
         this.#enabled.update({ [key]: enabled })
         this.#apply(key, enabled)
-        this.#followOwners()
-    }
-
-    /** A topic another layer absorbs (LayerType.absorbs) is on just when that layer is and says so. */
-    #followOwners() {
-        const list = this.entries.get().list
-        for (const owner of list.filter((entry) => entry.type.absorbs)) {
-            const { names, on } = owner.type.absorbs!
-            const wanted = owner.enabled && on(owner.settings.get())
-            for (const entry of list.filter((other) => names.includes(other.topic.name) && other.enabled !== wanted)) {
-                this.setEnabled(entry.topic.key, wanted)
-            }
-        }
     }
 
     #apply(key: string, enabled: boolean) {

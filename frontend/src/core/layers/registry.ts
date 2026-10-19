@@ -61,8 +61,6 @@ export interface LayerType<Settings extends object = object> {
     Settings?: ComponentType<{ settings: Store<Settings>; topic: Topic }>
     /** draws its rows in the layer list itself in place of the one (the robot model: a row per part it draws) */
     Rows?: ComponentType<{ entry: LayerEntry; layers: LayerManager }>
-    /** topics its Rows switch, not listed on their own beside it: on while it is and `on` says (the robot model's /people) */
-    absorbs?: { names: string[]; on(settings: Settings): boolean }
 }
 
 const layerTypes: LayerType<object>[] = []

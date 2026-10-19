@@ -70,6 +70,13 @@ function geometryOf(item: Element, named: Map<string, [number, number, number, n
     return null
 }
 
+/** A link's `<group>NAME</group>` (a dimos extension; URDF parsers ignore elements they don't know): the layer list
+ * shows and hides its links together, by a row named for it. */
+function groupOf(link: Element): { group?: string } {
+    const group = child(link, "group")?.textContent?.trim()
+    return group ? { group } : {}
+}
+
 /** A URDF's XML as a RobotDescription posed at its root link (base_frame = base_link = the root; meshes by URI, not inline). */
 export function parseUrdf(xml: string): RobotDescription {
     const document = new DOMParser().parseFromString(xml, "text/xml")
@@ -88,6 +95,7 @@ export function parseUrdf(xml: string): RobotDescription {
         name: link.getAttribute("name") ?? "",
         visuals: children(link, "visual").map((item) => geometryOf(item, named)).filter((item): item is DescriptionGeometry => !!item),
         collisions: children(link, "collision").map((item) => geometryOf(item, named)).filter((item): item is DescriptionGeometry => !!item),
+        ...groupOf(link),
     }))
     const joints: DescriptionJoint[] = children(robot, "joint").map((joint) => {
         const limit = child(joint, "limit")
