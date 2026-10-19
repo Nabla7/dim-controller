@@ -107,6 +107,9 @@ async def arm(page):
     await page.wait_for_timeout(10000)
     await swap(page, "3D view")
     await page.wait_for_timeout(5000)
+    await page.mouse.move(690, 200)  # a step back, so the whole arm is in the frame
+    await page.mouse.wheel(0, 200)
+    await page.wait_for_timeout(1500)
     sliders = page.locator('[data-testid="manip-joints"] input[type="range"]')
     for index, value in [(0, "0.9"), (1, "0.35"), (2, "-0.6"), (4, "0.8")]:
         if await sliders.count() > index:
