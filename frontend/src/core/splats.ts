@@ -7,7 +7,20 @@ import { Store } from "./store.ts"
 
 type Spark = typeof import("@sparkjsdev/spark")
 let spark: Promise<Spark> | null = null
-const loadSpark = () => (spark ??= import("@sparkjsdev/spark"))
+/** Spark's chunk, loaded once. A page from before an update asks for a chunk name the new build doesn't have (the
+ * server answers index.html): that says to reload, rather than the browser's "error loading dynamically imported module". */
+const loadSpark = () =>
+    (spark ??= import("@sparkjsdev/spark").catch((error: unknown) => {
+        spark = null
+        throw new StaleBuildError(error)
+    }))
+
+/** A lazy chunk this page's build names is gone: the controller was updated under it. */
+export class StaleBuildError extends Error {
+    constructor(cause: unknown) {
+        super("Controller was updated — reload the page", { cause })
+    }
+}
 
 /** one model's object drawing a splat file */
 export type SplatObject = THREE.Object3D & {

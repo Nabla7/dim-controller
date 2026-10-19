@@ -11,7 +11,7 @@ import { Store } from "./store.ts"
 import { type Connection, dimosKey, Priority, type Publisher } from "./transport.ts"
 import { decodeMeshFile, meshGeometry, meshUris, parseUrdf } from "./urdf.ts"
 import { cachedFile, meshLog, splitHash, storeFile } from "./meshCache.ts"
-import { loadSplats, type SplatAsset, splatFileType } from "./splats.ts"
+import { loadSplats, type SplatAsset, splatFileType, StaleBuildError } from "./splats.ts"
 import type { RobotDescription } from "./robotDescription.ts"
 
 export const URDF_INFO = dimosKey("/urdf_info", "std_msgs.String")
@@ -217,7 +217,7 @@ export class UrdfSource {
             meshLog(`decoded ${uri.split("/").pop()?.split("?")[0]} in ${Math.round(performance.now() - started)} ms, ${this.#sinceUrdf()}`)
         } catch (error) {
             this.#failed.add(uri)
-            this.state.update({ problem: `${uri}: ${error}` })
+            this.state.update({ problem: error instanceof StaleBuildError ? error.message : `${uri}: ${error}` })
             return false
         } finally {
             this.#decoding.delete(uri)
