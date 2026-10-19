@@ -4,20 +4,25 @@
 // A visual naming a splat file (a scene: a Gaussian-splat home next to its collision meshes) is drawn with Spark.
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
+import type { LayerEntry, LayerManager } from "../core/layers/manager.ts"
+import { LayerStatusLine, Row } from "../ui/LayersPanel.tsx"
 import { useStore, type Store } from "../core/store.ts"
-import type { Topic } from "../core/transport.ts"
-import { Field, Select, Slider, Toggle } from "dimos-react"
-import { type DisplayMode, Kinematics, RobotModel, scenePartsOf } from "../core/robotDescription.ts"
+import { Field, Select, Slider } from "dimos-react"
+import { type DisplayMode, Kinematics, linkPart, type ModelParts, modelPartsOf, RobotModel } from "../core/robotDescription.ts"
 import { type UrdfSource, urdfSource } from "../core/urdfSource.ts"
 import { ensureSparkRenderer, splatFiles } from "../core/splats.ts"
 
 export interface RobotModelSettings {
     opacity: number
     display: DisplayMode
-    /** a splat scene's splats shown (unset: from `splatView`) */
+    /** the robot's own links shown (unset: on) */
+    robot?: boolean
+    /** a scene's splats shown (unset: from `splatView`) */
     splats?: boolean
-    /** a splat scene's meshes shown (unset: from `splatView`) */
+    /** a scene's meshes shown (unset: from `splatView`) */
     meshes?: boolean
+    /** people shown (unset: on) */
+    people?: boolean
     /** before the two toggles: "splats", "meshes" or "both"; read only to migrate */
     splatView?: string
     /** visual meshes in their materials, or plain flat grey */
@@ -73,7 +78,7 @@ class RobotModelLayer {
         const { opacity, display, textures, splatCutAbove } = this.settings.get()
         this.#model = new RobotModel(this.#kinematics, this.#source.geometries, { opacity }, this.#source.splats)
         this.#model.setDisplay(display)
-        this.#model.setSceneParts(scenePartsOf(this.settings.get()))
+        this.#model.setParts(modelPartsOf(this.settings.get()))
         this.#model.setTextures(textures ?? true)
         this.#model.setSplatCutAbove(splatCutAbove ?? 2.5)
         this.root.add(this.#model.root)
@@ -159,41 +164,52 @@ class RobotModelLayer {
     }
 }
 
-function RobotModelSettingsEditor({ settings }: { settings: Store<RobotModelSettings>; topic: Topic }) {
+/** A dim-go2-sim's people as poses (geometry_msgs.PoseArray): switched with the people the URDF draws. */
+const PEOPLE_TOPICS = ["/people"]
+
+/** The layer's rows, top level in the list: URDF (the robot itself), Meshes, Textures, Splats, People. A part shows
+ * while the layer is on; the layer runs (subscribed) while any part is on. A row only shows if the model has its part. */
+function RobotModelRows({ entry, layers }: { entry: LayerEntry; layers: LayerManager }) {
+    const settings = entry.settings as Store<RobotModelSettings>
     const value = useStore(settings)
     const { count: splatFileCount } = useStore(splatFiles)
-    const parts = scenePartsOf(value)
+    const { description } = useStore(urdfSource(layers.connection).state)
+    const peopleTopics = useStore(layers.entries).list.filter((other) => PEOPLE_TOPICS.includes(other.topic.name))
+    const kinds = new Set(description?.links.map((link) => linkPart(link.name)))
+    const parts = modelPartsOf(value)
+    const shown = (part: keyof ModelParts) => entry.enabled && parts[part]
+    const set = (part: keyof ModelParts, on: boolean) => {
+        // turning one on while the layer is off shows that one alone
+        const next = { ...(entry.enabled ? parts : { robot: false, meshes: false, splats: false, people: false }), [part]: on }
+        settings.update(next)
+        // the /people poses follow (LayerManager)
+        layers.setEnabled(entry.topic.key, Object.values(next).some(Boolean))
+    }
     return (
         <>
-            <Field inline label="Opacity">
-                <Slider min={0.1} max={1} step={0.05} value={value.opacity} format={(opacity: number) => `${Math.round(opacity * 100)}%`} onChange={(opacity: number) => settings.update({ opacity })} />
-            </Field>
-            <Field inline label="Show">
-                <Select<string>
-                    aria-label="Robot model geometry"
-                    value={value.display}
-                    options={[["visual", "Visual"], ["collision", "Collision"], ["both", "Both"]]}
-                    onChange={(display: string) => settings.update({ display: display as DisplayMode })}
-                />
-            </Field>
-            {splatFileCount > 0 && (
-                <Field inline label="Splats" title="the scene's Gaussian splats">
-                    <Toggle aria-label="Splats" value={parts.splats} onChange={(splats: boolean) => settings.update({ ...parts, splats })} />
+            <Row value={shown("robot")} onChange={(on) => set("robot", on)} name="URDF" type={entry.topic.name} title="the robot's own links" className={entry.status.problem ? "problem" : ""} testKey={entry.topic.key} below={<LayerStatusLine entry={entry} />}>
+                <Field inline label="Opacity">
+                    <Slider min={0.1} max={1} step={0.05} value={value.opacity} format={(opacity: number) => `${Math.round(opacity * 100)}%`} onChange={(opacity: number) => settings.update({ opacity })} />
                 </Field>
-            )}
-            {splatFileCount > 0 && (
-                <Field inline label="Meshes" title="the splat scene's meshes (its collision geometry); the robot always shows">
-                    <Toggle aria-label="Meshes" value={parts.meshes} onChange={(meshes: boolean) => settings.update({ ...parts, meshes })} />
+                <Field inline label="Show">
+                    <Select<string>
+                        aria-label="Robot model geometry"
+                        value={value.display}
+                        options={[["visual", "Visual"], ["collision", "Collision"], ["both", "Both"]]}
+                        onChange={(display: string) => settings.update({ display: display as DisplayMode })}
+                    />
                 </Field>
-            )}
-            <Field inline label="Textures" title="off: meshes in plain flat grey, to see their geometry">
-                <Toggle aria-label="Textures" value={value.textures ?? true} onChange={(textures: boolean) => settings.update({ textures })} />
-            </Field>
+            </Row>
+            {(kinds.has("scene") || splatFileCount > 0) && <Row value={shown("meshes")} onChange={(on) => set("meshes", on)} name="Meshes" title="the scene's meshes (its collision geometry)" />}
+            <Row value={value.textures ?? true} onChange={(textures) => settings.update({ textures })} name="Textures" title="off: meshes in plain flat grey, to see their geometry" />
             {splatFileCount > 0 && (
-                <Field inline label="Cut splats above" title="splats higher than this are hidden, so ceilings and upper floors don't hide the robot">
-                    <Slider min={0.5} max={30} step={0.1} value={value.splatCutAbove ?? 2.5} format={(height: number) => `${height.toFixed(1)} m`} onChange={(splatCutAbove: number) => settings.update({ splatCutAbove })} />
-                </Field>
+                <Row value={shown("splats")} onChange={(on) => set("splats", on)} name="Splats" title="the scene's Gaussian splats">
+                    <Field inline label="Cut above" title="splats higher than this are hidden, so ceilings and upper floors don't hide the robot">
+                        <Slider min={0.5} max={30} step={0.1} value={value.splatCutAbove ?? 2.5} format={(height: number) => `${height.toFixed(1)} m`} onChange={(splatCutAbove: number) => settings.update({ splatCutAbove })} />
+                    </Field>
+                </Row>
             )}
+            {(kinds.has("person") || peopleTopics.length > 0) && <Row value={shown("people")} onChange={(on) => set("people", on)} name="People" title="the sim's people, and their poses (/people)" />}
         </>
     )
 }
@@ -205,5 +221,6 @@ registerLayer<RobotModelSettings>({
     names: ["/urdf_info"],
     defaults: { opacity: 1, display: "visual", textures: true, splatCutAbove: 2.5 },
     create: (context, _topic, settings) => new RobotModelLayer(context, settings),
-    Settings: RobotModelSettingsEditor,
+    Rows: RobotModelRows,
+    absorbs: { names: PEOPLE_TOPICS, on: (settings) => modelPartsOf(settings).people },
 })

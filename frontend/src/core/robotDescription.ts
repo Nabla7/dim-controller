@@ -190,17 +190,24 @@ function decodeArray<T extends Float32Array | Uint32Array>(base64: string, Kind:
 }
 
 export type DisplayMode = "visual" | "collision" | "both"
-/** A scene drawn by Gaussian splats also has meshes (its collision geometry as visuals) on its links, or on links fixed
- * to them: whether each shows, independently. */
-export interface SceneParts {
-    splats: boolean
+/** What the model draws, each part shown or not on its own: the robot's own links, a scene's meshes and its Gaussian
+ * splats, and people (dim-go2-sim puts its scene and its people in the robot's URDF). */
+export interface ModelParts {
+    robot: boolean
     meshes: boolean
+    splats: boolean
+    people: boolean
 }
 
-/** The scene parts a layer's saved settings show; a setting saved before the toggles had one choice (`splatView`:
+/** The parts a layer's saved settings show; one saved before the splats / meshes toggles had one choice (`splatView`:
  * splats, meshes or both), which still decides a toggle not yet set. */
-export function scenePartsOf(saved: { splats?: boolean; meshes?: boolean; splatView?: string }): SceneParts {
-    return { splats: saved.splats ?? saved.splatView !== "meshes", meshes: saved.meshes ?? saved.splatView !== "splats" }
+export function modelPartsOf(saved: { robot?: boolean; splats?: boolean; meshes?: boolean; splatView?: string; people?: boolean }): ModelParts {
+    return { robot: saved.robot ?? true, meshes: saved.meshes ?? saved.splatView !== "splats", splats: saved.splats ?? saved.splatView !== "meshes", people: saved.people ?? true }
+}
+
+/** A link by its name (after any prefix): a scene's (dim-go2-sim's scene_mesh, scene_splats), a person's (person_<i>) or the robot's. */
+export function linkPart(name: string): "scene" | "person" | "robot" {
+    return /(^|[/_])scene_/.test(name) ? "scene" : /(^|[/_])person_\d+$/.test(name) ? "person" : "robot"
 }
 
 /** The three.js arm: a group per link (named by it) placed by `pose`, holding its visual and collision meshes. */
@@ -255,7 +262,7 @@ export class RobotModel {
     readonly #material: (color: THREE.ColorRepresentation, alpha: number) => THREE.MeshStandardMaterial
     readonly #look: { color?: string; opacity?: number; collisionColor?: string }
     #display: DisplayMode = "visual"
-    #sceneParts: SceneParts = { splats: true, meshes: true }
+    #parts: ModelParts = { robot: true, meshes: true, splats: true, people: true }
     #textures = true
     #cutAbove: number | null = null
     #tint: { color: THREE.ColorRepresentation; opacity: number } | null = null
@@ -318,9 +325,9 @@ export class RobotModel {
         return [...this.links.values()].some((group) => group.userData.hasSplats)
     }
 
-    /** Links with splats and every link joined to them by fixed joints: the scene the splat view applies to. */
+    /** Links named as a scene's or with splats, and every link joined to them by fixed joints: the scene. */
     #sceneLinks(): Set<string> {
-        const scene = new Set([...this.links].filter(([, group]) => group.userData.hasSplats).map(([name]) => name))
+        const scene = new Set([...this.links].filter(([name, group]) => group.userData.hasSplats || linkPart(name) === "scene").map(([name]) => name))
         const fixed = this.kinematics.description.joints.filter((joint) => joint.type === "fixed")
         for (let grew = scene.size > 0; grew;) {
             grew = false
@@ -334,7 +341,7 @@ export class RobotModel {
         return scene
     }
 
-    /** Each part shown by the display mode (visual / collision) and, on the scene's links, the splat view. */
+    /** Each object shown by the display mode (visual / collision) and its part's toggle. */
     #applyVisibility() {
         const scene = this.#sceneLinks()
         for (const [name, group] of this.links) {
@@ -343,8 +350,8 @@ export class RobotModel {
                 if (!kind) {
                     continue
                 }
-                const byScene = object.userData.splat ? this.#sceneParts.splats : !scene.has(name) || this.#sceneParts.meshes
-                object.visible = (this.#display === "both" || this.#display === kind) && byScene
+                const part = object.userData.splat ? "splats" : scene.has(name) ? "meshes" : linkPart(name) === "person" ? "people" : "robot"
+                object.visible = (this.#display === "both" || this.#display === kind) && this.#parts[part]
             }
         }
     }
@@ -410,9 +417,9 @@ export class RobotModel {
         this.#applyVisibility()
     }
 
-    /** Which of a splat scene's parts show: its splats, its meshes, each on or off. */
-    setSceneParts(parts: SceneParts) {
-        this.#sceneParts = { ...parts }
+    /** Which parts show: the robot, a scene's meshes, its splats, people, each on or off. */
+    setParts(parts: ModelParts) {
+        this.#parts = { ...parts }
         this.#applyVisibility()
     }
 
