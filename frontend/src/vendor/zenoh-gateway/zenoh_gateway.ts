@@ -1,4 +1,4 @@
-// zenoh-gateway's browser client, vendored as is from https://github.com/jeff-hykin/zenoh-gateway v0.5.21 (29e296f) client/zenoh_gateway.ts; do not edit (re-copy a newer tag instead)
+// zenoh-gateway's browser client, vendored as is from https://github.com/jeff-hykin/zenoh-gateway v0.5.24 (cb60718) client/zenoh_gateway.ts; do not edit (re-copy a newer tag instead)
 /// <reference no-default-lib="true" />
 /// <reference lib="dom" />
 /// <reference lib="dom.iterable" />
@@ -168,13 +168,21 @@ export interface SubscribeOptions {
     minResolution?: [number, number]
     /** video channels: [width, height] box the picture is fitted into */
     maxResolution?: [number, number]
+    /** video channels: the encoder may skip frames to hold its bitrate (default true; libwebrtc does the same for cameras) */
+    frameDropping?: boolean
+    /** video channels: a keyframe at least this often, ms, on top of the ones the browser asks for after a loss (default 60000) */
+    keyframeIntervalMs?: number
+    /** video channels: a keyframe when the encoder sees a new scene (default false: at low bitrates they cost more than they fix) */
+    sceneChangeKeyframes?: boolean
+    /** video channels: the quantizer (H.264's 0-51) the picture's size aims for: lower = smaller, sharper (default 30) */
+    targetQp?: number
     /** video channels: [min, max] ms the browser may hold a frame to smooth out jitter (default [0, 0]: show at once) */
     playoutDelay?: [number, number]
 }
 
 /** What `Subscription.update` may change on a running subscription; `null` puts an option back to its default. */
 export type SubscriptionUpdate = {
-    [option in "maxHz" | "minQuality" | "qualityToHzTradeoff" | "bandwidthPriority" | "maxBitrate" | "minResolutionScale" | "minResolution" | "maxResolution" | "playoutDelay"]?:
+    [option in "maxHz" | "minQuality" | "qualityToHzTradeoff" | "bandwidthPriority" | "maxBitrate" | "minResolutionScale" | "minResolution" | "maxResolution" | "frameDropping" | "keyframeIntervalMs" | "sceneChangeKeyframes" | "targetQp" | "playoutDelay"]?:
         SubscribeOptions[option] | null
 } & { encodeOptions?: { quality?: number } }
 
@@ -193,6 +201,11 @@ export interface ConnectOptions {
     /** sent as `Authorization: Bearer <token>`; the gateway's authorize hook turns it into a grant */
     token?: string
     reconnect?: boolean
+    /** ms the connection may stay "disconnected", or (when the page comes back from hidden) go without receiving a
+     *  byte, before the client starts a fresh connection at once instead of waiting for the browser to declare the old
+     *  one failed (default 2000; a phone drops a backgrounded tab's connection, which then took ~5 s to come back). A
+     *  connection that is still receiving is kept. */
+    freshAfterMs?: number
     statsIntervalMs?: number
     heartbeatHz?: number
     heartbeatMisses?: number
@@ -1326,12 +1339,68 @@ export class ZenohGateway {
     /** resolves once the current peer connection is up (renegotiation needs `control`) */
     #connected: Promise<void> = new Promise(() => {})
     #markConnected: () => void = () => {}
+    /** fails `#connected` when its attempt is lost: a renegotiation waiting on an attempt that never connected held the
+     *  queue for good, so after a reconnect that took a failed attempt or two, video subscriptions never came back */
+    #abandonConnected: (error: Error) => void = () => {}
 
     constructor(url: string, options: ConnectOptions = {}) {
         this.url = url.replace(/\/+$/, "")
-        this.options = { reconnect: true, statsIntervalMs: 1000, heartbeatHz: 0, heartbeatMisses: 3, ...options }
+        this.options = { reconnect: true, freshAfterMs: 2000, statsIntervalMs: 1000, heartbeatHz: 0, heartbeatMisses: 3, ...options }
         this.now = this.options.clock ?? (() => performance.timeOrigin + performance.now())
+        if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+            document.addEventListener("visibilitychange", this.#onVisibility)
+        }
     }
+
+    /** the timer that starts a fresh connection once one stays "disconnected" `freshAfterMs` */
+    #freshTimer: ReturnType<typeof setTimeout> | undefined
+
+    /** Back from hidden: a connection that isn't up, or receives nothing within `freshAfterMs`, starts over. A
+     *  connection the gateway already dropped (it stopped hearing the page's heartbeat) receives nothing; one that is
+     *  only resuming does (a ping alone waited on SCTP's retransmission backoff and threw away a live connection). */
+    #onVisibility = async (): Promise<void> => {
+        if (document.visibilityState !== "visible" || !this.options.reconnect || this.#closed) {
+            return
+        }
+        const generation = this.#generation
+        const peer = this.#peer
+        // (a connection on its way up is already fresh)
+        if (this.state === "connecting" || this.#reconnecting) {
+            if (this.state === "lost" && this.#reconnecting) {
+                this.#startFresh()
+            }
+            return
+        }
+        if (this.state === "lost" || peer === null || peer.connectionState === "failed" || peer.connectionState === "closed") {
+            this.#startFresh()
+            return
+        }
+        // a ping makes a live gateway send something even when nothing is subscribed
+        const t0 = this.now()
+        this._request({ op: "ping", t0, offsetMs: this.clockOffsetMs, rttMs: this.rttMs }, this.options.freshAfterMs).catch(() => {})
+        const before = await bytesReceived(peer)
+        await sleep(this.options.freshAfterMs)
+        if (generation === this.#generation && !this.#closed && (await bytesReceived(peer)) <= before) {
+            this.#startFresh()
+        }
+    }
+
+    /** Drops the connection and opens a new one now: its subscriptions and declarations come back fresh. A reconnect
+     *  waiting out its retry delay tries again now. */
+    #startFresh(): void {
+        clearTimeout(this.#freshTimer)
+        const generation = this.#generation
+        if (this.state !== "lost") {
+            this.#onLost(generation, 0)
+        } else if (!this.#reconnecting) {
+            this.#onLost(generation, 0, true)
+        } else {
+            this.#retryNow?.()
+        }
+    }
+
+    /** ends the reconnect loop's current wait between attempts */
+    #retryNow: (() => void) | undefined
 
     onState(listener: (state: ConnectionState) => void): () => void {
         this.#stateListeners.add(listener)
@@ -1429,9 +1498,12 @@ export class ZenohGateway {
         const generation = ++this.#generation
         this.#setState("connecting")
         this.#clockSamples = []
-        this.#connected = new Promise((resolve) => {
+        this.#abandonConnected(new Error("connection replaced"))
+        this.#connected = new Promise((resolve, reject) => {
             this.#markConnected = resolve
+            this.#abandonConnected = reject
         })
+        this.#connected.catch(() => {})
         const auth: Record<string, string> = this.options.token === undefined ? {} : { authorization: `Bearer ${this.options.token}` }
         let iceServers = this.options.iceServers
         let iceTransportPolicy = this.options.iceTransportPolicy
@@ -1459,7 +1531,15 @@ export class ZenohGateway {
                 this.#onLost(generation)
             } else if (connectionState === "disconnected") {
                 this.#setState("degraded")
+                // the browser takes many seconds to call it failed: past `freshAfterMs` a fresh connection is quicker
+                clearTimeout(this.#freshTimer)
+                this.#freshTimer = setTimeout(() => {
+                    if (generation === this.#generation && peer.connectionState !== "connected") {
+                        this.#startFresh()
+                    }
+                }, this.options.freshAfterMs)
             } else if (connectionState === "connected" && control.readyState === "open") {
+                clearTimeout(this.#freshTimer)
                 this.#setState("connected")
             }
         }
@@ -1546,10 +1626,16 @@ export class ZenohGateway {
         }
     }
 
-    #onLost(generation: number): void {
-        if (generation !== this.#generation || this.state === "lost") {
+    /** reconnect attempts running (one at a time) */
+    #reconnecting = false
+
+    /** `delayMs`: before the first reconnect attempt; `again`: already lost, but no attempt is running */
+    #onLost(generation: number, delayMs = reconnectDelayMs, again = false): void {
+        if (generation !== this.#generation || (this.state === "lost" && !again)) {
             return
         }
+        clearTimeout(this.#freshTimer)
+        this.#abandonConnected(new Error("connection lost"))
         this.#setState("lost")
         // the gateway fires this frontend's deadmen when it loses us
         this.#tripArmedPublishers("disconnected")
@@ -1562,18 +1648,30 @@ export class ZenohGateway {
         }
         this.#requests.clear()
         this.#peer?.close()
-        if (this.options.reconnect && !this.#closed) {
+        if (this.options.reconnect && !this.#closed && !this.#reconnecting) {
+            this.#reconnecting = true
             setTimeout(async () => {
-                while (!this.#closed && generation === this.#generation) {
-                    try {
-                        await this._open()
-                        return
-                    } catch (error) {
-                        console.warn("zenoh-gateway: reconnect failed", error)
-                        await sleep(reconnectDelayMs)
+                try {
+                    while (!this.#closed && generation === this.#generation) {
+                        try {
+                            await this._open()
+                            return
+                        } catch (error) {
+                            console.warn("zenoh-gateway: reconnect failed", error)
+                            await new Promise<void>((resolve) => {
+                                const timer = setTimeout(resolve, reconnectDelayMs)
+                                this.#retryNow = () => {
+                                    clearTimeout(timer)
+                                    resolve()
+                                }
+                            })
+                            this.#retryNow = undefined
+                        }
                     }
+                } finally {
+                    this.#reconnecting = false
                 }
-            }, reconnectDelayMs)
+            }, delayMs)
         }
     }
 
@@ -1919,6 +2017,10 @@ export class ZenohGateway {
 
     close(): void {
         this.#closed = true
+        clearTimeout(this.#freshTimer)
+        if (typeof document !== "undefined" && typeof document.removeEventListener === "function") {
+            document.removeEventListener("visibilitychange", this.#onVisibility)
+        }
         if (this.#statsTimer) {
             clearInterval(this.#statsTimer)
         }
@@ -1932,6 +2034,17 @@ export class ZenohGateway {
         this.#peer?.close()
         this.#setState("lost")
     }
+}
+
+/** Bytes the connection's transports received, ever. */
+async function bytesReceived(peer: RTCPeerConnection): Promise<number> {
+    let bytes = 0
+    for (const report of (await peer.getStats().catch(() => new Map())).values()) {
+        if (report.type === "transport") {
+            bytes += Number(report.bytesReceived ?? 0)
+        }
+    }
+    return bytes
 }
 
 /** Connects to a zenoh-gateway server, e.g. `await connect("http://robot.local:7448")`. */

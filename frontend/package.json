@@ -10,7 +10,7 @@
     },
     "dependencies": {
         "@sparkjsdev/spark": "^2.3.1",
-        "dimos-react": "git+https://github.com/jeff-hykin/dimos-react.git#v0.2.0-beta14",
+        "dimos-react": "git+https://github.com/jeff-hykin/dimos-react.git#v0.2.0-beta15",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
         "three": "^0.180.0"
