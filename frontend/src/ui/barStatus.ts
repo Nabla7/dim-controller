@@ -56,27 +56,24 @@ export function rateText(bytesPerSecond: number): string {
  * the slowest camera's typical (p50) source-to-screen ms once one is measured (zenoh-gateway >= 0.5.21), else the control
  * round trip; its spike and the round trip are in `detail`. Coloured by linkProblem; lost or connecting says so instead.
  */
-export function linkChip(connection: Pick<ConnectionState, "state" | "rttMs" | "droppedPerSecond" | "error" | "throughputBytesPerSec">, latencyMs: number | null, video: VideoLatency | null = null): { text: string; tone: Tone; detail: string } {
+export function linkChip(connection: Pick<ConnectionState, "state" | "rttMs" | "droppedPerSecond" | "error" | "throughputBytesPerSec">, latencyMs: number | null, video: VideoLatency | null = null): { text: string; tone: Tone; detail: string; numbers?: { rate: string; ms: string } } {
     const problem = linkProblem(connection)
     if (connection.state === "lost" || connection.state === "connecting") {
         return problem!
     }
     const rate = connection.throughputBytesPerSec === null ? `${padDigits("—", 5)} Mbps` : rateText(connection.throughputBytesPerSec)
     const shownMs = video ? video.total.p50 : latencyMs
-    const latency = `${padDigits(shownMs === null ? "—" : String(Math.min(Math.round(shownMs), 9999)), 4)} ms`
+    const ms = shownMs === null ? "—" : String(Math.min(Math.round(shownMs), 9999))
+    const latency = `${padDigits(ms, 4)} ms`
     const roundTrip = latencyMs === null ? "—" : `${Math.round(latencyMs)} ms`
     return {
         text: `${rate} · ${latency}`,
+        numbers: { rate: rate.replace(" Mbps", "").replaceAll("\u2007", ""), ms },
         tone: problem?.tone ?? "ok",
         detail: `${problem?.detail ?? "Link healthy"}. ${video
             ? `Throughput reaching this page and the slowest camera's typical (p50) source-to-screen latency over the last 5 s: ${spreadText(video.total)}, the spike being its p95, the slowest 1 in 20 frames; control round trip ${roundTrip}`
             : "Throughput reaching this page and the control link's round trip"}`,
     }
-}
-
-/** A chip's text on a phone, where the corners leave ~120 px: without the fixed-width padding ("1.9 Mbps · 89 ms"). */
-export function phoneChipText(text: string): string {
-    return text.replaceAll(" ", "")
 }
 
 /** Driving stopped by the link watch, in full ("Disengaged: latency 1240 ms > 1000 ms max. Reconnect to drive."). */

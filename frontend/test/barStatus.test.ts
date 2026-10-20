@@ -1,20 +1,22 @@
 // The one bar's problem chips (ui/barStatus.ts): the link only when it's a problem, "Disengaged" when the link watch
 // stops driving, and the gamepad's state.
 import { assert, assertEquals } from "jsr:@std/assert@1"
-import { disengagedShort, disengagedText, gamepadChip, linkChip, linkProblem, phoneChipText, rateText, SLOW_RTT_MS, smoothed } from "../src/ui/barStatus.ts"
+import { disengagedShort, disengagedText, gamepadChip, linkChip, linkProblem, rateText, SLOW_RTT_MS, smoothed } from "../src/ui/barStatus.ts"
 import type { VideoLatency } from "../src/core/videoLatency.ts"
 
 const link = (state: "connecting" | "connected" | "degraded" | "lost", rttMs: number | null = 20, throughputBytesPerSec: number | null = 240000) => ({ state, rttMs, droppedPerSecond: 0, error: null, throughputBytesPerSec })
 
 Deno.test("the link chip always shows live throughput and latency, coloured by the problem; lost or connecting say so", () => {
-    assertEquals(linkChip(link("connected"), 89), { text: "\u2007\u20071.9 Mbps · \u2007\u200789 ms", tone: "ok", detail: "Link healthy. Throughput reaching this page and the control link's round trip" })
+    assertEquals(linkChip(link("connected"), 89), { text: "\u2007\u20071.9 Mbps · \u2007\u200789 ms", tone: "ok", detail: "Link healthy. Throughput reaching this page and the control link's round trip", numbers: { rate: "1.9", ms: "89" } })
     assertEquals(linkChip(link("connected", 20, null), null).text, "\u2007\u2007\u2007\u2007— Mbps · \u2007\u2007\u2007— ms")
     assertEquals(linkChip(link("degraded"), 120).tone, "warn")
     assertEquals(linkChip(link("connected", SLOW_RTT_MS + 50), SLOW_RTT_MS + 50).tone, "warn")
     assertEquals(linkChip(link("connecting"), null).text, "Connecting")
     assertEquals(linkChip(link("lost"), null).tone, "bad")
-    assertEquals(phoneChipText(linkChip(link("connected"), 89).text), "1.9 Mbps · 89 ms", "a phone drops the padding to fit between the corners")
-    assertEquals(phoneChipText(linkChip(link("connected"), 89, { total: { p50: 120, p95: 180 } } as VideoLatency).text), "1.9 Mbps · 120 ms", "the video's typical ms once measured, no spike")
+    assertEquals(linkChip(link("connected"), 89).numbers, { rate: "1.9", ms: "89" }, "the numbers for the chip's fixed-width slots")
+    assertEquals(linkChip(link("connected"), 89, { total: { p50: 120, p95: 180 } } as VideoLatency).numbers, { rate: "1.9", ms: "120" }, "the video's typical ms once measured, no spike")
+    assertEquals(linkChip(link("connected", 20, null), null).numbers, { rate: "—", ms: "—" })
+    assertEquals("numbers" in linkChip(link("lost"), null), false)
     assertEquals([rateText(940), rateText(240_000), rateText(3_140_000), rateText(1e12)], ["\u2007\u20070.0 Mbps", "\u2007\u20071.9 Mbps", "\u200725.1 Mbps", "999.9 Mbps"])
 })
 

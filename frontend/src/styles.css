@@ -765,8 +765,17 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
    border) */
 .corner-chips .bar-link { padding: 0 6px; }
 .corner-chips .bar-link .bar-dot { display: none; }
-.bar-link-lines { display: flex; flex-direction: column; min-width: 0; }
-.bar-link-lines .bar-value { font-size: 10px; line-height: 12px; max-width: 104px; }
+/* the link chip's numbers: right-aligned slots as wide as "999.9" and "9999", so the chip is one width ("999.9 Mbps · 9999 ms") */
+.bar-link-value { display: inline-flex; justify-content: center; width: 20ch; max-width: none; font-variant-numeric: tabular-nums; }
+.bar-num { display: inline-block; text-align: right; }
+.bar-num-rate { width: 5ch; }
+.bar-num-ms { width: 4ch; }
+.bar-unit { margin-left: 1ch; }
+.bar-sep { margin: 0 1ch; }
+/* a phone: smaller, the spaces narrower, to fit between the corners */
+.corner-chips .bar-link-value { font-size: 10px; width: calc(16ch + 4px); max-width: none; }
+.corner-chips .bar-unit { margin-left: 0; }
+.corner-chips .bar-sep { margin: 0 2px; }
 /* a phone's main camera: the picture at the top, the space below it for the thumbs */
 .mobile .zone-stage .camera-media, .mobile .zone-stage .camera-overlay { object-position: top; }
 /* on its side, centred between the sticks over it */
