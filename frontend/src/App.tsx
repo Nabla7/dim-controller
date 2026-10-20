@@ -8,6 +8,7 @@ import { ViewerApp } from "./core/app.ts"
 import { Store, useStore } from "./core/store.ts"
 import { ActionDock } from "./ui/ActionDock.tsx"
 import { PhoneCorners } from "./ui/PhoneCorners.tsx"
+import { ZoomDebug } from "./ui/ZoomDebug.tsx"
 import { CameraPanels, cameraLayout, useCameraActions } from "./ui/CameraPanels.tsx"
 import { MapPanel } from "./ui/MapPanel.tsx"
 import { DriveHud } from "./ui/DriveHud.tsx"
@@ -74,6 +75,7 @@ export function App() {
         <WorkspaceContext.Provider value={api}>
             <div className={`app ${mobile ? "mobile" : "desktop"} ${!mobile && api.view.hide.length === 2 ? "focused" : ""}`} onPointerDownCapture={takeKeyboard}>
                 {app && mobile && <PhoneCorners app={app} api={api} />}
+                <ZoomDebug />
                 <div className="workspace">
                     <ContainCrash what="3D view"><ScenePanel host={host} app={app} onTf={() => api.act("tf", "show")} /></ContainCrash>
                     {app && (

@@ -21,6 +21,7 @@ import { useWorkspaceApi } from "./Workspace.tsx"
 import { useDockActions } from "./dockActions.ts"
 import { ContainCrash, Unavailable } from "./Unavailable.tsx"
 import { createHoldZoom, HOLD_ZOOM } from "../core/holdZoom.ts"
+import { createTripleTap, zoomDebug } from "../core/zoomDebug.ts"
 import { presetFor, QUALITY_PRESETS, readLocal, type VideoQuality, writeLocal } from "../core/videoQuality.ts"
 import { panelTitle } from "./commands.ts"
 import { TAKE_BACK_TEXT, TAKEN_OVER_TEXT } from "./barStatus.ts"
@@ -143,7 +144,6 @@ function CameraPanel({ app, panel, topics, onChange }: {
     const tools = useRef<HTMLDivElement>(null)
     const video = useRef<HTMLVideoElement>(null)
     const depthHost = useRef<HTMLDivElement>(null)
-    const zoom = useHoldZoom()
     const depthRenderer = useRef<DepthCanvas | null>(null)
     const [depthError, setDepthError] = useState<string | null>(null)
     const depthLook = panel.depth ?? DEFAULT_DEPTH_LOOK
@@ -164,6 +164,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
     const lastPaint = useRef(0)
     const [stalled, setStalled] = useState(false)
     const depth = topic ? isDepthTopic(topic) : false
+    const zoom = useHoldZoom(() => depth ? depthHost.current : video.current, [depth])
     const api = useWorkspaceApi()
     const slot = api.layout.slots[cameraId(panel.id)]
     // a phone's main view picks its camera from the top bar's view switch (ui/PhoneCorners.tsx)
@@ -419,24 +420,66 @@ const loadPanelFill = (id: number): boolean => readLocal<Record<string, boolean>
 const savePanelFill = (id: number, fill: boolean) => writeLocal(FILL_KEY, { ...readLocal<Record<string, boolean>>(FILL_KEY, {}), [id]: fill })
 
 /** Press and hold on a camera to zoom in on that spot; moving while held looks around, letting go zooms back out. */
-function useHoldZoom() {
+function useHoldZoom(surface: () => HTMLElement | null, deps: unknown[]) {
     const [origin, setOrigin] = useState<string | null>(null)
     const hold = useRef<ReturnType<typeof createHoldZoom> | null>(null)
-    hold.current ??= createHoldZoom({ onOrigin: setOrigin })
-    useEffect(() => () => hold.current?.release(), [])
+    hold.current ??= createHoldZoom({
+        onOrigin: (next, cause) => {
+            setOrigin(next)
+            // deferred like ui/ZoomDebug.tsx's event lines, so the log keeps their order
+            setTimeout(() => zoomDebug.log(`ZOOM ${next ? `in at ${next}` : "OUT"} (${cause})`))
+        },
+    })
+    const tripleTap = useRef(createTripleTap())
+    useEffect(() => {
+        zoomDebug.log("camera panel mounted")
+        return () => {
+            hold.current?.release("unmount")
+            zoomDebug.log("camera panel unmounted")
+        }
+    }, [])
+    // a still finger's long press (drag of the video, selection, the browser's menu) is never started; touch moves and
+    // ends are followed on the page, for a hold whose pointer the browser cancelled anyway
+    useEffect(() => {
+        const element = surface()
+        if (!element) {
+            return
+        }
+        const refuse = (event: TouchEvent) => event.cancelable && event.preventDefault()
+        const boxOf = () => element.getBoundingClientRect()
+        const move = (event: TouchEvent) => event.touches[0] && hold.current!.touchMove(event.touches[0], boxOf())
+        const end = (event: TouchEvent) => event.touches.length === 0 && hold.current!.touchEnd(event.type)
+        const noDrag = (event: Event) => event.preventDefault()
+        element.addEventListener("touchstart", refuse, { passive: false })
+        element.addEventListener("dragstart", noDrag)
+        addEventListener("touchmove", move, { passive: true })
+        addEventListener("touchend", end, true)
+        addEventListener("touchcancel", end, true)
+        return () => {
+            element.removeEventListener("touchstart", refuse)
+            element.removeEventListener("dragstart", noDrag)
+            removeEventListener("touchmove", move)
+            removeEventListener("touchend", end, true)
+            removeEventListener("touchcancel", end, true)
+        }
+    }, deps)
     const box = (event: ReactPointerEvent<HTMLElement>) => event.currentTarget.getBoundingClientRect()
     return {
         style: origin ? { transform: `scale(${HOLD_ZOOM})`, transformOrigin: origin } : undefined,
         handlers: {
+            draggable: false,
             onPointerDown: (event: ReactPointerEvent<HTMLElement>) => {
+                if (event.pointerType !== "mouse" && tripleTap.current(event.timeStamp)) {
+                    zoomDebug.toggle()
+                }
                 if (event.button === 0) {
                     event.currentTarget.setPointerCapture(event.pointerId)
                 }
                 hold.current!.down(event, box(event))
             },
             onPointerMove: (event: ReactPointerEvent<HTMLElement>) => hold.current!.move(event, box(event)),
-            onPointerUp: () => hold.current!.release(),
-            onPointerCancel: () => hold.current!.release(),
+            onPointerUp: () => hold.current!.release("pointerup"),
+            onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => hold.current!.cancel(event.pointerType),
             onContextMenu: (event: ReactMouseEvent<HTMLElement>) => hold.current!.contextMenu(event),
         },
     }
