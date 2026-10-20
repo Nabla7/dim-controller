@@ -2,7 +2,7 @@
 // each camera's latency from the code being drawn here to its frame being on this screen.
 import { useEffect, useRef, useState } from "react"
 import { Button } from "dimos-react"
-import { type CameraResult, quantile, showCode, watchCameras } from "../core/glassToGlass.ts"
+import { type CameraResult, holdMs, quantile, showCode, watchCameras } from "../core/glassToGlass.ts"
 import { panelTitle } from "./commands.ts"
 
 const CODE_PX = 260
@@ -53,7 +53,8 @@ export function GlassToGlass({ onClose }: { onClose: () => void }) {
                 )}
             <p className="g2g-note dim">
                 From this page drawing the code to the camera's frame showing it reaching this screen (typical is the median, spike the
-                p95). The camera needs to be streaming in a panel; up to one screen refresh (~17 ms) is this screen's own.
+                p95). Each code stays up for two of the camera's frames ({Math.round(holdMs())} ms), so a reading runs up to one
+                camera frame high; best is the closest. The camera needs to be streaming in a panel.
             </p>
             <Button onClick={onClose}>Stop</Button>
         </section>

@@ -34,11 +34,31 @@ export function decodeTime(text: string): number | null {
 /** how long ago (ms) a code drawn at `codeMs` (wrapped) was, seen at `shownMs` */
 export const elapsed = (codeMs: number, shownMs: number) => ((shownMs - codeMs) % WRAP + WRAP) % WRAP
 
-/** Draws the moving code into `canvas` every screen frame until the returned function is called. */
+/** each code stays up this many camera frames, so a whole camera frame (its exposure included) sees it unblended */
+const HOLD_FRAMES = 2
+/** the slowest watched camera's frame interval (ms), measured from the frames its <video> shows; null before any */
+let cameraFrameMs: number | null = null
+/** how long each code stays up before one is measured: a 2 Hz camera's two frames, slower than any camera here */
+const UNMEASURED_HOLD_MS = 1000
+
+/** How long each code stays up now (ms): HOLD_FRAMES of the slowest camera's frames. */
+export const holdMs = () => cameraFrameMs === null ? UNMEASURED_HOLD_MS : HOLD_FRAMES * cameraFrameMs
+
+/**
+ * Draws a new code into `canvas` every holdMs() (a camera slower than the screen saw two codes blended into one
+ * frame when it changed every screen frame), each carrying the time it first went up, until the returned function is
+ * called.
+ */
 export function showCode(canvas: HTMLCanvasElement): () => void {
     const context = canvas.getContext("2d")!
     let frame = 0
+    let shownAt = -Infinity
     const draw = (now: number) => {
+        if (now - shownAt < holdMs()) {
+            frame = requestAnimationFrame(draw)
+            return
+        }
+        shownAt = now
         const modules = qrModules(encodeTime(now))
         const quiet = 4
         const cells = modules.length + quiet * 2
@@ -71,6 +91,7 @@ export function watchCameras(onChange: (results: CameraResult[]) => void): () =>
     const watching = new Map<HTMLVideoElement, number>()
     const busy = new Set<string>()
     const lastCode = new Map<string, number>()
+    const frameMs = new Map<string, number>()
     /** frames out at the worker: their camera and when they reached the screen */
     const pending = new Map<number, { panel: string; shownAt: number }>()
     let nextId = 0
@@ -111,11 +132,21 @@ export function watchCameras(onChange: (results: CameraResult[]) => void): () =>
     }
     const watch = (video: HTMLVideoElement) => {
         const panel = video.closest<HTMLElement>("[data-panel]")?.dataset.panel ?? "camera"
+        let lastFrameAt: number | null = null
         const next = (_now: number, metadata: VideoFrameCallbackMetadata) => {
             if (stopped || !video.isConnected) {
                 watching.delete(video)
                 return
             }
+            // its frame interval, smoothed; the slowest camera's sets how long each code stays up
+            if (lastFrameAt !== null) {
+                const interval = metadata.presentationTime - lastFrameAt
+                if (interval > 0 && interval < 2000) {
+                    frameMs.set(panel, (frameMs.get(panel) ?? interval) * 0.8 + interval * 0.2)
+                    cameraFrameMs = Math.max(...frameMs.values())
+                }
+            }
+            lastFrameAt = metadata.presentationTime
             // when this frame is on the screen (the second glass): never before it went to the compositor (a headless
             // Chrome's expectedDisplayTime can come whole vsyncs before that)
             scan(video, panel, Math.max(metadata.expectedDisplayTime, metadata.presentationTime))
