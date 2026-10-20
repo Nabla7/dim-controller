@@ -911,3 +911,24 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .ws-sheet-head { position: absolute; top: 0; left: 0; right: 0; z-index: 22; box-sizing: border-box; display: flex; align-items: flex-end; padding: 0 8px 6px; background: var(--surface); border-bottom: 1px solid var(--border); }
 .ws-sheet-back.dr-btn { height: 40px; gap: 4px; padding: 0 14px 0 8px; }
 .mobile .lv-panel.zone-right { border-left-width: 0; }
+/* the action bar (ui/ActionBar.tsx): this machine's command buttons along the bottom of the main view */
+.action-bar { position: absolute; z-index: 8; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.action-bar-scroll { display: flex; gap: 6px; overflow-x: auto; min-width: 0; scrollbar-width: none; padding: 2px; }
+.action-bar-scroll::-webkit-scrollbar { display: none; }
+.action-button-wrap { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.action-bar .dr-btn { flex: none; background: color-mix(in srgb, var(--card) 85%, transparent); backdrop-filter: blur(6px); }
+.action-bar-toggle.dr-btn--icon, .action-bar-edit.dr-btn--icon { width: 32px; height: 32px; padding: 0; }
+.action-bar.collapsed .action-bar-toggle { opacity: 0.7; }
+.action-button.dr-btn { height: 32px; padding: 0 12px; white-space: nowrap; }
+.action-button.add { color: var(--muted-fg); border-style: dashed; }
+.action-button-remove.dr-btn--icon { width: 24px; height: 24px; padding: 0; color: var(--danger); }
+.action-button-remove.confirm.dr-btn { height: 28px; padding: 0 8px; color: var(--danger); border-color: var(--danger); font-size: 12px; }
+.action-result { flex: none; height: 28px; padding: 0 10px; border-radius: var(--radius-pill); border: 1px solid var(--border); background: color-mix(in srgb, var(--card) 85%, transparent); color: var(--fg); font: 500 12px var(--sans); cursor: pointer; white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.action-result.ok { border-color: var(--ok); }
+.action-result.bad { border-color: var(--danger); color: var(--danger); }
+.action-add-form, .action-output { position: absolute; bottom: calc(100% + 8px); left: 0; width: min(360px, calc(100vw - 32px)); display: grid; gap: 8px; box-shadow: var(--shadow-lg); }
+.action-add-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.action-add-error { margin: 0; color: var(--danger); font-size: 12px; }
+.action-output-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted-fg); }
+.action-output pre { margin: 0; max-height: 200px; overflow: auto; font: 11px/1.4 var(--mono); white-space: pre-wrap; word-break: break-word; }
+.action-output pre.stderr { color: var(--danger); }

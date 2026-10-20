@@ -3,6 +3,7 @@
 //! dimos topics over zenoh while a recording runs, location labels, live annotations, the agent's view of the page,
 //! the page's settings, the camera and driving.
 
+mod action_buttons;
 mod annotations;
 mod api;
 mod asks;
@@ -156,6 +157,7 @@ async fn main() -> Result<()> {
         relay,
     );
     host::spawn();
+    action_buttons::load(app_data().map(|data| data.join("action_buttons.json")));
     let api = api::Api {
         recorder: state.clone(),
         annotations: annotations.clone(),

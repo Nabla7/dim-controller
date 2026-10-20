@@ -15,6 +15,7 @@ import { appEvents } from "dimos-react/dim-app/events.js"
 import type { LocationLabel } from "./labels.ts"
 import { applyRemoteSetting, loadSettings } from "./store.ts"
 import type { DriveEvent } from "./drive.ts"
+import { type ActionButton, actionButtons, loadActionButtons } from "./actionButtons.ts"
 
 export interface Annotation {
     id: string
@@ -89,6 +90,8 @@ export class AgentLink {
                 this.#rebuild()
             } else if (event.type === "labels" && event.labels) {
                 this.app.labels.apply(event.labels)
+            } else if (event.type === "action_buttons" && Array.isArray((raw as { buttons?: unknown }).buttons)) {
+                actionButtons.set({ buttons: (raw as { buttons: ActionButton[] }).buttons })
             } else if (event.type === "settings" && event.key) {
                 applyRemoteSetting(event.key, event.value)
             } else if (event.type === "drive") {
@@ -106,6 +109,7 @@ export class AgentLink {
 
     /** Snapshot + live: what the events change, read again on connect and reconnect (events sent meanwhile are gone). */
     #resync() {
+        loadActionButtons().catch(() => {})
         fetch(this.#url("api/annotations"))
             .then((response) => response.json())
             .then((body) => {

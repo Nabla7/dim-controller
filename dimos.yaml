@@ -28,7 +28,7 @@ provides:
     openapi: 3.1.0
     info:
         title: Controller
-        version: 1.1.0
+        version: 1.2.0
         description: >-
             Controller: drive the running robot (keyboard / sticks, velocity commands, stop) while watching its live
             3D view (point clouds, costmap, pose, planned path, TF) and cameras; recording to mcap, location labels,
@@ -786,6 +786,60 @@ provides:
                     background. Returns {cpu: {busyPercent (all cores, over the last sample; Linux and macOS),
                     cores, sampledAt (unix ms), everySecs} or null before the first sample}.
                 x-when: you need to know whether the robot's computer is overloaded
+        /api/action_buttons:
+            get:
+                description: >-
+                    This machine's action buttons (the action bar on every open page): each a label and the shell
+                    command a click runs. Returns {buttons: [{id, label, command}]}.
+                x-when: you need the buttons on the controller's action bar
+            post:
+                description: >-
+                    Adds a button to the action bar on every open page; a click runs `command` with sh -c from the
+                    home directory of the machine this runs on (the robot's computer when Desktop runs there). Kept
+                    across restarts. Returns {button: {id, label, command}, buttons}.
+                x-when: you want to give the user a one-click button for a shell command on this machine
+                requestBody:
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    command:
+                                        description: the shell command a click runs (sh -c)
+                                        type: string
+                                    label:
+                                        description: 'the button''s text, a few words'
+                                        type: string
+                                required:
+                                    - command
+                                    - label
+                                type: object
+        '/api/action_buttons/{id}':
+            delete:
+                summary: 'Removes a button for good. Returns {ok, removed, buttons}; 404 if there is no such id.'
+                x-when: you want to remove an action button
+                parameters:
+                    -
+                        name: id
+                        in: path
+                        required: true
+                        schema:
+                            type: string
+                        description: 'the button''s id (in the path), from GET api/action_buttons'
+        '/api/action_buttons/{id}/run':
+            post:
+                description: >-
+                    Runs the button's command (sh -c, from the home directory; stopped after 120 s) and waits for
+                    it. Returns {id, label, exitCode, ok, stdout, stderr (each its last 8 KB), ms}; 404 if there is
+                    no such id.
+                x-when: you want to run an action button's command
+                parameters:
+                    -
+                        name: id
+                        in: path
+                        required: true
+                        schema:
+                            type: string
+                        description: the button's id (in the path)
 nix:
     cache:
         aarch64-linux:

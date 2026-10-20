@@ -25,7 +25,7 @@ use crate::settings::{self, Settings};
 pub const TITLE: &str = "Controller";
 
 /// the endpoints' API version (openapi.json's info.version): major = breaking, minor = added
-pub const API_VERSION: &str = "1.1.0";
+pub const API_VERSION: &str = "1.2.0";
 
 pub const WHEN: &str = "you need to drive a robot, watch it live in 3D, or record it";
 
@@ -119,6 +119,10 @@ pub fn routes() -> Routes<Api> {
         .role("view")
         .endpoint("POST", "api/camera", "you want to point the user's 3D view at the robot or a place", "Move the 3D camera in every open page: action=recenter (follow the robot again, or reframe it if already following), topDown (straight down over the robot), or lookAt (target [x, y, z], optional distance; stops following). Returns {ok, pages} (how many pages got it); 400 for an unknown action or lookAt without a target.", json!({ "action": required(s("recenter | topDown | lookAt")), "target": vec3("lookAt: the point, world frame"), "distance": n("lookAt: meters from the target") }), camera)
         // settings: everything the page's panels change
+        .endpoint("GET", "api/action_buttons", "you need the buttons on the controller's action bar", "This machine's action buttons (the action bar on every open page): each a label and the shell command a click runs. Returns {buttons: [{id, label, command}]}.", json!({}), crate::action_buttons::list)
+        .endpoint("POST", "api/action_buttons", "you want to give the user a one-click button for a shell command on this machine", "Adds a button to the action bar on every open page; a click runs `command` with sh -c from the home directory of the machine this runs on (the robot's computer when Desktop runs there). Kept across restarts. Returns {button: {id, label, command}, buttons}.", json!({ "label": required(s("the button's text, a few words")), "command": required(s("the shell command a click runs (sh -c)")) }), crate::action_buttons::add)
+        .endpoint("DELETE", "api/action_buttons/{id}", "you want to remove an action button", "Removes a button for good. Returns {ok, removed, buttons}; 404 if there is no such id.", json!({ "id": required(s("the button's id (in the path), from GET api/action_buttons")) }), crate::action_buttons::delete)
+        .endpoint("POST", "api/action_buttons/{id}/run", "you want to run an action button's command", "Runs the button's command (sh -c, from the home directory; stopped after 120 s) and waits for it. Returns {id, label, exitCode, ok, stdout, stderr (each its last 8 KB), ms}; 404 if there is no such id.", json!({ "id": required(s("the button's id (in the path)")) }), crate::action_buttons::run)
         .endpoint("GET", "api/host", "you need to know whether the robot's computer is overloaded", "The machine this runs on (the robot's computer): its CPU load, sampled every few seconds in the background. Returns {cpu: {busyPercent (all cores, over the last sample; Linux and macOS), cores, sampledAt (unix ms), everySecs} or null before the first sample}.", json!({}), crate::host::get)
         .endpoint("GET", "api/settings", "you need the current value of a view, drive or recorder setting", "Every page setting by key: lv.view {profile (the robot type picked: dog, humanoid, wheeled, arm, drone; \"\" = auto), robot (the type in use, written by the page), fixedFrame (\"\" = auto), follow, followFrame (the TF frame the camera follows; \"\" = the robot's), showStats, robotModel, camerasIn3d (every camera drawn in the 3D view), viewCube (the 3D view's view cube)}; lv.arm {linear, angular, jointSpeed} (arm jog speeds); lv.gamepad {deadZone, invertY}; lv.rendering.v2 {pointStyle, cubeShade}; lv.layers.enabled {<topic key>: on/off}; lv.layer.<type>.<topic key> (that layer's style: colors, sizes, ...); lv.drive.<robot type> {linear, angular, vertical, topics: [] = auto, else the output topics, one per entry, \"/name\" or \"/name TwistStamped\"}; lv.joy {enabled} (the raw gamepad, drive keys and thumb sticks as sensor_msgs/Joy on /joystick, default on); lv.record.topics {<topic key>: record or not (default on)}; lv.record.options {recordNew, compression, image_format, directory (\"\" = default), logs, rates {<topic key>: max messages/s}}; lv.cameras (the camera panels). Returns an object of setting key -> its value.", json!({}), get_settings)
         .endpoint("PATCH", "api/settings", "you want to change layers, the view, drive speeds or topics", "Change a page setting (merged into the key's object; a null field is removed); every open page applies it at once. E.g. {key: \"lv.layers.enabled\", value: {\"dimos/lidar/sensor_msgs.PointCloud2\": false}} hides a layer; {key: \"lv.view\", value: {follow: false}}. Keys: see GET api/settings. Returns {key, value} (the key's whole value after the merge); 400 for an unknown key or a value that isn't an object.", json!({ "key": required(s("e.g. lv.view, lv.layers.enabled, lv.layer.pointcloud.<topic key>")), "value": required(json!({ "type": "object", "description": "the fields to set" })) }), patch_settings)
@@ -688,6 +692,26 @@ mod tests {
         assert_eq!(served, openapi());
         let roles: Vec<_> = table.endpoints.iter().filter_map(|e| e["role"].as_str()).collect();
         assert_eq!(roles, vec!["context", "view"]);
+    }
+
+    #[tokio::test]
+    async fn action_buttons_add_run_and_remove() {
+        let (api, router) = router();
+        let mut events = api.annotations.events.subscribe();
+        let (status, added) = call(&router, "POST", "/api/action_buttons", Some(json!({ "label": "Say hi", "command": "echo hi; echo oops >&2; exit 3" }))).await;
+        assert_eq!(status, StatusCode::OK);
+        let id = added["button"]["id"].as_str().unwrap().to_string();
+        assert_eq!(events.recv().await.unwrap()["type"], "action_buttons");
+        let (_, ran) = call(&router, "POST", &format!("/api/action_buttons/{id}/run"), None).await;
+        assert_eq!((ran["exitCode"].clone(), ran["stdout"].clone(), ran["stderr"].clone(), ran["ok"].clone()), (json!(3), json!("hi\n"), json!("oops\n"), json!(false)));
+        let (status, _) = call(&router, "POST", "/api/action_buttons", Some(json!({ "label": "no command" }))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let (status, _) = call(&router, "DELETE", &format!("/api/action_buttons/{id}"), None).await;
+        assert_eq!(status, StatusCode::OK);
+        let (_, listed) = call(&router, "GET", "/api/action_buttons", None).await;
+        assert!(!listed["buttons"].as_array().unwrap().iter().any(|button| button["id"] == json!(id)));
+        let (status, _) = call(&router, "POST", &format!("/api/action_buttons/{id}/run"), None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
