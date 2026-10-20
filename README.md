@@ -87,7 +87,7 @@ leaves out the biggest streams, and sets image format and per-stream rates.
 
 ## For agents
 
-Every action is an HTTP endpoint the page itself uses, listed in the served `/agent.json` (`server/src/api.rs`,
+Every action is an HTTP endpoint the page itself uses, listed in the served `/openapi.json` (`server/src/api.rs`,
 mirrored in `dimos.yaml`'s `provides:`; `deno task check-endpoints [--write]`). Settings live in the backend, so a
 change from the agent or another window shows in every open page.
 
@@ -119,7 +119,7 @@ A new message type is one file in `frontend/src/layers/` (copy the closest, chan
 cd frontend && npm install && npm run dev      # vite on :5173, proxied to a Desktop on :7077 (DESKTOP_URL)
 npm run typecheck && npm test                  # types; LCM decoder tests (deno)
 cd ../server && cargo test                     # every endpoint; the recorder and driving over zenoh on loopback
-deno task check-endpoints [--write]            # dimos.yaml's provides: endpoints = the served agent.json
+deno task check-endpoints [--write]            # dimos.yaml's provides: = the served openapi.json
 nix build .#dimosApp                           # what Desktop builds: bin/dimos-app-server serving the page
 ```
 

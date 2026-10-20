@@ -1,5 +1,5 @@
 //! Every Controller action as an HTTP endpoint (routes.rs): the page calls these, Desktop's agent calls the same
-//! ones (the served agent.json, and dimos.yaml's `agent:`, which `deno task check-endpoints` keeps equal). What only
+//! ones (the served openapi.json, and dimos.yaml's `provides:`, which `deno task check-endpoints` keeps equal). What only
 //! the page can do (render its view, read the camera, locate from an image box) the backend asks the page for with an
 //! event on zenoh (annotations.rs, frontend.rs). The page's continuous driving (keys, stick) publishes through the gateway with
 //! its deadman; `POST api/drive` is the endpoint way to drive. Neither needs arming (`POST api/drive/arm` is a no-op
@@ -21,6 +21,11 @@ use crate::manipulation::Manipulation;
 use crate::recorder;
 use crate::routes::Routes;
 use crate::settings::{self, Settings};
+
+pub const TITLE: &str = "Controller";
+
+/// the endpoints' API version (openapi.json's info.version): major = breaking, minor = added
+pub const API_VERSION: &str = "1.0.0";
 
 pub const WHEN: &str = "you need to drive a robot, watch it live in 3D, or record it";
 
@@ -161,7 +166,12 @@ pub fn routes() -> Routes<Api> {
         .plumbing("POST", "api/pages/{page}", annotations::report_page)
         .plumbing("POST", "api/pages/{page}/close", annotations::close_page)
         .plumbing("POST", "api/captures/{request}", annotations::answer_capture)
-        .plumbing("GET", "agent.json", || async { Json(routes().manifest(WHEN, DESCRIPTION)) })
+        .plumbing("GET", "openapi.json", || async { Json(openapi()) })
+}
+
+/// The endpoints as an OpenAPI 3.1 document: the served openapi.json, and dimos.yaml's `provides:`.
+pub fn openapi() -> Value {
+    routes().openapi(TITLE, API_VERSION, WHEN, DESCRIPTION)
 }
 
 async fn status(Extract(api): Extract<Api>) -> Response {
@@ -632,13 +642,13 @@ mod tests {
         assert_eq!(robot_type(&json!({})), "dog");
     }
 
-    /// every listed endpoint is routed (a readable JSON answer, never the router's bare 404 / 405), and agent.json is the table
+    /// every listed endpoint is routed (a readable JSON answer, never the router's bare 404 / 405), and openapi.json is the table
     // the planner endpoints open a zenoh session, which needs the multi-thread runtime
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn every_endpoint_is_routed() {
         let (_api, router) = router();
-        let manifest = routes().manifest(WHEN, DESCRIPTION);
-        for endpoint in manifest["endpoints"].as_array().unwrap() {
+        let table = routes();
+        for endpoint in &table.endpoints {
             let method = endpoint["method"].as_str().unwrap();
             let path = endpoint["path"].as_str().unwrap();
             // no page answers captures and nothing may be published: skip what would wait or drive
@@ -672,15 +682,10 @@ mod tests {
                 "{method} {path}: {status}"
             );
         }
-        let (status, served) = call(&router, "GET", "/agent.json", None).await;
+        let (status, served) = call(&router, "GET", "/openapi.json", None).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(served, manifest);
-        let roles: Vec<_> = manifest["endpoints"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter_map(|e| e["role"].as_str())
-            .collect();
+        assert_eq!(served, openapi());
+        let roles: Vec<_> = table.endpoints.iter().filter_map(|e| e["role"].as_str()).collect();
         assert_eq!(roles, vec!["context", "view"]);
     }
 

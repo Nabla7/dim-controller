@@ -13,7 +13,7 @@ Desktop's `live-viewer` recordings folder if it exists (else `controller`). Sett
 Every action is an HTTP endpoint the page itself uses, and Desktop's agent calls the same ones: arming, driving,
 recording, labels, annotations, the camera, and every setting the panels change (layers on/off, layer styles, point
 style, fixed frame, follow, drive speeds/topic, which topics to record). `server/src/api.rs` registers each with its
-description; that table is the served `/agent.json`, and `dimos.yaml`'s `provides:` repeats it (`deno task
+description; that table is the served `/openapi.json`, and `dimos.yaml`'s `provides:` repeats it (`deno task
 check-endpoints [--write]`, checked in CI). Settings live in the backend (`GET` / `PATCH api/settings`, saved in the
 app's data dir), so a change from the agent or another window shows up in every open page. The one exception is
 continuous driving from the keys and sticks, which publishes through the gateway at 20 Hz with the gateway's deadman;
@@ -463,7 +463,7 @@ weight normalized, restyled; the wheeled robot puts the humanoid's upper body on
 cd frontend && npm install && npm run dev      # vite on :5173, proxied to a Desktop on :7077 (DESKTOP_URL)
 npm run typecheck && npm test                  # types; LCM decoder tests (deno)
 cd ../server && cargo test                     # every endpoint; the recorder and driving over zenoh on loopback
-deno task check-endpoints [--write]            # dimos.yaml's provides: endpoints = the served agent.json
+deno task check-endpoints [--write]            # dimos.yaml's provides: = the served openapi.json
 nix build .#dimosApp                           # what Desktop builds: bin/dimos-app-server serving the page
 ```
 
