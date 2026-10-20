@@ -809,12 +809,17 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 }
 
 /* ── Desktop's Portal look for the library's controls where it differs (dim-app's: what this page always looked like) ── */
-/* sliders: a 2px line and a 12px square thumb with a glow, no fill */
+/* sliders: a 2px line and a 12px thumb (square in Portal, the skin's --radius-round elsewhere) with a glow, no fill */
 :root[data-dr-dark] .dr-slider input[type="range"]::-webkit-slider-runnable-track { height: 2px; background: var(--line); border: 0; border-radius: 0; }
 :root[data-dr-dark] .dr-slider input[type="range"]::-moz-range-track { height: 2px; background: var(--line); border: 0; border-radius: 0; }
 :root[data-dr-dark] .dr-slider input[type="range"]::-moz-range-progress { background: transparent; }
-:root[data-dr-dark] .dr-slider input[type="range"]::-webkit-slider-thumb { width: 12px; height: 12px; margin-top: -5px; border: 0; border-radius: 0; background: var(--primary); box-shadow: 0 0 8px var(--primary); }
-:root[data-dr-dark] .dr-slider input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 0; background: var(--primary); box-shadow: 0 0 8px var(--primary); }
+:root[data-dr-dark] .dr-slider input[type="range"]::-webkit-slider-thumb { width: 12px; height: 12px; margin-top: -5px; border: 0; border-radius: var(--radius-round); background: var(--primary); box-shadow: 0 0 8px var(--primary); }
+:root[data-dr-dark] .dr-slider input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: var(--radius-round); background: var(--primary); box-shadow: 0 0 8px var(--primary); }
+/* touch: a thumb a finger can grab (only the thumb takes a touch: dimos-react's Slider) */
+@media (pointer: coarse) {
+    :root[data-dr-dark] .dr-slider input[type="range"]::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -10px; }
+    :root[data-dr-dark] .dr-slider input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; }
+}
 /* a number box keeps its own width in a field row */
 .dr-field-control > .dr-input-wrap.number { flex: none; }
 /* the dock's note button wraps like the note */
@@ -900,3 +905,8 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 /* a phone: the panel list on the left, Record, the palette and the drawer on the right */
 .phone-corners > .record-control { margin-left: auto; }
 .corner-chips .bar-chip.quiet { background: color-mix(in srgb, var(--card) 72%, transparent); backdrop-filter: blur(6px); }
+/* a phone's Status / Settings / TF page: the whole screen, a back bar where the top buttons were */
+.ws-sheet { position: absolute; z-index: 20; background: var(--surface); animation: drawer-right 0.16s ease-out; }
+.ws-sheet-head { position: absolute; top: 0; left: 0; right: 0; z-index: 22; box-sizing: border-box; display: flex; align-items: flex-end; padding: 0 8px 6px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.ws-sheet-back.dr-btn { height: 40px; gap: 4px; padding: 0 14px 0 8px; }
+.mobile .lv-panel.zone-right { border-left-width: 0; }

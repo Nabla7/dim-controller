@@ -369,7 +369,10 @@ export function layoutWorkspace(arrangement: Arrangement, frame: Frame, view: Vi
         // the sticks: STOP stays in reach)
         const area: Rect = { x: 0, y: frame.top, width, height: frame.bottom - frame.top }
         const drawerWidth = Math.min(width - 40, 380)
-        const drawer = view.drawer ? { x: view.drawer === "left" ? 0 : width - drawerWidth, y: frame.top, width: drawerWidth, height: area.height } : null
+        // the right drawer (Status, Settings, TF) is a full screen page under a back bar where the top buttons were
+        const drawer = view.drawer === "right"
+            ? { x: 0, y: frame.top, width, height: frame.height - frame.top }
+            : view.drawer ? { x: 0, y: frame.top, width: drawerWidth, height: area.height } : null
         if (arrangement.stage) {
             place(arrangement.stage, area, "stage")
         }

@@ -7,6 +7,8 @@ import { Store, useStore } from "../core/store.ts"
 import { type PanelAction } from "./commands.ts"
 import { PHONE_LANDSCAPE } from "./useMobile.ts"
 import { startHeaderDrag, startPointerDrag } from "./panelDrag.ts"
+import { Button } from "dimos-react"
+import { Icon } from "./icons.tsx"
 import {
     arrange,
     type Arrangement,
@@ -268,7 +270,17 @@ export function WorkspaceSurface({ emptyStage }: { emptyStage: ReactNode }) {
                     {!layout.rails.right && <div className={`ws-edge-hint right ${target.zone === "right" ? "on" : ""}`} style={{ top: layout.area.y, height: layout.area.height, right: 0 }} />}
                 </>
             )}
-            {mobile && layout.drawer && (
+            {mobile && layout.drawer && api.view.drawer === "right" && (
+                <>
+                    <div className="ws-sheet" style={{ ...rectStyle(layout.drawer), top: 0, height: layout.drawer.y + layout.drawer.height }} />
+                    <div className="ws-sheet-head" style={{ height: layout.drawer.y }}>
+                        <Button className="ws-sheet-back" onClick={() => workspaceView.set({ ...workspaceView.get(), drawer: null })} data-testid="sheet-back">
+                            <Icon name="chevron-left" size={18} />Back
+                        </Button>
+                    </div>
+                </>
+            )}
+            {mobile && layout.drawer && api.view.drawer === "left" && (
                 <>
                     <div className="ws-scrim" onClick={() => workspaceView.set({ ...workspaceView.get(), drawer: null })} />
                     <div className={`ws-drawer ${api.view.drawer}`} style={rectStyle(layout.drawer)} />
