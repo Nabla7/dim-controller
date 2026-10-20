@@ -1,5 +1,5 @@
 //! Controller's `dimos-app-server` (dimOS Desktop app contract, docs/apps.md in dimos-desktop): serves the built
-//! page and every action as an HTTP endpoint (api.rs, listed at /agent.json): an mcap recorder that subscribes to
+//! page and every action as an HTTP endpoint (api.rs, listed at /openapi.json): an mcap recorder that subscribes to
 //! dimos topics over zenoh while a recording runs, location labels, live annotations, the agent's view of the page,
 //! the page's settings, the camera and driving.
 
@@ -43,9 +43,9 @@ pub struct Args {
     /// folder, if this app made one before it was renamed), else DIMOS_APP's dataDir/recordings]
     #[arg(long, env = "CONTROLLER_RECORD_DIR")]
     record_dir: Option<PathBuf>,
-    /// print the endpoints (agent.json) and exit: scripts/check_endpoints.ts compares them with dimos.yaml
+    /// print the endpoints (openapi.json) and exit: scripts/check_endpoints.ts compares them with dimos.yaml
     #[arg(long)]
-    agent_json: bool,
+    openapi_json: bool,
 }
 
 /// The app's name before it was renamed: its data dir and recordings folder are still used (see `default_record_dir`,
@@ -125,11 +125,8 @@ async fn main() -> Result<()> {
     // zenoh's own log: errors by default, RUST_LOG=zenoh=debug to see its links come and go
     zenoh::init_log_from_env_or("error");
     let args = Args::parse();
-    if args.agent_json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&api::routes().manifest(api::WHEN, api::DESCRIPTION))?
-        );
+    if args.openapi_json {
+        println!("{}", serde_json::to_string_pretty(&api::openapi())?);
         return Ok(());
     }
     let record_dir = args.record_dir.clone().unwrap_or_else(default_record_dir);
