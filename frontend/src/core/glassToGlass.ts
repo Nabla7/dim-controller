@@ -116,8 +116,9 @@ export function watchCameras(onChange: (results: CameraResult[]) => void): () =>
                 watching.delete(video)
                 return
             }
-            // expectedDisplayTime: when this frame is on the screen (the second glass)
-            scan(video, panel, metadata.expectedDisplayTime)
+            // when this frame is on the screen (the second glass): never before it went to the compositor (a headless
+            // Chrome's expectedDisplayTime can come whole vsyncs before that)
+            scan(video, panel, Math.max(metadata.expectedDisplayTime, metadata.presentationTime))
             watching.set(video, video.requestVideoFrameCallback(next))
         }
         watching.set(video, video.requestVideoFrameCallback(next))
