@@ -3,7 +3,7 @@
 // main view by default). Its tools: a tab per image topic (a phone's main view: the top bar's view switch instead), a 2D detection overlay, the depth colormap and range; a gear
 // over the picture picks latency vs quality. Depth is drawn as a colormap. Collapsed (or off screen: a shut drawer, a
 // rail hidden by focus, a hidden browser tab) it holds no stream and no overlay subscription. As the main view it offers the dock fit / fill, the next camera and quality.
-import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react"
+import { type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import type { ViewerApp } from "../core/app.ts"
 import { persistentStore, useStore } from "../core/store.ts"
@@ -20,6 +20,7 @@ import { Panel } from "./Panel.tsx"
 import { useWorkspaceApi } from "./Workspace.tsx"
 import { useDockActions } from "./dockActions.ts"
 import { ContainCrash, Unavailable } from "./Unavailable.tsx"
+import { createHoldZoom, HOLD_ZOOM } from "../core/holdZoom.ts"
 import { presetFor, QUALITY_PRESETS, readLocal, type VideoQuality, writeLocal } from "../core/videoQuality.ts"
 import { panelTitle } from "./commands.ts"
 import { TAKE_BACK_TEXT, TAKEN_OVER_TEXT } from "./barStatus.ts"
@@ -417,45 +418,31 @@ const FILL_KEY = "lv.cameras.fill"
 const loadPanelFill = (id: number): boolean => readLocal<Record<string, boolean>>(FILL_KEY, {})[id] === true
 const savePanelFill = (id: number, fill: boolean) => writeLocal(FILL_KEY, { ...readLocal<Record<string, boolean>>(FILL_KEY, {}), [id]: fill })
 
-/** The topic's quality preset as the shared source has it (changes in another panel of the same topic show here). */
-const HOLD_ZOOM = 3
-/** a press shorter than this is a click, not a zoom */
-const HOLD_ZOOM_DELAY_MS = 180
-
 /** Press and hold on a camera to zoom in on that spot; moving while held looks around, letting go zooms back out. */
 function useHoldZoom() {
     const [origin, setOrigin] = useState<string | null>(null)
-    const hold = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const originOf = (event: ReactPointerEvent<HTMLElement>) => {
-        const box = event.currentTarget.getBoundingClientRect()
-        return `${(((event.clientX - box.left) / box.width) * 100).toFixed(1)}% ${(((event.clientY - box.top) / box.height) * 100).toFixed(1)}%`
-    }
-    const release = () => {
-        if (hold.current) {
-            clearTimeout(hold.current)
-            hold.current = null
-        }
-        setOrigin(null)
-    }
-    useEffect(() => release, [])
+    const hold = useRef<ReturnType<typeof createHoldZoom> | null>(null)
+    hold.current ??= createHoldZoom({ onOrigin: setOrigin })
+    useEffect(() => () => hold.current?.release(), [])
+    const box = (event: ReactPointerEvent<HTMLElement>) => event.currentTarget.getBoundingClientRect()
     return {
         style: origin ? { transform: `scale(${HOLD_ZOOM})`, transformOrigin: origin } : undefined,
         handlers: {
             onPointerDown: (event: ReactPointerEvent<HTMLElement>) => {
-                if (event.button !== 0) {
-                    return
+                if (event.button === 0) {
+                    event.currentTarget.setPointerCapture(event.pointerId)
                 }
-                event.currentTarget.setPointerCapture(event.pointerId)
-                const at = originOf(event)
-                hold.current = setTimeout(() => setOrigin(at), HOLD_ZOOM_DELAY_MS)
+                hold.current!.down(event, box(event))
             },
-            onPointerMove: (event: ReactPointerEvent<HTMLElement>) => origin && setOrigin(originOf(event)),
-            onPointerUp: release,
-            onPointerCancel: release,
+            onPointerMove: (event: ReactPointerEvent<HTMLElement>) => hold.current!.move(event, box(event)),
+            onPointerUp: () => hold.current!.release(),
+            onPointerCancel: () => hold.current!.release(),
+            onContextMenu: (event: ReactMouseEvent<HTMLElement>) => hold.current!.contextMenu(event),
         },
     }
 }
 
+/** The topic's quality preset as the shared source has it (changes in another panel of the same topic show here). */
 function useQuality(app: ViewerApp, topic: Topic | null, depth: boolean): VideoQuality {
     const [quality, setQuality] = useState<VideoQuality>("balanced")
     useEffect(() => {

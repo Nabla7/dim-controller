@@ -446,6 +446,8 @@ h3.dr-h3.first { margin-top: 4px; }
 .camera-overlay { pointer-events: none; }
 /* press and hold to zoom (ui/CameraPanels.tsx useHoldZoom), eased in and out */
 .camera-media, .camera-overlay { transition: transform 0.12s ease-out; }
+/* a phone's own long press (callout, text selection, a pan) would cancel the hold mid-zoom */
+.camera-media { touch-action: none; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
 /* fullscreen "fill": the picture (video, depth canvas) and its overlay crop alike, so boxes stay on what they mark */
 .camera-body.fill .camera-media, .camera-body.fill .camera-overlay, .camera-body.fill .depth-host canvas { object-fit: cover; }
 .camera-fit[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
