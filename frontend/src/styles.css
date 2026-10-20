@@ -932,3 +932,4 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .action-output-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted-fg); }
 .action-output pre { margin: 0; max-height: 200px; overflow: auto; font: 11px/1.4 var(--mono); white-space: pre-wrap; word-break: break-word; }
 .action-output pre.stderr { color: var(--danger); }
+.action-button.running.dr-btn { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }

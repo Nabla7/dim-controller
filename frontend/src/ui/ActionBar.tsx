@@ -1,6 +1,6 @@
 // The action bar (core/actionButtons.ts): this machine's buttons along the bottom of the main view, scrolling sideways;
 // a click runs the button's shell command and shows how it went. Edit adds a button (label + command) or removes one
-// for good. With no buttons it's a single › at the edge.
+// for good. With no buttons, or hidden with its ‹, it's a single › at the edge.
 import { useEffect, useState } from "react"
 import { Button, Card, TextInput } from "dimos-react"
 import { useStore } from "../core/store.ts"
@@ -8,12 +8,23 @@ import { actionButtons, addActionButton, removeActionButton, type RunResult, run
 import { Icon } from "./icons.tsx"
 import type { WorkspaceApi } from "./Workspace.tsx"
 
+const HIDDEN_KEY = "lv.actionBar.hidden"
+const readHidden = () => {
+    try {
+        return localStorage.getItem(HIDDEN_KEY) === "1"
+    } catch {
+        return false
+    }
+}
+
 /** how long a run's result stays beside the bar */
 const RESULT_MS = 8000
 
 export function ActionBar({ api }: { api: WorkspaceApi }) {
     const { buttons } = useStore(actionButtons)
     const [opened, setOpened] = useState(false)
+    // hidden by this viewer (the › brings it back), kept across reloads
+    const [hidden, setHidden] = useState(() => readHidden())
     const [editing, setEditing] = useState(false)
     const [adding, setAdding] = useState(false)
     const [running, setRunning] = useState<Set<string>>(new Set())
@@ -31,12 +42,23 @@ export function ActionBar({ api }: { api: WorkspaceApi }) {
     if (api.view.drawer || stage.width < 120) {
         return null
     }
-    const open = opened || buttons.length > 0
+    const hide = (value: boolean) => {
+        setHidden(value)
+        try {
+            localStorage.setItem(HIDDEN_KEY, value ? "1" : "")
+        } catch {
+            // no storage: hidden for this page only
+        }
+    }
+    const open = !hidden && (opened || buttons.length > 0)
     const place = { left: stage.x + 8, bottom: innerHeight - (stage.y + stage.height) + 8, maxWidth: stage.width - 16 }
     if (!open) {
         return (
             <div className="action-bar collapsed" style={place}>
-                <Button className="dr-btn--icon action-bar-toggle" title="Action buttons" aria-label="Action buttons" onClick={() => setOpened(true)} data-testid="action-bar-open">
+                <Button className="dr-btn--icon action-bar-toggle" title="Action buttons" aria-label="Action buttons" onClick={() => {
+                    hide(false)
+                    setOpened(true)
+                }} data-testid="action-bar-open">
                     <Icon name="chevron-right" size={16} />
                 </Button>
             </div>
@@ -55,26 +77,25 @@ export function ActionBar({ api }: { api: WorkspaceApi }) {
     }
     return (
         <div className="action-bar" style={place} data-testid="action-bar">
-            {buttons.length === 0 && (
-                <Button className="dr-btn--icon action-bar-toggle" title="Hide" aria-label="Hide the action bar" onClick={() => {
-                    setOpened(false)
-                    setEditing(false)
-                    setAdding(false)
-                }}>
-                    <Icon name="chevron-left" size={16} />
-                </Button>
-            )}
+            <Button className="dr-btn--icon action-bar-toggle" title="Hide the action buttons" aria-label="Hide the action bar" onClick={() => {
+                hide(buttons.length > 0)
+                setOpened(false)
+                setEditing(false)
+                setAdding(false)
+            }} data-testid="action-bar-hide">
+                <Icon name="chevron-left" size={16} />
+            </Button>
             <div className="action-bar-scroll">
                 {buttons.map((button) => (
                     <span key={button.id} className="action-button-wrap">
                         <Button
-                            className="action-button"
+                            className={`action-button ${running.has(button.id) ? "running" : ""}`}
                             title={button.command}
-                            disabled={editing || running.has(button.id)}
+                            disabled={editing}
                             onClick={() => run(button.id, button.label)}
                             data-testid="action-button"
                         >
-                            {running.has(button.id) ? `${button.label}…` : button.label}
+                            {button.label}
                         </Button>
                         {editing && (
                             confirm === button.id
@@ -104,7 +125,7 @@ export function ActionBar({ api }: { api: WorkspaceApi }) {
             {adding && <AddForm onClose={() => setAdding(false)} />}
             {result && (
                 <button type="button" className={`action-result ${result.ok ? "ok" : "bad"}`} onClick={() => setDetails(!details)} data-testid="action-result">
-                    {result.ok ? "✓" : "✕"} {result.label}{result.error ? `: ${result.error}` : result.ok ? ` · ${(result.ms / 1000).toFixed(1)} s` : ` · exit ${result.exitCode ?? "?"}`}
+                    {result.ok ? "✓" : "✕"} {result.label}{result.error ? `: ${result.error}` : result.ok ? "" : ` · exit ${result.exitCode ?? "?"}`}
                 </button>
             )}
             {result && details && (
