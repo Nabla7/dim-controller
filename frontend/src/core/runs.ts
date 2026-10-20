@@ -62,7 +62,7 @@ export class RunWatch {
         if (cached) {
             return cached
         }
-        const response = await fetch(desktopUrl(`dimos-gateway/catalog/blueprints/${encodeURIComponent(name)}`))
+        const response = await fetch(desktopUrl(`dimos-gateway/catalog/blueprints/${encodeURIComponent(name)}?fields=modules`))
         if (!response.ok) {
             throw new Error(String(response.status))
         }
