@@ -1,6 +1,6 @@
 // The glass-to-glass code: its time survives a QR round trip (drawn as pixels, read back by jsQR), and the elapsed time
 // across the code's wrap.
-import { assertEquals } from "jsr:@std/assert"
+import { assertEquals } from "jsr:@std/assert@1"
 import jsQR from "jsqr"
 import { decodeTime, elapsed, encodeTime, qrModules } from "../src/core/glassToGlass.ts"
 

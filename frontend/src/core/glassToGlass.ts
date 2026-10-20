@@ -1,7 +1,6 @@
 // Glass-to-glass latency: this page shows a QR code that changes every screen frame, carrying the time it was drawn;
 // held up to one of the robot's cameras, it comes back in that camera's video, and the frame that shows it is timed
 // against the code's time. Both times are this page's clock (performance.now), so no clock sync is needed.
-import jsQR from "jsqr"
 import qrcode from "qrcode-generator"
 
 const PREFIX = "g2g:"
@@ -62,37 +61,53 @@ export interface CameraResult {
 }
 
 /**
- * Watches every camera panel's <video> for the code: each frame it shows is scanned (one at a time per camera, so a
- * slow scan skips frames instead of queueing them) and a code seen for the first time is timed from when it was drawn
+ * Watches every camera panel's <video> for the code: each frame it shows is scanned in a worker (one at a time per
+ * camera, so a slow scan skips frames instead of queueing them) and a code seen for the first time is timed from when it was drawn
  * to when that frame reached the screen. `onChange` gets every camera's results so far. Returns what stops it.
  */
 export function watchCameras(onChange: (results: CameraResult[]) => void): () => void {
-    const canvas = document.createElement("canvas")
-    const context = canvas.getContext("2d", { willReadFrequently: true })!
+    const worker = new Worker(new URL("./glassToGlassWorker.ts", import.meta.url), { type: "module" })
     const results = new Map<string, CameraResult>()
     const watching = new Map<HTMLVideoElement, number>()
-    let lastCode = new Map<string, number>()
+    const busy = new Set<string>()
+    const lastCode = new Map<string, number>()
+    /** frames out at the worker: their camera and when they reached the screen */
+    const pending = new Map<number, { panel: string; shownAt: number }>()
+    let nextId = 0
     let stopped = false
-    const scan = (video: HTMLVideoElement, panel: string, shownAt: number) => {
-        const scale = Math.min(1, SCAN_WIDTH / video.videoWidth)
-        canvas.width = Math.round(video.videoWidth * scale)
-        canvas.height = Math.round(video.videoHeight * scale)
-        if (!canvas.width || !canvas.height) {
+    worker.onmessage = (event: MessageEvent<{ id: number; text: string | null }>) => {
+        const frame = pending.get(event.data.id)
+        pending.delete(event.data.id)
+        if (!frame || stopped) {
             return
         }
-        context.drawImage(video, 0, 0, canvas.width, canvas.height)
-        const image = context.getImageData(0, 0, canvas.width, canvas.height)
-        const found = jsQR(image.data, image.width, image.height, { inversionAttempts: "dontInvert" })
-        const codeMs = found && decodeTime(found.data)
+        busy.delete(frame.panel)
+        const codeMs = event.data.text === null ? null : decodeTime(event.data.text)
         // the same code in two frames: the later one isn't when it arrived
-        if (codeMs === null || codeMs === undefined || lastCode.get(panel) === codeMs) {
+        if (codeMs === null || lastCode.get(frame.panel) === codeMs) {
             return
         }
-        lastCode.set(panel, codeMs)
-        const result = results.get(panel) ?? { panel, samples: [] }
-        result.samples = [...result.samples, elapsed(codeMs, shownAt)].slice(-KEEP)
-        results.set(panel, result)
+        lastCode.set(frame.panel, codeMs)
+        const result = results.get(frame.panel) ?? { panel: frame.panel, samples: [] }
+        result.samples = [...result.samples, elapsed(codeMs, frame.shownAt)].slice(-KEEP)
+        results.set(frame.panel, result)
         onChange([...results.values()])
+    }
+    const scan = async (video: HTMLVideoElement, panel: string, shownAt: number) => {
+        const scale = Math.min(1, SCAN_WIDTH / video.videoWidth)
+        const width = Math.round(video.videoWidth * scale), height = Math.round(video.videoHeight * scale)
+        if (!width || !height || busy.has(panel)) {
+            return
+        }
+        busy.add(panel)
+        try {
+            const frame = await createImageBitmap(video, { resizeWidth: width, resizeHeight: height })
+            const id = nextId++
+            pending.set(id, { panel, shownAt })
+            worker.postMessage({ id, frame }, [frame])
+        } catch {
+            busy.delete(panel)
+        }
     }
     const watch = (video: HTMLVideoElement) => {
         const panel = video.closest<HTMLElement>("[data-panel]")?.dataset.panel ?? "camera"
@@ -123,8 +138,7 @@ export function watchCameras(onChange: (results: CameraResult[]) => void): () =>
         for (const [video, handle] of watching) {
             video.cancelVideoFrameCallback(handle)
         }
-        watching.clear()
-        lastCode = new Map()
+        worker.terminate()
     }
 }
 
