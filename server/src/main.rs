@@ -15,6 +15,7 @@ mod image;
 mod labels;
 mod logs;
 mod hook_install;
+mod host;
 mod manipulation;
 mod msgs;
 mod pickle;
@@ -154,6 +155,7 @@ async fn main() -> Result<()> {
         app_info.and_then(|app| app.zenoh_prefix.clone()),
         relay,
     );
+    host::spawn();
     let api = api::Api {
         recorder: state.clone(),
         annotations: annotations.clone(),

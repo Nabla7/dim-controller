@@ -28,7 +28,7 @@ provides:
     openapi: 3.1.0
     info:
         title: Controller
-        version: 1.0.0
+        version: 1.1.0
         description: >-
             Controller: drive the running robot (keyboard / sticks, velocity commands, stop) while watching its live
             3D view (point clouds, costmap, pose, planned path, TF) and cameras; recording to mcap, location labels,
@@ -36,7 +36,6 @@ provides:
             fixed frame, follow). Coordinates are meters in the world frame, +z up. GET api/status is the overview;
             GET api/view what the user sees.
         x-when: 'you need to drive a robot, watch it live in 3D, or record it'
-    # what its server answers only its own pages (its paths: below are the public API)
     x-private:
         - api/pages/*
         - api/captures/*
@@ -780,6 +779,13 @@ provides:
                                         description: 0.05-1
                                         type: number
                                 type: object
+        /api/host:
+            get:
+                description: >-
+                    The machine this runs on (the robot's computer): its CPU load, sampled every few seconds in the
+                    background. Returns {cpu: {busyPercent (all cores, over the last sample; Linux and macOS),
+                    cores, sampledAt (unix ms), everySecs} or null before the first sample}.
+                x-when: you need to know whether the robot's computer is overloaded
 nix:
     cache:
         aarch64-linux:

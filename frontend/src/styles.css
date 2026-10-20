@@ -757,12 +757,12 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .phone-corners > * { pointer-events: auto; }
 .corner-button.dr-btn--icon { width: 40px; height: 40px; padding: 0; flex: none; background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(8px); box-shadow: var(--shadow-md); }
 .corner-button[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
-.corner-chips { flex: 1; min-width: 0; display: flex; gap: 4px; justify-content: center; overflow: hidden; pointer-events: none; }
+/* a phone's chips: their own row under the top buttons, over the main view (the main view doesn't move as they come and go) */
+.corner-chips { position: absolute; top: 100%; left: 8px; right: 8px; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-start; pointer-events: none; }
 .corner-chips > * { pointer-events: auto; }
 .corner-chips .bar-chip { height: 30px; padding: 0 7px; background: color-mix(in srgb, var(--card) 88%, transparent); }
 .corner-chips .bar-value { max-width: 110px; }
-/* a phone's link chip (ui/BarChips.tsx): ~116 px between the corners, so smaller and no dot (a problem still colours the
-   border) */
+/* a phone's link chip (ui/BarChips.tsx): smaller and no dot (a problem still colours the border) */
 .corner-chips .bar-link { padding: 0 6px; }
 .corner-chips .bar-link .bar-dot { display: none; }
 /* the link chip's numbers: right-aligned slots as wide as "999.9" and "9999", so the chip is one width ("999.9 Mbps · 9999 ms") */
@@ -772,7 +772,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .bar-num-ms { width: 4ch; }
 .bar-unit { margin-left: 1ch; }
 .bar-sep { margin: 0 1ch; }
-/* a phone: smaller, the spaces narrower, to fit between the corners */
+/* a phone: smaller, the spaces narrower */
 .corner-chips .bar-link-value { font-size: 10px; width: calc(16ch + 4px); max-width: none; }
 .corner-chips .bar-unit { margin-left: 0; }
 .corner-chips .bar-sep { margin: 0 2px; }
@@ -893,3 +893,10 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .g2g-table th, .g2g-table td { padding: 3px 8px; text-align: right; }
 .g2g-table th:first-child, .g2g-table td:first-child { text-align: left; }
 .g2g-table th { color: var(--muted-fg); font-weight: 500; }
+/* a chip with nothing wrong (the link, the battery): low contrast, so a problem chip stands out */
+.bar-chip.quiet, .corner-chips .bar-chip.quiet { color: var(--muted-fg); border-color: transparent; background: color-mix(in srgb, var(--card) 45%, transparent); box-shadow: none; }
+.bar-chip.quiet .bar-dot { background: var(--muted-fg); box-shadow: none; }
+.bar-battery.quiet { --battery: var(--muted-fg); }
+/* a phone: the panel list on the left, Record, the palette and the drawer on the right */
+.phone-corners > .record-control { margin-left: auto; }
+.corner-chips .bar-chip.quiet { background: color-mix(in srgb, var(--card) 72%, transparent); backdrop-filter: blur(6px); }

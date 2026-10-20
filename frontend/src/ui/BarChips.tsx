@@ -1,6 +1,7 @@
 // The one bar's status chips (ui/barStatus.ts says when and what): the link's live throughput and latency (coloured
-// when it's a problem), TF and render warnings (each opens what fixes it), and the gamepad's state. A phone shows the
-// same chips over the top of the main view.
+// when it's a problem; quiet, low contrast, when it isn't), TF and render warnings (each opens what fixes it), the
+// battery (quiet when it's fine), the robot computer's CPU (only when it's really high) and the gamepad's state. A
+// phone shows the same chips in a row under its top buttons.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { splatFallback } from "../core/render/rendering.ts"
@@ -28,7 +29,7 @@ function BatteryChip() {
     }
     const fill = chip.percent === null ? 0 : (Math.max(chip.percent, 4) / 100) * 15
     return (
-        <span className={`bar-chip bar-battery battery-${chip.tone}`} title={chip.detail} data-testid="bar-battery" aria-label={`Battery ${chip.text}${chip.charging ? ", charging" : ""}`}>
+        <span className={`bar-chip bar-battery battery-${chip.tone} ${chip.tone === "ok" ? "quiet" : ""}`} title={chip.detail} data-testid="bar-battery" aria-label={`Battery ${chip.text}${chip.charging ? ", charging" : ""}`}>
             <svg className="battery-icon" width="24" height="13" viewBox="0 0 24 13" aria-hidden="true">
                 <rect x="0.75" y="0.75" width="19.5" height="11.5" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
                 <rect x="21" y="4" width="2.25" height="5" rx="1" fill="currentColor" />
@@ -36,6 +37,43 @@ function BatteryChip() {
                 {chip.charging && <path className="battery-bolt" d="M11.5 1.5 7.5 7h3l-1 4.5 4-5.5h-3z" />}
             </svg>
             <span className="bar-value">{chip.text}</span>
+        </span>
+    )
+}
+
+/** CPU busy at or over this (percent of all cores) shows the CPU chip */
+export const CPU_HIGH_PERCENT = 90
+/** how often the page asks for the backend's sample (api/host; the backend samples every 5 s) */
+const CPU_POLL_MS = 5000
+
+/** The robot computer's CPU (api/host, sampled by the backend): only while it's really high. */
+function CpuChip() {
+    const [busy, setBusy] = useState<{ percent: number; cores: number } | null>(null)
+    useEffect(() => {
+        let alive = true
+        const poll = async () => {
+            try {
+                const { cpu } = await (await fetch(new URL("api/host", location.href))).json()
+                if (alive) {
+                    setBusy(cpu ? { percent: cpu.busyPercent, cores: cpu.cores } : null)
+                }
+            } catch {
+                // an older backend (no api/host) or a blip: no chip
+            }
+        }
+        poll()
+        const timer = setInterval(poll, CPU_POLL_MS)
+        return () => {
+            alive = false
+            clearInterval(timer)
+        }
+    }, [])
+    if (!busy || busy.percent < CPU_HIGH_PERCENT) {
+        return null
+    }
+    return (
+        <span className={`bar-chip tone-${busy.percent >= 98 ? "bad" : "warn"} bar-cpu`} title={`The robot's computer: ${Math.round(busy.percent)}% of its ${busy.cores} cores busy (sampled every 5 s)`} data-testid="bar-cpu">
+            <span className="bar-value">CPU {Math.round(busy.percent)}%</span>
         </span>
     )
 }
@@ -79,7 +117,7 @@ export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
                     <span className="bar-value">{lease.text}</span>
                 </button>
             )}
-            <button type="button" className={`bar-chip tone-${link.tone} bar-button bar-link`} title={`${link.detail} (open Network: history and who's using the link)`} data-testid="bar-link" onClick={() => setNetworkOpen(true)}>
+            <button type="button" className={`bar-chip tone-${link.tone} bar-button bar-link ${link.tone === "ok" ? "quiet" : ""}`} title={`${link.detail} (open Network: history and who's using the link)`} data-testid="bar-link" onClick={() => setNetworkOpen(true)}>
                 <span className="bar-dot" />
                 {/* fixed-width number slots in a fixed-width box, so neither this chip nor its neighbours move as the numbers change */}
                 <span className="bar-value bar-link-value">
@@ -104,6 +142,7 @@ export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
                 </button>
             )}
             <BatteryChip />
+            <CpuChip />
             {pad && (
                 <span className={`bar-chip tone-${pad.tone} bar-gamepad`} title={`Gamepad · ${pad.detail}`} data-testid="bar-gamepad">
                     <Icon name="gamepad" size={14} />
