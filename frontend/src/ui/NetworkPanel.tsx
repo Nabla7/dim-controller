@@ -13,6 +13,7 @@ import { type Consumer, parseKey } from "../core/transport.ts"
 import { bandwidthOverrides, DEFAULT_PRIORITY, DEFAULT_TRADEOFF, heatOf, levelOf, PRIORITY_LAST, PRIORITY_MAX, priorityLabel, setOverride, stepPriority, type StreamOverride } from "../core/bandwidth.ts"
 import { Button, NumberInput, Segmented, Slider, Toggle } from "dimos-react"
 import { Icon } from "./icons.tsx"
+import { Spread } from "./Spread.tsx"
 import { gatewayVideoLatency, type GatewayVideoLatency, latencyStages, slowestVideo, spreadText, type VideoLatency } from "../core/videoLatency.ts"
 
 /** colour slots (styles.css --net-1..7); a stream past them is drawn with "other" */
@@ -260,10 +261,10 @@ function StreamSettings({ streamKey, consumer, override, onClose }: { streamKey:
     )
 }
 
-/** A camera's video ms (p50/p95), a button that opens its stages under the row; `inline`: the copy under the stream's name that a narrow table shows instead of its column. */
+/** A camera's video ms ("(spike 179) 20": typical p50, spike p95), a button that opens its stages under the row; `inline`: the copy under the stream's name that a narrow table shows instead of its column. */
 function LatencyToggle({ streamKey, measured, open, onToggle, inline = false }: { streamKey: string; measured: { video: VideoLatency | null; gateway: GatewayVideoLatency | null }; open: boolean; onToggle: () => void; inline?: boolean }) {
     const { video, gateway } = measured
-    const pacer = gateway?.pacerP50Ms != null ? `; gateway pacer ${spreadText({ p50: gateway.pacerP50Ms, p95: gateway.pacerP95Ms ?? gateway.pacerP50Ms })} ms` : ""
+    const pacer = gateway?.pacerP50Ms != null ? `; gateway pacer ${spreadText({ p50: gateway.pacerP50Ms, p95: gateway.pacerP95Ms ?? gateway.pacerP50Ms })}` : ""
     return (
         <button
             type="button"
@@ -271,10 +272,10 @@ function LatencyToggle({ streamKey, measured, open, onToggle, inline = false }: 
             data-testid={inline ? "net-latency-toggle-inline" : "net-latency-toggle"}
             aria-expanded={open}
             aria-label={`${streamName(streamKey)}: video latency details`}
-            title={video ? `p50/p95 ms, ${video.frames} frames${pacer}` : "not measured: no frames shown yet, or a gateway before 0.5.21"}
+            title={video ? `typical (p50) ms and its spike (p95, the slowest 1 in 20 frames), ${video.frames} frames${pacer}` : "not measured: no frames shown yet, or a gateway before 0.5.21"}
             onClick={onToggle}
         >
-            {spreadText(video?.total)}{inline && " ms"}<span className="net-latency-caret">{open ? "▾" : "▸"}</span>
+            <Spread spread={video?.total} />{inline && " ms"}<span className="net-latency-caret">{open ? "▾" : "▸"}</span>
         </button>
     )
 }
@@ -295,7 +296,7 @@ function ConsumersTable({ table, slots, consumers, drops, latency }: { table: St
             <h4>Bandwidth Consumers <span className="dim">· {TABLE_AVERAGE_SAMPLES} s average, every {TABLE_REFRESH_MS / 1000} s</span></h4>
             <div className="net-table-scroll">
                 <table className="net-streams">
-                    <thead><tr><th className="net-col-on" title="off: unsubscribed until switched back on">on</th><th>stream</th><th className="net-col-rate" title="bar: how much it uses, against the busiest">Mbps</th><th className="net-col-video" title="video: source-to-screen latency of the frames its camera panel showed in the last 5 s, p50/p95 ms (zenoh-gateway >= 0.5.21); click for where it went">video ms</th><th className="net-col-drops" title="messages the gateway dropped for this stream in the last second because the link couldn't keep up (queue full or too old); not its own max Hz">dropped/s</th><th className="net-col-priority" title="bandwidth priority when the link is short">priority</th><th className="net-col-gear" /></tr></thead>
+                    <thead><tr><th className="net-col-on" title="off: unsubscribed until switched back on">on</th><th>stream</th><th className="net-col-rate" title="bar: how much it uses, against the busiest">Mbps</th><th className="net-col-video" title="video: source-to-screen latency of the frames its camera panel showed in the last 5 s, typical (p50) ms with its spike (p95, the slowest 1 in 20 frames) (zenoh-gateway >= 0.5.21); click for where it went">video ms</th><th className="net-col-drops" title="messages the gateway dropped for this stream in the last second because the link couldn't keep up (queue full or too old); not its own max Hz">dropped/s</th><th className="net-col-priority" title="bandwidth priority when the link is short">priority</th><th className="net-col-gear" /></tr></thead>
                     <tbody>
                         {table.map((row) => {
                             const consumer = consumers[row.key]
@@ -315,7 +316,7 @@ function ConsumersTable({ table, slots, consumers, drops, latency }: { table: St
                                     <td>
                                         <span className="net-swatch" style={{ background: colorOf(row.key === OTHER ? undefined : slots.get(row.key)) }} title="its colour in the chart" />
                                         <span className="net-stream-name">{streamName(row.key)}</span>
-                                        <span className="net-stream-tags">{tags.join(" · ")}{measured && <span className="net-stream-video"> · <LatencyToggle streamKey={row.key} measured={measured} open={open} onToggle={() => toggle(row.key)} inline /></span>}</span>
+                                        <span className="net-stream-tags">{tags.join(" · ")}{measured && <span className="net-stream-video"><span className="net-stream-video-sep"> · </span><LatencyToggle streamKey={row.key} measured={measured} open={open} onToggle={() => toggle(row.key)} inline /></span>}</span>
                                     </td>
                                     <td className="net-col-rate">
                                         <span className="net-heat" style={{ width: `${heat * 100}%`, background: heatColor(heat) }} />
@@ -331,7 +332,7 @@ function ConsumersTable({ table, slots, consumers, drops, latency }: { table: St
                                         <td colSpan={7}>
                                             {stages.length ? (
                                                 <dl className="net-latency-stages">
-                                                    {stages.map((stage) => <div key={stage.name} title={stage.detail}><dt>{stage.name}</dt><dd>{stage.value}<span className="dim"> ms</span></dd></div>)}
+                                                    {stages.map((stage) => <div key={stage.name} title={stage.detail}><dt>{stage.name}</dt><dd><Spread parts={{ typical: stage.value, spike: stage.spike }} /><span className="dim"> ms</span></dd></div>)}
                                                 </dl>
                                             ) : <span className="dim">not measured: this gateway is older than zenoh-gateway 0.5.21, or no frame was shown yet</span>}
                                         </td>
@@ -403,7 +404,7 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
         <div className="net-panel" data-testid="network-panel">
             <div className="net-tiles">
                 <Tile label="Throughput" value={mbpsNumber(summary.rateNow)} unit="Mbps" detail={<>1 min avg {mbpsNumber(summary.rateAverage)} · peak {mbpsNumber(summary.ratePeak)}</>} />
-                <Tile label="Latency" value={msNumber(summary.latencyNow)} unit="ms" detail={<>p95 {msNumber(summary.latencyP95)} · max {msNumber(summary.latencyMax)}{slowest && <> · video {spreadText(slowest.total)}</>}</>} />
+                <Tile label="Latency" value={msNumber(summary.latencyNow)} unit="ms" detail={<>spike {msNumber(summary.latencyP95)} · max {msNumber(summary.latencyMax)}{slowest && <span title={`slowest camera, source to screen: ${spreadText(slowest.total)}`}> · video {Math.round(slowest.total.p50)} ms</span>}</>} />
                 <Tile label="Link" value={link.text} tone={link.tone} detail={connection.droppedPerSecond ? `${connection.droppedPerSecond} dropped/s` : "no drops"} />
                 <Tile label="Lease" value={leaseShown.text} tone={leaseShown.tone} detail={leaseShown.detail} />
             </div>
@@ -463,7 +464,7 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
                     All counted by this browser (WebRTC stats), each second: throughput is the wire's bytes, a stream its data channel's
                     payload or its video track's. Protocol overhead is the wire beyond everything named (DTLS/SCTP framing, acks and
                     SCTP resends, which the browser doesn't count on their own). Latency is the heartbeat's round trip; a camera's video ms is source to screen (the sample's timestamp to the frame
-                    shown in its panel, p50/p95 over the last 5 s, from zenoh-gateway 0.5.21 on), split into its stages under the row. A
+                    shown in its panel over the last 5 s: typical is the median, p50, and spike the p95, the slowest 1 in 20 frames; from zenoh-gateway 0.5.21 on), split into its stages under the row. A
                     stream switched off is unsubscribed until switched back on; priority (0 is what the page gives the stream: small state above
                     the main camera above other cameras above maps; when the link is short each step up halves what it gives up, each step down
                     doubles it, and "last" gives up first) and the gear's options are the gateway's, kept by this browser.{" "}

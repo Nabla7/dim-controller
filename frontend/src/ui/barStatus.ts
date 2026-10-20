@@ -53,10 +53,10 @@ export function rateText(bytesPerSecond: number): string {
 
 /**
  * The link chip, always shown: live throughput and latency ("  1.9 Mbps ·   89 ms", padded to a fixed width), and beside
- * it (`video`) the slowest camera's source-to-screen latency once one is measured ("video 120/180 ms", p50/p95; absent
+ * it (`video`) the slowest camera's source-to-screen latency once one is measured (typical 120 ms with its spike, the p95, 180; absent
  * from a gateway before 0.5.21), coloured by linkProblem; lost or connecting says so instead.
  */
-export function linkChip(connection: Pick<ConnectionState, "state" | "rttMs" | "droppedPerSecond" | "error" | "throughputBytesPerSec">, latencyMs: number | null, video: VideoLatency | null = null): { text: string; tone: Tone; detail: string; video?: string } {
+export function linkChip(connection: Pick<ConnectionState, "state" | "rttMs" | "droppedPerSecond" | "error" | "throughputBytesPerSec">, latencyMs: number | null, video: VideoLatency | null = null): { text: string; tone: Tone; detail: string; video?: { typical: string; spike: string | null } } {
     const problem = linkProblem(connection)
     if (connection.state === "lost" || connection.state === "connecting") {
         return problem!
@@ -68,7 +68,7 @@ export function linkChip(connection: Pick<ConnectionState, "state" | "rttMs" | "
         text: `${rate} · ${latency}`,
         ...(videoText ? { video: videoText } : {}),
         tone: problem?.tone ?? "ok",
-        detail: `${problem?.detail ?? "Link healthy"}. Throughput reaching this page and the control link's round trip${videoText ? "; video: the slowest camera's source-to-screen latency over the last 5 s (p50/p95)" : ""}`,
+        detail: `${problem?.detail ?? "Link healthy"}. Throughput reaching this page and the control link's round trip${videoText ? "; video: the slowest camera's source-to-screen latency over the last 5 s, typical (p50) ms and its spike (p95, the slowest 1 in 20 frames)" : ""}`,
     }
 }
 

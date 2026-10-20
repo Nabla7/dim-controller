@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react"
 import { gamepadChip, leaseChip, LINK_REDRAW_MS, LINK_SAMPLE_MS, linkChip, phoneChipText, smoothed } from "./barStatus.ts"
 import { Modal } from "dimos-react"
 import { Icon } from "./icons.tsx"
+import { Spread } from "./Spread.tsx"
 import { NetworkPanel } from "./NetworkPanel.tsx"
 import { gamepadStatus } from "./useGamepad.ts"
 import type { WorkspaceApi } from "./Workspace.tsx"
@@ -85,12 +86,12 @@ export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
                     // a phone: unpadded, the video latency on a second line, so both fit between the corners
                     <span className="bar-link-lines">
                         <span className="bar-value">{phoneChipText(link.text)}</span>
-                        {link.video && <span className="bar-value bar-video" data-testid="bar-video">{link.video}</span>}
+                        {link.video && <span className="bar-value bar-video" data-testid="bar-video"><Spread parts={link.video} /> ms</span>}
                     </span>
                 ) : (
                     <>
                         <span className="bar-value">{link.text}</span>
-                        {link.video && <span className="bar-value bar-video" data-testid="bar-video">· {link.video}</span>}
+                        {link.video && <span className="bar-value bar-video" data-testid="bar-video">· video <Spread parts={link.video} /> ms</span>}
                     </>
                 )}
             </button>

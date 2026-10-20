@@ -14,7 +14,7 @@ Deno.test("the link chip always shows live throughput and latency, coloured by t
     assertEquals(linkChip(link("connecting"), null).text, "Connecting")
     assertEquals(linkChip(link("lost"), null).tone, "bad")
     assertEquals(phoneChipText(linkChip(link("connected"), 89).text), "1.9 Mbps · 89 ms", "a phone drops the padding to fit between the corners")
-    assertEquals(linkChip(link("connected"), 89, { total: { p50: 120, p95: 180 } } as VideoLatency).video, "video 120/180 ms")
+    assertEquals(linkChip(link("connected"), 89, { total: { p50: 120, p95: 180 } } as VideoLatency).video, { typical: "120", spike: "spike 180" })
     assertEquals([rateText(940), rateText(240_000), rateText(3_140_000), rateText(1e12)], ["\u2007\u20070.0 Mbps", "\u2007\u20071.9 Mbps", "\u200725.1 Mbps", "999.9 Mbps"])
 })
 
