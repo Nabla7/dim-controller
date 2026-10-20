@@ -883,3 +883,13 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .view-row .quality-name { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .view-row .view-float.dr-btn--icon { width: 40px; height: 40px; flex: none; }
 .view-row .view-float[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
+.net-actions { display: flex; justify-content: flex-end; }
+.g2g { display: grid; justify-items: center; gap: 10px; padding: 12px; border: 1px solid var(--border); text-align: center; }
+.g2g p { margin: 0; }
+.g2g-intro a { color: var(--primary); }
+.g2g-code { image-rendering: pixelated; background: #fff; }
+.g2g-note { font-size: 11px; max-width: 46ch; }
+.g2g-table { border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 12px; }
+.g2g-table th, .g2g-table td { padding: 3px 8px; text-align: right; }
+.g2g-table th:first-child, .g2g-table td:first-child { text-align: left; }
+.g2g-table th { color: var(--muted-fg); font-weight: 500; }

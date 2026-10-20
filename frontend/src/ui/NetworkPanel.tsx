@@ -14,6 +14,7 @@ import { bandwidthOverrides, DEFAULT_PRIORITY, DEFAULT_TRADEOFF, heatOf, levelOf
 import { Button, NumberInput, Segmented, Slider, Toggle } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { Spread } from "./Spread.tsx"
+import { GlassToGlass } from "./GlassToGlass.tsx"
 import { gatewayVideoLatency, type GatewayVideoLatency, latencyStages, slowestVideo, spreadText, type VideoLatency } from "../core/videoLatency.ts"
 
 /** colour slots (styles.css --net-1..7); a stream past them is drawn with "other" */
@@ -357,6 +358,7 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
     const [, redraw] = useState(0)
     const slots = useRef(new Map<string, number>()).current
     const [hover, setHover] = useState<Hover | null>(null)
+    const [glass, setGlass] = useState(false)
     const consumers = useStore(app.connection.consumers)
     const drops = useStore(app.connection.drops)
     // the page's subscriptions and every paused stream are listed even without traffic
@@ -402,6 +404,11 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
     })()
     return (
         <div className="net-panel" data-testid="network-panel">
+            {glass ? <GlassToGlass onClose={() => setGlass(false)} /> : (
+                <div className="net-actions">
+                    <Button onClick={() => setGlass(true)} data-testid="open-glass-to-glass">Glass-to-glass</Button>
+                </div>
+            )}
             <div className="net-tiles">
                 <Tile label="Throughput" value={mbpsNumber(summary.rateNow)} unit="Mbps" detail={<>1 min avg {mbpsNumber(summary.rateAverage)} · peak {mbpsNumber(summary.ratePeak)}</>} />
                 <Tile label="Latency" value={msNumber(summary.latencyNow)} unit="ms" detail={<>spike {msNumber(summary.latencyP95)} · max {msNumber(summary.latencyMax)}{slowest && <span title={`slowest camera, source to screen: ${spreadText(slowest.total)}`}> · video {Math.round(slowest.total.p50)} ms</span>}</>} />
