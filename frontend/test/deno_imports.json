@@ -1,13 +1,13 @@
 {
     "imports": {
-        "dimos-react": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.2.0-beta9/src/index.ts",
-        "dimos-react/three": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.2.0-beta9/src/three.ts",
+        "dimos-react": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.2.0-beta14/src/index.ts",
+        "dimos-react/three": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.2.0-beta14/src/three.ts",
         "react": "npm:react@19.3.0",
         "react/": "npm:/react@19.3.0/",
         "react-dom": "npm:react-dom@19.3.0",
         "react-dom/": "npm:/react-dom@19.3.0/",
         "three": "npm:three@0.180.0",
         "three/": "npm:/three@0.180.0/",
-        "dimos-react/dim-app/": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.2.0-beta9/src/vendor/dim-app/"
+        "dimos-react/dim-app/": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.2.0-beta14/src/vendor/dim-app/"
     }
 }
