@@ -878,3 +878,8 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .stacked-labels > .hidden { visibility: hidden; }
 .saved-pose.running { outline: 2px solid var(--fg); outline-offset: 1px; }
 .saved-poses { padding-top: 18px; }
+.view-row { display: flex; align-items: center; gap: 4px; }
+.view-row .quality-option { flex: 1; min-width: 0; padding: 10px 8px; }
+.view-row .quality-name { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.view-row .view-float.dr-btn--icon { width: 40px; height: 40px; flex: none; }
+.view-row .view-float[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }

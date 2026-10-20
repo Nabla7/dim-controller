@@ -15,14 +15,14 @@ import { arrange, clampFloat, FLOAT_MIN, movePanel, normalizeArrangement, homeOf
 import { DRAG_SLOP } from "./panelDrag.ts"
 import { startPointerDrag } from "./panelDrag.ts"
 
-const ACTION_ICONS: Record<PanelAction, (state: { collapsed: boolean; floating: boolean; zone: string; home: string }) => string> = {
+const ACTION_ICONS: Record<PanelAction, (state: { collapsed: boolean; floating: boolean; zone: string; home: string; mobile: boolean }) => string> = {
     collapse: ({ collapsed }) => collapsed ? "chevron-down" : "chevron-up",
     // make it the main view: a chevron toward the middle of the screen, where the main view is (a left rail's points
     // right); unlike fit / fill's frames, nothing here looks like a picture
     main: ({ zone }) => zone === "left" ? "chevron-right" : "chevron-left",
     // the main view back to its rail: a chevron toward that rail
     minimize: ({ home }) => home === "left" ? "chevron-left" : "chevron-right",
-    popout: ({ floating }) => floating ? "dock" : "float",
+    popout: ({ floating, mobile }) => mobile ? "close" : floating ? "dock" : "float",
 }
 
 /** how long a tap keeps a panel's in-panel buttons shown */
@@ -106,7 +106,7 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
                             aria-label={`${title}: ${state.label}`}
                             onClick={() => api.act(id, state.action)}
                         >
-                            <Icon name={ACTION_ICONS[state.action]({ collapsed: slot.collapsed, floating, zone: slot.zone, home: homeOf(id).side })} size={14} />
+                            <Icon name={ACTION_ICONS[state.action]({ collapsed: slot.collapsed, floating, zone: slot.zone, home: homeOf(id).side, mobile: api.mobile })} size={14} />
                         </Button>
                     ))}
                 </span>
@@ -115,7 +115,7 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
                 <div className="panel-tools panel-chrome">{tools}{headless && info !== undefined && <span className="panel-info">{info}</span>}</div>
             )}
             <div className={`panel-content ${bodyClassName}`} onClick={onBodyClick}>{children}</div>
-            {floating && !slot.collapsed && !api.mobile && (
+            {floating && !slot.collapsed && (
                 <div
                     className="panel-resize"
                     title="Drag to resize"

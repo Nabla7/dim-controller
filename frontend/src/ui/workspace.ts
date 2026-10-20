@@ -259,7 +259,7 @@ export function popOut(arrangement: Arrangement, id: string, layout: WorkspaceLa
 export function floatBoxFor(arrangement: Arrangement, id: string, layout: WorkspaceLayout): Rect {
     const remembered = arrangement.floatMemory[id]
     const size = remembered ?? { ...homeOf(id).float, x: 0, y: 0 }
-    const width = Math.min(Math.max(FLOAT_MIN.width, size.width), layout.area.width)
+    const width = Math.min(Math.max(FLOAT_MIN.width, size.width), layout.area.width - 16)
     const height = Math.min(Math.max(FLOAT_MIN.height, size.height), layout.area.height)
     if (remembered) {
         return clampFloat({ ...remembered, width, height }, layout.area)
@@ -373,14 +373,17 @@ export function layoutWorkspace(arrangement: Arrangement, frame: Frame, view: Vi
         if (arrangement.stage) {
             place(arrangement.stage, area, "stage")
         }
-        // a floating panel (from this viewer's desktop arrangement) goes into the left drawer
-        const members: Record<Side, string[]> = { left: [...arrangement.left, ...arrangement.floating.map((box) => box.id)], right: arrangement.right }
         for (const side of ["left", "right"] as const) {
             const shown = drawer && view.drawer === side
-            const rects = stack(arrangement, members[side], shown ? drawer : NOWHERE)
-            for (const id of members[side]) {
-                place(id, shown ? rects[id] : NOWHERE, arrangement.floating.some((box) => box.id === id) ? "float" : side, !shown)
+            const rects = stack(arrangement, arrangement[side], shown ? drawer : NOWHERE)
+            for (const id of arrangement[side]) {
+                place(id, shown ? rects[id] : NOWHERE, side, !shown)
             }
+        }
+        // floating panels float over the stage here too, never wider than the screen
+        for (const box of arrangement.floating) {
+            const clamped = clampFloat({ ...box, width: Math.min(box.width, width - 16) }, area)
+            place(box.id, { ...clamped, height: arrangement.collapsed.includes(box.id) ? PANEL_HEAD : clamped.height }, "float")
         }
         return { area, stage: area, rails: {}, drawer: drawer && round(drawer), slots }
     }

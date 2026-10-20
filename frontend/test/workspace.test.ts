@@ -241,9 +241,10 @@ Deno.test("phone: the main view fills the screen; a rail is a drawer, its panels
     const right = layoutWorkspace(arrangement, phone, { drawer: "right", hide: [] })
     assert(right.drawer && right.drawer.x + right.drawer.width === phone.width)
     assert(!right.slots.settings.hidden && right.slots.map.hidden)
-    // a floating panel (from this viewer's desktop arrangement) shows in the left drawer
-    const floated = movePanel(arrangement, "tf", { zone: "float", box: { x: 900, y: 200, width: 300, height: 300 } })
-    assert(!layoutWorkspace(floated, phone, { drawer: "left", hide: [] }).slots.tf.hidden)
+    // a floating panel floats over the main view with no drawer open, pulled onto the screen
+    const floated = movePanel(arrangement, "tf", { zone: "float", box: { x: 900, y: 200, width: 500, height: 300 } })
+    const tf = layoutWorkspace(floated, phone, shown).slots.tf
+    assert(tf.zone === "float" && !tf.hidden && tf.rect.width <= phone.width - 16 && tf.rect.x < phone.width - 100)
 })
 
 Deno.test("the arrangement survives a reload (this viewer's localStorage), a broken entry falls back to the default", () => {

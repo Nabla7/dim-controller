@@ -17,12 +17,12 @@ Deno.test("filter: every word must match (label, group, hint, keys, extra words)
     assertEquals(filterCommands(all, "  layout  ").map((c) => c.id), ["c"])
 })
 
-Deno.test("a panel's header actions, in a fixed order: collapse and make main view (not on the main view), pop out (not on a phone); never close", () => {
+Deno.test("a panel's header actions, in a fixed order: collapse and make main view (not on the main view), pop out (on a phone, only a floating panel's close)", () => {
     const arrangement = movePanel(defaultArrangement(IDS), "tf", { zone: "float", box: { x: 400, y: 200, width: 300, height: 300 } })
     const actions = (id: string, mobile = false) => panelActions(arrangement, id, { mobile }).map((state) => state.action)
     for (const id of ["map", "scene", "status", "settings", "tf"]) {
         assertEquals(actions(id), ["collapse", "main", "popout"], id)
-        assertEquals(actions(id, true), ["collapse", "main"], id)
+        assertEquals(actions(id, true), id === "tf" ? ["collapse", "main", "popout"] : ["collapse", "main"], id)
     }
     // the main view: nothing to collapse or swap
     assertEquals(actions("camera:1"), ["minimize", "popout"])

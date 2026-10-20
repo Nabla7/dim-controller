@@ -59,8 +59,11 @@ export function panelActions(arrangement: Arrangement, id: string, options: { mo
     } else if (arrangement.left.length + arrangement.right.length + arrangement.floating.length > 0) {
         states.push({ action: "minimize", label: "Back to its rail (the previous main view returns)" })
     }
+    // a phone floats panels from the panel list, so its only pop-out button is the floating panel's close
     if (!options.mobile) {
         states.push({ action: "popout", label: zone === "float" ? "Dock into the nearest rail" : "Pop out: float over the main view" })
+    } else if (zone === "float") {
+        states.push({ action: "popout", label: "Close" })
     }
     return states
 }

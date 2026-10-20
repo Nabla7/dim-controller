@@ -76,7 +76,7 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
     const normalized = (change: (current: Arrangement) => Arrangement) => arrange((current) => change(normalizeArrangement(current, ids)))
     const reveal = (id: string, next: Arrangement) => {
         const zone = locate(next, id)?.zone
-        const side: Side | null = zone === "left" || zone === "right" ? zone : zone === "float" && mobile ? "left" : null
+        const side: Side | null = zone === "left" || zone === "right" ? zone : null
         const current = workspaceView.get()
         if (mobile) {
             workspaceView.set({ ...current, drawer: side })
@@ -105,15 +105,16 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
             }
         } else if (action === "minimize") {
             normalized((arrangement) => minimizeStage(arrangement))
-        } else if (!mobile) {
+        } else {
             normalized((arrangement) => popOut(arrangement, id, layoutWorkspace(arrangement, frame, workspaceView.get())))
         }
     }
     const startDrag = (id: string, event: ReactPointerEvent, element: HTMLElement) => {
-        if (mobile || event.button !== 0) {
+        const current = normalizeArrangement(workspace.get().arrangement, ids)
+        // a phone has no rails to drop into: only a floating panel moves, and it stays floating
+        if (event.button !== 0 || mobile && !current.floating.some((box) => box.id === id)) {
             return
         }
-        const current = normalizeArrangement(workspace.get().arrangement, ids)
         const currentView = workspaceView.get()
         const here = layoutWorkspace(current, frame, currentView)
         const rect = here.slots[id]?.rect
@@ -126,7 +127,7 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
         startHeaderDrag(event, element, {
             size,
             grab,
-            target: (pointer, box) => dropTarget(current, frame, currentView, id, pointer, box),
+            target: (pointer, box) => mobile ? { zone: "float", box: clampFloat(box, here.area), preview: clampFloat(box, here.area) } : dropTarget(current, frame, currentView, id, pointer, box),
             preview: (target) => dragPreview.set({ target, stage: target && current.stage !== id ? stageTarget(here.stage) : null }),
             drop: (target) => {
                 normalized((arrangement) => movePanel(arrangement, id, target))
