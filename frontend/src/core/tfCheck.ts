@@ -120,3 +120,24 @@ export function confirmed(previous: TfIssue[], next: TfIssue[]): TfIssue[] {
     const seen = new Set(previous.map(keyOf))
     return next.filter((issue) => seen.has(keyOf(issue)))
 }
+
+/**
+ * The fixed frame to draw in: the one picked (TF panel), else the profile's, else the tree's default. A picked frame
+ * TF doesn't have (yet) would hide everything, so the view draws in the default meanwhile and `missing` names it.
+ */
+export function fixedFrameInUse(picked: string, profileFrame: string, has: (frame: string) => boolean, fallback: () => string): { frame: string; missing: string | null } {
+    if (picked && has(picked)) {
+        return { frame: picked, missing: null }
+    }
+    return { frame: profileFrame || fallback(), missing: picked || null }
+}
+
+/** The issue a missing picked fixed frame raises (drawn in `inUse` meanwhile). */
+export function missingFixedFrameIssue(picked: string, inUse: string): TfIssue {
+    return {
+        kind: "fixedFrame",
+        summary: `fixed frame "${picked}" isn't in the tree`,
+        detail: `nothing in tf is called "${picked}", so the view draws in "${inUse}" until it shows up: pick another fixed frame (or auto) in the TF panel`,
+        frames: [],
+    }
+}

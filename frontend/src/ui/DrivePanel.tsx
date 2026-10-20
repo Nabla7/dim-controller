@@ -16,7 +16,8 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
     return (
         <div className="drive-panel">
             <Field
-                inline
+                inline={!settings.topics?.length}
+                className={settings.topics?.length ? "drive-topics-field editing" : "drive-topics-field"}
                 label="Topics"
                 title="Auto: each running blueprint's cmd_vel entry point (one per module that takes velocity commands, never a mux's own output), else /cmd_vel and /tele_cmd_vel. One topic per line; add TwistStamped after a name for a stamped one."
             >
@@ -70,6 +71,8 @@ function TopicsEditor({ topics, onChange }: { topics: string[]; onChange: (topic
     return (
         <TextArea
             data-testid="drive-topics"
+            className="drive-topics"
+            mono
             rows={Math.max(2, topics.length + 1)}
             value={text}
             onChange={setText}

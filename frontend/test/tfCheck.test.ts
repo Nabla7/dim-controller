@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1"
 import { TfTree } from "dimos-react/three"
-import { checkTf, confirmed, type TfIssue } from "../src/core/tfCheck.ts"
+import { checkTf, confirmed, fixedFrameInUse, missingFixedFrameIssue, type TfIssue } from "../src/core/tfCheck.ts"
 
 const none: [number, number, number, number] = [0, 0, 0, 1]
 
@@ -81,4 +81,12 @@ Deno.test("a problem shows only once two checks in a row see it", () => {
     const second = check(tree, "world")
     assertEquals(confirmed(first, second).length, 1)
     assertEquals(confirmed(second, check(go2(), "world")), [])
+})
+
+Deno.test("a picked fixed frame tf doesn't have falls back to the default instead of hiding everything", () => {
+    const has = (frame: string) => ["world", "odom", "base_link"].includes(frame)
+    assertEquals(fixedFrameInUse("front_camera", "", has, () => "world"), { frame: "world", missing: "front_camera" })
+    assertEquals(fixedFrameInUse("odom", "", has, () => "world"), { frame: "odom", missing: null })
+    assertEquals(fixedFrameInUse("", "map", has, () => "world"), { frame: "map", missing: null })
+    assertEquals(missingFixedFrameIssue("front_camera", "world").kind, "fixedFrame")
 })

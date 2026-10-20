@@ -11,6 +11,33 @@ import { Icon } from "./icons.tsx"
 import { NetworkPanel } from "./NetworkPanel.tsx"
 import { gamepadStatus } from "./useGamepad.ts"
 import type { WorkspaceApi } from "./Workspace.tsx"
+import { batteryChip, batteryReadings } from "../core/batteryFeed.ts"
+
+/** The robot's battery (every BatteryState topic; core/batteryFeed.ts), Go2-app style: the outline filled to the charge, a bolt while charging. */
+function BatteryChip() {
+    const { readings } = useStore(batteryReadings)
+    const [now, setNow] = useState(() => Date.now())
+    useEffect(() => {
+        const timer = setInterval(() => setNow(Date.now()), 1000)
+        return () => clearInterval(timer)
+    }, [])
+    const chip = batteryChip(readings, now)
+    if (!chip) {
+        return null
+    }
+    const fill = chip.percent === null ? 0 : (Math.max(chip.percent, 4) / 100) * 15
+    return (
+        <span className={`bar-chip bar-battery battery-${chip.tone}`} title={chip.detail} data-testid="bar-battery" aria-label={`Battery ${chip.text}${chip.charging ? ", charging" : ""}`}>
+            <svg className="battery-icon" width="24" height="13" viewBox="0 0 24 13" aria-hidden="true">
+                <rect x="0.75" y="0.75" width="19.5" height="11.5" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                <rect x="21" y="4" width="2.25" height="5" rx="1" fill="currentColor" />
+                <rect className="battery-fill" x="3" y="3" width={fill} height="7" rx="1" />
+                {chip.charging && <path className="battery-bolt" d="M11.5 1.5 7.5 7h3l-1 4.5 4-5.5h-3z" />}
+            </svg>
+            <span className="bar-value">{chip.text}</span>
+        </span>
+    )
+}
 
 /** The link's throughput and latency averaged over a few seconds and redrawn once a second, so the chip is readable; driving's latency gate still uses the raw round trip. */
 function useSmoothedLink(app: ViewerApp): { rate: number | null; latency: number | null } {
@@ -71,6 +98,7 @@ export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
                     <span className="bar-value">splats → cubes</span>
                 </button>
             )}
+            <BatteryChip />
             {pad && (
                 <span className={`bar-chip tone-${pad.tone} bar-gamepad`} title={`Gamepad · ${pad.detail}`} data-testid="bar-gamepad">
                     <Icon name="gamepad" size={14} />

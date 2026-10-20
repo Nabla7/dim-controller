@@ -6,7 +6,7 @@ import { zenohKey } from "./cmdvel.ts"
 import { TfTree } from "dimos-react/three"
 import { feedTf } from "./tfFeed.ts"
 import { TfHistory } from "./tfHistory.ts"
-import { checkTf, confirmed, type TfIssue } from "./tfCheck.ts"
+import { checkTf, confirmed, fixedFrameInUse, missingFixedFrameIssue, type TfIssue } from "./tfCheck.ts"
 import { feedBattery } from "./batteryFeed.ts"
 import { Viewer } from "dimos-react/three"
 import { watchSplatBudget } from "./render/rendering.ts"
@@ -96,6 +96,8 @@ export class ViewerApp {
     #followPosition: THREE.Vector3 | null = null
     /** the followed frame's heading, low-passed, that the camera turns with (core/followHeading.ts) */
     #chase = new ChaseHeading()
+    /** the picked fixed frame while TF doesn't have it (the view draws in the default meanwhile) */
+    #missingFixedFrame: string | null = null
     #lastFrameAt = 0
     /** Desktop's robots (robots.json types, its default robot); null until it answers, or without Desktop */
     #robots: RobotsAnswer | null = null
@@ -243,8 +245,8 @@ export class ViewerApp {
             // a frame on the robot as the fixed frame tilts and turns the whole world with it: follow it instead
             this.settings.update({ fixedFrame: "", followFrame: picked, follow: true })
         }
-        const chosen = this.settings.get().fixedFrame || this.profile.fixedFrame
-        const fixedFrame = chosen || this.tf.defaultFixedFrame()
+        const { frame: fixedFrame, missing } = fixedFrameInUse(this.settings.get().fixedFrame, this.profile.fixedFrame, (frame) => this.tf.has(frame), () => this.tf.defaultFixedFrame())
+        this.#missingFixedFrame = missing
         if (fixedFrame !== this.viewer.fixedFrame) {
             this.viewer.fixedFrame = fixedFrame
             this.viewer.requestRender()
@@ -315,6 +317,9 @@ export class ViewerApp {
             layers: this.layers.entries.get().list.filter((entry) => entry.enabled && entry.status.frame).map((entry) => ({ name: entry.topic.name, frame: entry.status.frame! })),
             placed: (frame) => this.tf.lookup(frame, fixedFrame) !== null,
         })
+        if (this.#missingFixedFrame && this.tf.frames().length) {
+            next.unshift(missingFixedFrameIssue(this.#missingFixedFrame, fixedFrame))
+        }
         const issues = confirmed(this.#tfSeen, next)
         this.#tfSeen = next
         if (JSON.stringify(issues) !== JSON.stringify(this.tfIssues.get().issues)) {

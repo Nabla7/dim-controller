@@ -5,7 +5,7 @@ import { useStore } from "../core/store.ts"
 import { profiles } from "../profile/index.ts"
 import { RobotIcon } from "./RobotIcon.tsx"
 import { armShading } from "./armShading.ts"
-import { Field, Heading, NumberInput, Segmented, Select, Slider, Toggle } from "dimos-react"
+import { Field, Heading, NumberInput, Select, Slider, Toggle } from "dimos-react"
 import { gamepadSettings } from "../core/gamepad.ts"
 import { JOY_HZ, JOY_TOPIC, JOY_TYPE, joySettings } from "../core/joy.ts"
 import { maxLatencyOf } from "../core/linkWatch.ts"
@@ -75,12 +75,12 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                 <p className="hint">The default for every point cloud; a layer can pick its own in its settings.</p>
             </div>
             <Field inline label="Cube shading" title={CUBE_SHADES[render.cubeShade]?.about}>
-                <Segmented
+                <Select
                     data-cube-shade
-                    size="sm"
+                    aria-label="Cube shading"
                     value={render.cubeShade}
-                    items={(Object.keys(CUBE_SHADES) as CubeShade[]).map((shade) => ({ value: shade, label: CUBE_SHADES[shade].label }))}
-                    onChange={(cubeShade: CubeShade) => rendering.update({ cubeShade })}
+                    options={(Object.keys(CUBE_SHADES) as CubeShade[]).map((shade) => [shade, CUBE_SHADES[shade].label] as [string, string])}
+                    onChange={(cubeShade: string) => rendering.update({ cubeShade: cubeShade as CubeShade })}
                 />
             </Field>
             <Field inline label="Robot model" title="the robot's URDF when it publishes one, else a box at its pose (an arm is drawn by its TF frames)"><Toggle value={view.robotModel !== false} onChange={(robotModel: any) => app.settings.update({ robotModel })} /></Field>
