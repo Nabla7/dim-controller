@@ -5,13 +5,15 @@
         nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
         rust-overlay.url = "github:oxalica/rust-overlay";
         rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
+        # deps build once into their own derivation (keyed on Cargo.toml / Cargo.lock), so a commit that only edits our code rebuilds just our crate
+        crane.url = "github:ipetkov/crane";
     };
     nixConfig = {
         extra-substituters = [ "https://dimos-desktop.cachix.org" ];
         extra-trusted-public-keys = [ "dimos-desktop.cachix.org-1:A4P35aGJGmCan92LWyamtSFXMqaVE+VRFYnrJ8QMTeQ=" ];
     };
 
-    outputs = { self, nixpkgs, rust-overlay }:
+    outputs = { self, nixpkgs, rust-overlay, crane }:
         let
             systems = [ "aarch64-darwin" "x86_64-darwin" "x86_64-linux" "aarch64-linux" ];
             forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f (import nixpkgs { inherit system; overlays = [ (import rust-overlay) ]; }));
@@ -19,7 +21,6 @@
             packages = forAllSystems (pkgs:
                 let
                     rust = pkgs.rust-bin.stable.latest.default;
-                    rustPlatform = pkgs.makeRustPlatform { cargo = rust; rustc = rust; };
 
                     # the page: React + Vite (type-checked first), from package-lock.json
                     frontend = pkgs.buildNpmPackage {
@@ -36,13 +37,32 @@
 
                     # the backend: serves the page and records topics to mcap (independent of the page, so a page
                     # change doesn't rebuild it)
-                    server = rustPlatform.buildRustPackage {
+                    # crane: buildDepsOnly compiles every dependency against a dummy of our crate (so its hash only moves with Cargo.toml / Cargo.lock), buildPackage starts from that target dir
+                    rustBuild = { craneLib, pname, cargoExtraArgs, extra ? { }, install ? { } }:
+                        let
+                            common = {
+                                inherit pname cargoExtraArgs;
+                                version = "0.1.0";
+                                src = ./server;
+                                # the tests open zenoh sessions on loopback; `cargo test` runs them in development
+                                doCheck = false;
+                                strictDeps = true;
+                            } // extra;
+                            cargoArtifacts = craneLib.buildDepsOnly (common // {
+                                # only the build's artifacts are reused; a `cargo check` pass would be a second compile nobody reads
+                                cargoCheckCommand = "true";
+                            });
+                        in
+                        craneLib.buildPackage (common // {
+                            inherit cargoArtifacts;
+                            # nothing builds on this target dir, so don't archive it into $out
+                            doInstallCargoArtifacts = false;
+                        } // install);
+
+                    server = rustBuild {
+                        craneLib = (crane.mkLib pkgs).overrideToolchain (_: rust);
                         pname = "dim-controller-server";
-                        version = "0.1.0";
-                        src = ./server;
-                        cargoLock.lockFile = ./server/Cargo.lock;
-                        # the tests open zenoh sessions on loopback; `cargo test` runs them in development
-                        doCheck = false;
+                        cargoExtraArgs = "--locked";
                     };
 
                     # <arch> Linux from any machine: a static musl binary linked by zig, so no Linux builder or cross gcc
@@ -51,20 +71,22 @@
                             target = "${arch}-unknown-linux-musl";
                             rustCross = rust.override { targets = [ target ]; };
                         in
-                        (pkgs.makeRustPlatform { cargo = rustCross; rustc = rustCross; }).buildRustPackage {
+                        rustBuild {
+                            craneLib = (crane.mkLib pkgs).overrideToolchain (_: rustCross);
                             pname = "dim-controller-server-${arch}-linux";
-                            version = "0.1.0";
-                            src = ./server;
-                            cargoLock.lockFile = ./server/Cargo.lock;
-                            nativeBuildInputs = [ pkgs.cargo-zigbuild pkgs.zig ];
-                            # cargo-auditable's -Wl,--undefined is a flag zig's linker rejects
-                            auditable = false;
-                            buildPhase = ''
-                                export HOME=$TMPDIR ZIG_GLOBAL_CACHE_DIR=$TMPDIR/zig
-                                cargo zigbuild --release --offline --target ${target} -p dimos-app-server
-                            '';
-                            doCheck = false;
-                            installPhase = "install -Dm755 target/${target}/release/dimos-app-server $out/bin/dimos-app-server";
+                            cargoExtraArgs = "--locked -p dimos-app-server --target ${target}";
+                            extra = {
+                                nativeBuildInputs = [ pkgs.cargo-zigbuild pkgs.zig ];
+                                cargoBuildCommand = "cargo zigbuild --profile release";
+                                # zigbuild's cc / linker wrappers go in a path that is the same in every build (cargo fingerprints the linker, so a per-build path rebuilt all the deps); /private/tmp is in darwin's sandbox-paths, and Linux's sandboxed build dir is always /build
+                                preBuild = ''
+                                    export HOME=$TMPDIR ZIG_GLOBAL_CACHE_DIR=$TMPDIR/zig
+                                    export CARGO_ZIGBUILD_CACHE_DIR=${if pkgs.stdenv.hostPlatform.isDarwin then "/private/tmp/dim-controller-zigbuild" else "$TMPDIR/zigbuild"}
+                                '';
+                            };
+                            install = {
+                                installPhaseCommand = "install -Dm755 target/${target}/release/dimos-app-server $out/bin/dimos-app-server";
+                            };
                         };
                     # the same wrapper as dimosApp, but its shell is the target's (a cache.nixos.org download); the frontend is plain JS
                     linuxApp = arch:
