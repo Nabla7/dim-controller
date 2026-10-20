@@ -131,7 +131,8 @@ export class AgentLink {
             fetch(this.#url(`api/pages/${pageId}`), {
                 method: "POST",
                 headers: { "content-type": "application/json" },
-                body: JSON.stringify({ visible: document.visibilityState === "visible", active }),
+                // remote debugging on for every page for now (api/debug/eval): its browser tells a phone from a laptop
+                body: JSON.stringify({ visible: document.visibilityState === "visible", active, debug: true, agent: navigator.userAgent }),
             }).catch(() => {})
         }
         addEventListener("pointerdown", () => report(true))
@@ -213,11 +214,35 @@ export class AgentLink {
     async #answer(request: string, kind: string, args: unknown) {
         let body: unknown
         try {
-            body = kind === "view" ? await this.view() : kind === "locate" ? await this.locate(args as { bbox: Bbox }) : { error: `unknown capture ${kind}` }
+            body = kind === "view" ? await this.view() : kind === "locate" ? await this.locate(args as { bbox: Bbox }) : kind === "eval" ? { result: await this.#evaluate((args as { code: string }).code) } : { error: `unknown capture ${kind}` }
         } catch (error) {
             body = { error: String(error instanceof Error ? error.message : error) }
         }
         await fetch(this.#url(`api/captures/${request}`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => {})
+    }
+
+    /** Remote debugging (api/debug/eval): `code` is an async function body with `app` and `z` (the gateway client) in
+     * scope; its return value comes back as JSON (functions, cycles and big values cut down). */
+    async #evaluate(code: string): Promise<unknown> {
+        const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor
+        const value = await new AsyncFunction("app", "z", code)(this.app, this.app.connection.client)
+        const seen = new WeakSet()
+        const text = JSON.stringify(value, (_key, item) => {
+            if (typeof item === "function") {
+                return `[function ${item.name}]`
+            }
+            if (typeof item === "bigint") {
+                return String(item)
+            }
+            if (item && typeof item === "object") {
+                if (seen.has(item)) {
+                    return "[cycle]"
+                }
+                seen.add(item)
+            }
+            return item
+        }) ?? "null"
+        return JSON.parse(text.length > 200_000 ? JSON.stringify(text.slice(0, 200_000) + "…") : text)
     }
 
     // ---- the robot camera, its CameraInfo, the lidar ----
