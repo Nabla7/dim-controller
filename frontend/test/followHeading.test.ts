@@ -49,21 +49,43 @@ Deno.test("a frame looking straight down has no heading", () => {
     assertEquals(headingOf(bodyPose(deg(30), deg(90)), "camera_link"), null)
 })
 
-Deno.test("the chase heading starts without a turn, then glides to the frame's heading smoothly, across ±180°", () => {
+/** total turn over `seconds` of 60 Hz frames holding `heading`, and each frame's turn */
+function hold(chase: ChaseHeading, heading: number, seconds: number) {
+    const turns: number[] = []
+    for (let frame = 0; frame < seconds * 60; frame++) {
+        turns.push(chase.step(heading, 1 / 60))
+    }
+    return { turned: turns.reduce((sum, turn) => sum + turn, 0), turns }
+}
+
+Deno.test("the chase heading starts without a turn, then glides to a held turn smoothly, across ±180°", () => {
     const chase = new ChaseHeading()
     assertEquals(chase.step(deg(170), 1 / 60), 0)
-    let turned = 0
-    const turns: number[] = []
-    // the frame jumps to -170° (20° counterclockwise across the wrap), TF at ~15 Hz, frames at 60
-    for (let frame = 0; frame < 120; frame++) {
-        const turn = chase.step(deg(-170), 1 / 60)
-        turns.push(turn)
-        turned += turn
-    }
+    // the frame turns to -170° (20° counterclockwise across the wrap) and stays
+    const { turned, turns } = hold(chase, deg(-170), 4)
     assertAlmostEquals(turned, deg(20), deg(0.1))
-    assert(turns.every((turn) => turn >= 0 && turn < deg(2)), "small, steady steps the short way round")
-    assert(turns.slice(1).every((turn, i) => turn <= turns[i] + 1e-12), "easing out")
+    assert(turns.every((turn) => turn >= 0 && turn < deg(1)), "small, steady steps the short way round, no overshoot")
+    const peak = turns.indexOf(Math.max(...turns))
+    assert(peak > 0 && peak < turns.length - 1, "eases in and out")
     assertEquals(chase.step(null, 1 / 60), 0)
+})
+
+Deno.test("gait sway inside the deadband doesn't turn the camera", () => {
+    const chase = new ChaseHeading()
+    chase.step(0, 1 / 60)
+    let turned = 0
+    for (let frame = 0; frame < 300; frame++) {
+        turned += Math.abs(chase.step(deg(8) * Math.sin(frame / 10), 1 / 60))
+    }
+    assertEquals(turned, 0)
+})
+
+Deno.test("a brief wobble out and back is debounced; a big turn is followed at once", () => {
+    const chase = new ChaseHeading()
+    chase.step(0, 1 / 60)
+    assertEquals(hold(chase, deg(30), 0.2).turned, 0)
+    assertEquals(hold(chase, 0, 1).turned, 0)
+    assert(hold(chase, deg(90), 0.1).turned > 0)
 })
 
 Deno.test("turning keeps the camera's height and distance: the view stays level", () => {

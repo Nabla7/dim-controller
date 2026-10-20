@@ -4,8 +4,17 @@ import * as THREE from "three"
 
 /** a frame that looks straight up or down this nearly (its forward axis' share on the ground) has no heading to follow */
 const MIN_GROUND_SHARE = 0.1
-/** how quickly the camera catches up with a turn, seconds (a low-pass: TF arrives at 10-20 Hz, frames at 60-120) */
-const TURN_SECONDS = 0.2
+/** the chase spring's smoothing time, seconds: a critically damped spring, so turns ease in and out with no overshoot */
+const SMOOTH_SECONDS = 0.6
+/** a heading this far (radians) from where the camera points is a turn worth following; less is gait sway and TF noise */
+const DEADBAND = THREE.MathUtils.degToRad(12)
+/** ...once it's held that far off this long, seconds (a debounce: a wobble out and back doesn't move the camera) */
+const DEBOUNCE_SECONDS = 0.35
+/** a heading this far off is followed at once, no debounce */
+const FOLLOW_NOW = THREE.MathUtils.degToRad(45)
+/** the chase ends when the camera's within this of the heading and has stopped turning (radians, radians/second) */
+const SETTLED = THREE.MathUtils.degToRad(1)
+const SETTLED_RATE = THREE.MathUtils.degToRad(2)
 /** a gap this long (seconds) is a fresh start: no gliding there */
 const SNAP_GAP_SECONDS = 1
 
@@ -36,33 +45,71 @@ export function wrapAngle(angle: number): number {
 }
 
 /**
- * The followed frame's heading, low-passed between TF updates; `step()` says how far to turn the camera this frame.
- * The first heading after a `reset()` turns nothing (the view keeps its angle and follows the turns from there).
+ * Where the camera turns to, chasing the followed frame's heading; `step()` says how far to turn the camera this frame.
+ * Small or brief turns (gait sway, a wobble out and back) are ignored; a held turn is chased by a critically damped
+ * spring until the camera settles on it. The first heading after a `reset()` turns nothing (the view keeps its angle
+ * and follows the turns from there).
  */
 export class ChaseHeading {
-    #smoothed: number | null = null
+    /** the heading the camera points along now */
+    #camera: number | null = null
+    /** where the spring is pulling the camera */
+    #target = 0
+    /** the camera's turn rate, radians/second */
+    #rate = 0
+    #chasing = false
+    /** how long the heading has been past the deadband without a chase, seconds */
+    #offFor = 0
 
     /** this frame's turn (radians about z) for the frame's latest heading; null heading (looking up or down): no turn */
     step(heading: number | null, dtSeconds: number): number {
         if (heading === null) {
             return 0
         }
-        if (this.#smoothed === null || dtSeconds > SNAP_GAP_SECONDS) {
-            this.#smoothed = heading
+        const dt = Math.max(dtSeconds, 0)
+        if (this.#camera === null || dt > SNAP_GAP_SECONDS) {
+            this.#camera = this.#target = heading
+            this.#rate = 0
+            this.#chasing = false
+            this.#offFor = 0
             return 0
         }
-        const turn = wrapAngle(heading - this.#smoothed) * (1 - Math.exp(-Math.max(dtSeconds, 0) / TURN_SECONDS))
-        this.#smoothed = wrapAngle(this.#smoothed + turn)
+        const off = Math.abs(wrapAngle(heading - this.#camera))
+        if (!this.#chasing) {
+            this.#offFor = off > DEADBAND ? this.#offFor + dt : 0
+            this.#chasing = off > FOLLOW_NOW || this.#offFor >= DEBOUNCE_SECONDS
+        }
+        if (this.#chasing) {
+            this.#target = heading
+            this.#offFor = 0
+        }
+        const turn = this.#spring(dt)
+        if (this.#chasing && off < SETTLED && Math.abs(this.#rate) < SETTLED_RATE) {
+            this.#chasing = false
+        }
+        return turn
+    }
+
+    /** One step of a critically damped spring from the camera to the target (Game Programming Gems 4, 1.10). */
+    #spring(dt: number): number {
+        const omega = 2 / SMOOTH_SECONDS
+        const x = omega * dt
+        const decay = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x)
+        const error = wrapAngle(this.#camera! - this.#target)
+        const pull = (this.#rate + omega * error) * dt
+        this.#rate = (this.#rate - omega * pull) * decay
+        const turn = wrapAngle(this.#target + (error + pull) * decay - this.#camera!)
+        this.#camera = wrapAngle(this.#camera! + turn)
         return turn
     }
 
     /** the heading the camera is turned to now, or null before one */
     get heading(): number | null {
-        return this.#smoothed
+        return this.#camera
     }
 
     reset() {
-        this.#smoothed = null
+        this.#camera = null
     }
 }
 
