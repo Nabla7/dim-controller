@@ -23,7 +23,8 @@ function fakeBridge() {
             }
         },
     }
-    return { connection: { client } as unknown as Connection, puts, opened }
+    const commanded: string[] = []
+    return { connection: { client, command: (key: string) => commanded.push(key) } as unknown as Connection, puts, opened, commanded }
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))

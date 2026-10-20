@@ -24,7 +24,6 @@ import { createHoldZoom, HOLD_ZOOM } from "../core/holdZoom.ts"
 import { createTripleTap, zoomDebug } from "../core/zoomDebug.ts"
 import { presetFor, QUALITY_PRESETS, readLocal, type VideoQuality, writeLocal } from "../core/videoQuality.ts"
 import { panelTitle } from "./commands.ts"
-import { TAKE_BACK_TEXT, TAKEN_OVER_TEXT } from "./barStatus.ts"
 import { bandwidthOverrides, setOverride } from "../core/bandwidth.ts"
 import { cameraId, isCamera, workspace } from "./workspace.ts"
 import type { CameraActions } from "./useCommands.ts"
@@ -170,7 +169,6 @@ function CameraPanel({ app, panel, topics, onChange }: {
     // a phone's main view picks its camera from the top bar's view switch (ui/PhoneCorners.tsx)
     const switched = api.mobile && slot?.zone === "stage"
     const { hidden: pageHidden } = useStore(pageVisibility)
-    const takenOver = useStore(app.connection.lease.state).status === "takenOver"
     const overrides = useStore(bandwidthOverrides)
     // paused in Network → Bandwidth Consumers: no subscription, so say so instead of looking stalled
     const paused = !!topic && !!overrides[topic.key]?.paused
@@ -399,19 +397,13 @@ function CameraPanel({ app, panel, topics, onChange }: {
             {depth && depthError && <Unavailable what="Depth view" reason={depthError} />}
             {depth ? <div ref={depthHost} className="camera-media depth-host" style={zoom.style} {...zoom.handlers} /> : <video ref={video} className="camera-media" style={zoom.style} {...zoom.handlers} muted playsInline autoPlay disablePictureInPicture disableRemotePlayback />}
             <canvas ref={overlayCanvas} className="camera-overlay" style={zoom.style} />
-            {topic && takenOver && (
-                <div className="camera-takeover" data-testid="camera-takeover">
-                    <span>{TAKEN_OVER_TEXT}</span>
-                    <Button variant="primary" onClick={() => void app.connection.takeBack()}>{TAKE_BACK_TEXT}</Button>
-                </div>
-            )}
-            {topic && paused && !takenOver && (
+            {topic && paused && (
                 <div className="camera-takeover" data-testid="camera-paused">
                     <span>Paused in Network</span>
                     <Button variant="primary" onClick={() => setOverride(topic.key, { paused: undefined })}>Resume</Button>
                 </div>
             )}
-            {topic && open && stalled && !takenOver && !paused && <div className="camera-stalled" data-testid="camera-stalled">slow / stopped link</div>}
+            {topic && open && stalled && !paused && <div className="camera-stalled" data-testid="camera-stalled">slow / stopped link</div>}
             {!topic && <div className="camera-placeholder"><Icon name="camera" size={28} /><span>{!tabs.length ? "No camera on the bus yet" : switched ? "Pick a camera from the view switch (top bar)" : "Pick a camera from this panel's topic tabs (shown on hover) or the palette (/)"}</span></div>}
         </Panel>
     )

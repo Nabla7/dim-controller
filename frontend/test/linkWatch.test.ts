@@ -40,7 +40,7 @@ Deno.test("held: a stop goes out, input is ignored and nothing moves; after resu
         state: "connected",
         publisher: () => ({ state: "open", put: (bytes: Uint8Array) => puts.push(decode("geometry_msgs.Twist", bytes)), setDeadman: () => Promise.resolve(), clearDeadman: () => Promise.resolve(), close() {} }),
     }
-    const drive = new Drive({ client } as unknown as Connection, go2)
+    const drive = new Drive({ client, command() {} } as unknown as Connection, go2)
     drive.setRunning({ bp: [{ streams: [{ name: "cmd_vel", type: "dimos.msgs.geometry_msgs.Twist.Twist", direction: "in" }] }] })
     drive.setAxes("keys", { forward: 1 })
     await new Promise((resolve) => setTimeout(resolve, 100))

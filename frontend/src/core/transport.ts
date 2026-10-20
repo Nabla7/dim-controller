@@ -5,7 +5,7 @@ import { connect, type Message, type VideoLatency, Priority, type Publisher, typ
 import { getZenoh } from "dimos-react/dim-app/zenoh.js"
 import { Store } from "./store.ts"
 import { NetHistory, wireCounts, type WireCounts } from "./netHistory.ts"
-import { isLeasedKey, isLeaseRejection, LeaseKeeper, type LeaseClient } from "./lease.ts"
+import { LeaseKeeper, type LeaseClient } from "./lease.ts"
 import { applyOverride, bandwidthOverrides, defaultBandwidthPriority, isVideoOptions, optionDiff, type StreamOverride, withChanges } from "./bandwidth.ts"
 
 export { Priority }
@@ -109,6 +109,9 @@ export interface Consumer {
     video: boolean
 }
 
+/** every how many 1 s stats ticks a subscription refused for another client's lease is asked again */
+const LEASE_RETRY_TICKS = 3
+
 export class Connection {
     client: ZenohGateway | null = null
     readonly status = new Store<ConnectionState>({ state: "connecting", topics: [], droppedPerSecond: 0, rttMs: null, throughputBytesPerSec: null, error: null })
@@ -120,12 +123,8 @@ export class Connection {
     #reconnecting: Promise<void> | null = null
     /** the last few minutes of throughput, latency and each stream's rate (the Network panel), sampled from start */
     readonly network = new NetHistory()
-    /** the page's lease on the cameras, point clouds and drive topics (core/lease.ts) */
-    readonly lease = new LeaseKeeper(() => this.#leaseRejection())
-    /** leased subscriptions wait for the first lease attempt (a page without the lease is refused there) */
-    #leaseTried = false
-    /** while taking control back, our old rejected subscriptions don't mean a new takeover */
-    #takingBack = false
+    /** the page's lease on the keys it sends commands on (core/lease.ts); watching needs none */
+    readonly lease = new LeaseKeeper()
     /** topic key → the page's subscriptions on it (core/bandwidth.ts's overrides apply under each) */
     readonly consumers = new Store<Record<string, Consumer>>({})
     /** topic key → messages the gateway dropped for the link in the last second (queue full, too old, part-sent), and since subscribing */
@@ -166,37 +165,31 @@ export class Connection {
         }
     }
 
-    /** The client a subscription on `key` may open on now: connected, and for a leased key once the lease was tried. */
-    #openable(key: string): ZenohGateway | null {
-        return this.client && (this.#leaseTried || !isLeasedKey(key)) ? this.client : null
+    /** The client a subscription may open on now: once connected. */
+    #openable(): ZenohGateway | null {
+        return this.client
+    }
+
+    /** A command is about to go out on `key` (drive, Joy, controls, arm, clicked point): the drive lease covers it. */
+    command(key: string) {
+        this.lease.command(this.client as unknown as LeaseClient | null, key)
     }
 
     async start() {
         const client = (await this.#shared.ready).client as unknown as ZenohGateway
         this.client = client
         this.status.update({ state: "connected", error: null })
-        client.onState((state) => {
-            this.status.update({ state })
-            if (state === "connected") {
-                this.lease.onConnected(client as unknown as LeaseClient)
-            }
-        })
+        client.onState((state) => this.status.update({ state }))
         for (const subscription of this.#subscriptions) {
-            if (!isLeasedKey(subscription.key)) {
-                subscription.open(client)
-            }
-        }
-        // the lease before the cameras and clouds: a newer viewer's lease would refuse them
-        await this.lease.take(client as unknown as LeaseClient)
-        this.#leaseTried = true
-        for (const subscription of this.#subscriptions) {
-            if (isLeasedKey(subscription.key)) {
-                subscription.open(client)
-            }
+            subscription.open(client)
         }
         this.#refreshConsumers()
         let lastWire: { bytes: number; at: number } | null = null
+        let tick = 0
         setInterval(async () => {
+            if (++tick % LEASE_RETRY_TICKS === 0) {
+                this.#retryLeaseRefused(client)
+            }
             const dropped = Object.values(client.stats).reduce((sum, stats) => sum + (stats.dropped || 0), 0)
             // the gateway counts payload before it is compressed and framed, so the wire is the true rate
             const counts = await peerCounts((client as unknown as { _peer?: RTCPeerConnection | null })._peer).catch(() => null)
@@ -263,7 +256,7 @@ export class Connection {
             client._peer?.close()
             try {
                 await client._open()
-                this.lease.sessionReplaced(client as unknown as LeaseClient)
+                this.lease.sessionReplaced()
             } finally {
                 this.#lastRtt = { value: client.rttMs ?? null, at: performance.now() }
                 this.status.update({ state: client.state, rttMs: client.rttMs ?? null })
@@ -283,9 +276,9 @@ export class Connection {
         if (tier !== undefined) {
             options = { ...options, bandwidthPriority: tier }
         }
-        const subscription: LiveSubscription = new LiveSubscription(key, options, onMessage, (reason) => this.#rejected(subscription, reason), () => this.#openable(key), bandwidthOverrides.get()[key])
+        const subscription: LiveSubscription = new LiveSubscription(key, options, onMessage, (reason) => this.#rejected(subscription, reason), () => this.#openable(), bandwidthOverrides.get()[key])
         this.#subscriptions.add(subscription)
-        const client = this.#openable(key)
+        const client = this.#openable()
         if (client) {
             subscription.open(client)
         }
@@ -317,48 +310,27 @@ export class Connection {
         }
     }
 
-    /** A subscription the gateway ended or refused: another viewer's lease means that viewer took over. */
+    /** A subscription the gateway refused (an ended one is found by #retryLeaseRefused). */
     #rejected(subscription: LiveSubscription, reason: string) {
-        if (!this.#takingBack && isLeasedKey(subscription.key) && isLeaseRejection(reason)) {
-            this.lease.subscriptionRejected(reason)
-        }
-    }
-
-    /** Why one of our leased subscriptions was ended or refused for another viewer's lease, else null. */
-    #leaseRejection(): string | null {
-        for (const subscription of this.#subscriptions) {
-            const reason = subscription.rejection
-            if (reason !== null && isLeasedKey(subscription.key) && isLeaseRejection(reason)) {
-                return reason
-            }
-        }
-        return null
+        console.warn(`[zenoh] ${subscription.key} refused: ${reason}`)
     }
 
     /**
-     * "Take control back": takes the lease over from the newer viewer, then subscribes again where it had ended ours
-     * (the client doesn't re-open a rejected subscription). Resolves whether the lease is ours again.
+     * Subscriptions refused or ended for another client's lease (an older Controller, < v0.1.52, leased its cameras
+     * and clouds) are asked again, so this page gets them once that one's lease is gone.
      */
-    async takeBack(): Promise<boolean> {
-        const client = this.client
-        if (!client) {
-            return false
-        }
-        this.#takingBack = true
-        try {
-            if (!(await this.lease.takeBack(client as unknown as LeaseClient))) {
-                return false
+    #retryLeaseRefused(client: ZenohGateway) {
+        for (const subscription of this.#subscriptions) {
+            if (/is leased by another client/.test(subscription.rejection ?? "")) {
+                subscription.close()
+                subscription.open(client)
             }
-            for (const subscription of this.#subscriptions) {
-                if (subscription.rejection !== null) {
-                    subscription.close()
-                    subscription.open(client)
-                }
-            }
-            return true
-        } finally {
-            this.#takingBack = false
         }
+    }
+
+    /** "Take control back": takes the drive lease over from the viewer driving now. Resolves whether it's ours. */
+    takeBack(): Promise<boolean> {
+        return this.client ? this.lease.takeBack(this.client as unknown as LeaseClient) : Promise.resolve(false)
     }
 
     /** The gateway's own stats for the page's subscription on `key` (its video stages, bytes sent), else null. */
@@ -387,7 +359,7 @@ export class LiveSubscription {
     /** <video> elements timing this stream's frames, each with what stops it on the open gateway subscription */
     #watched = new Map<HTMLVideoElement, (() => void) | null>()
     /**
-     * `openable()`: the client to open on now, or null (not connected, or the lease not tried yet: Connection opens it
+     * `openable()`: the client to open on now, or null (not connected: Connection opens it
      * then); `override`: this viewer's for the key.
      */
     constructor(
@@ -423,7 +395,7 @@ export class LiveSubscription {
         for (const element of this.#watched.keys()) {
             this.#watch(element)
         }
-        // refused when it opens (another viewer holds the lease); one ended later comes with the lease's onLost("takenOver")
+        // refused when it opens (not authorized, or another client leased the key)
         handle.ready().catch(() => handle === this.#handle && handle.rejectionReason !== null && this.onRejected(handle.rejectionReason))
     }
     /** why the gateway refused or ended it, else null */

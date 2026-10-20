@@ -339,7 +339,8 @@ export class Drive {
         }
         const plain = { linear: xyz(twist.linear), angular: xyz(twist.angular) }
         let error: string | null = null
-        for (const { topic, entry } of targets) {
+        for (const { topic, key, entry } of targets) {
+            this.connection.command(key)
             try {
                 if (moving && !entry.deadman) {
                     entry.deadman = true
@@ -391,6 +392,7 @@ export class Drive {
             publisher = client.publisher(dimosKey(topic, type), { priority: Priority.INTERACTIVE_HIGH, delivery: "reliable" })
             this.#controlPublishers.set(id, publisher)
         }
+        this.connection.command(dimosKey(topic, type))
         publisher.put(encode(type, message))
     }
 

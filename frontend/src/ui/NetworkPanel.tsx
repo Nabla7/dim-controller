@@ -51,10 +51,10 @@ const LINK_TEXT: Record<string, { text: string; tone: string }> = {
     lost: { text: "Lost", tone: "bad" },
 }
 const LEASE_TEXT: Record<string, { text: string; tone: string; detail: string }> = {
-    held: { text: "Held", tone: "ok", detail: "this page has the streams" },
+    held: { text: "Held", tone: "ok", detail: "this page drives" },
     taking: { text: "Taking", tone: "warn", detail: "asking the gateway" },
-    takenOver: { text: "Taken over", tone: "bad", detail: "a newer viewer has it" },
-    off: { text: "Off", tone: "idle", detail: "not connected" },
+    takenOver: { text: "Taken over", tone: "bad", detail: "a newer viewer drives" },
+    off: { text: "Off", tone: "idle", detail: "taken on the first command" },
     unsupported: { text: "n/a", tone: "idle", detail: "gateway has no leases" },
 }
 

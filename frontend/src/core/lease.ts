@@ -1,47 +1,38 @@
-// The page's zenoh-gateway lease (gateway >= 0.5.16, Desktop >= 0.2.185): only the newest viewer pulls the cameras and
-// point clouds and drives, so several open viewers don't saturate a weak robot uplink. A newer viewer takes it over;
-// this page then says "another viewer took over" and offers to take control back. Other topics (tf, small ones) stay
-// shared. A gateway without leases (older Desktop) leaves the page working as before.
+// The page's zenoh-gateway lease (gateway >= 0.5.16, Desktop >= 0.2.185) on DRIVING only: the keys this page sends
+// commands on (drive twists, Joy, the profile's controls, the arm's joint / gripper / end-effector commands, a clicked
+// point). Watching needs none, so every viewer gets the cameras, clouds and tf. It's taken on the first command (not at
+// load), so opening another viewer doesn't take driving away; the newest viewer to drive wins, and the one it took over
+// says "another viewer is driving" until it drives again. A gateway without leases leaves the page working as before.
 import { Store } from "./store.ts"
 
-/** one name for every dim-controller page, so two viewers conflict even before their keys do */
+/** one name for every dim-controller page, so two drivers conflict even before their keys do */
 export const LEASE_GROUP = "dim-controller"
-/** the heavy streams only the lease holder pulls */
-export const LEASED_TYPES = ["sensor_msgs.Image", "sensor_msgs.CompressedImage", "sensor_msgs.PointCloud2"]
-export const LEASED_SUBSCRIBE_KEYS = LEASED_TYPES.map((type) => `dimos/**/${type}`)
-/** a lease request that timed out on a stalled link is asked again after this long */
-const RETRY_MS = 2000
 /**
  * How long the lease outlives a silent heartbeat (zenoh-gateway >= 0.5.17's per-lease `timeoutMs`; the server caps it at
  * 60 s): wifi stalls of a few seconds keep it, while driving's deadman keeps the connection's tight 0.4 s deadline.
  */
 export const LEASE_TIMEOUT_MS = 5000
+/**
+ * Taken over, a command takes the lease back only after this long without one: a new press, not the hold (or the
+ * release's second of zeros) that was going when the other viewer took it, so two drivers don't trade it every tick.
+ */
+export const RETAKE_AFTER_IDLE_MS = 1500
 
 /** Said once when the gateway doesn't apply `timeoutMs` (before 0.5.17: the lease ends with the connection's deadline). */
 export const NO_LEASE_TIMEOUT_NOTE = "lease follows the 0.4 s heartbeat on this gateway (zenoh-gateway < 0.5.17), so a wifi stall can lapse it"
 
-/** Whether a subscription key is one the lease covers (a dimos key of a leased type). */
-export function isLeasedKey(key: string): boolean {
-    return key.startsWith("dimos/") && LEASED_TYPES.includes(key.slice(key.lastIndexOf("/") + 1))
-}
-
-/** The gateway's reason for ending or refusing a subscription because another client leased its key. */
-export function isLeaseRejection(reason: string | null | undefined): boolean {
-    return typeof reason === "string" && /is leased by another client/.test(reason)
-}
-
 /**
  * What a lost lease means: another viewer took it ("takenOver", force-expiry), the link dropped it (heartbeat,
- * disconnect, maxSeconds: take it again), or we replaced or released it ourselves (ignore).
+ * disconnect, maxSeconds: the next command takes it again), or we replaced or released it ourselves (ignore).
  */
-export function afterLost(reason: string): "takenOver" | "retake" | "ignore" {
+export function afterLost(reason: string): "takenOver" | "lapsed" | "ignore" {
     if (reason === "renewed" || reason === "released") {
         return "ignore"
     }
     if (reason === "takenOver" || reason.startsWith("force-expired")) {
         return "takenOver"
     }
-    return "retake"
+    return "lapsed"
 }
 
 export type LeaseStatus = "off" | "taking" | "held" | "takenOver" | "unsupported"
@@ -68,29 +59,38 @@ export interface LeaseClient {
 }
 
 /**
- * Keeps the page's lease: takes it (before the leased subscriptions open), takes it again when the link dropped it,
- * renews it when the drive topics change, and stops at "takenOver" until `takeBack()`.
+ * Keeps the page's drive lease: `command(key)` before each command takes it when it isn't held (and adds the key),
+ * a held one is renewed when the keys change, and a lost one waits for the next command.
  */
 export class LeaseKeeper {
     readonly state = new Store<LeaseState>({ status: "off", reason: null })
     #client: LeaseClient | null = null
     #handle: LeaseHandle | null = null
+    /** the drive topics (setPublish), known before anything is sent */
+    #declared: string[] = []
+    /** every other key a command went out on */
+    #used = new Set<string>()
     #publish: string[] = []
     #taking: Promise<boolean> | null = null
-    /** a take asked for while one was in flight (new drive keys, a drop): runs once that one ends */
+    /** a take asked for while one was in flight (new keys): runs once that one ends */
     #again = false
-    #retry: ReturnType<typeof setTimeout> | undefined
+    #lastCommandAt = -Infinity
     #notedNoTimeout = false
 
-    /**
-     * `rejection()`: why one of our leased subscriptions was ended or refused for another client's lease, else null.
-     * Asked before taking a lapsed lease again (a viewer that leased in the gap isn't taken over by itself).
-     */
-    constructor(readonly rejection: () => string | null = () => null) {}
+    constructor(readonly now: () => number = () => performance.now()) {}
 
-    /** The drive's publish keys; a held lease is renewed with them. */
+    /** The drive's topics; a held lease is renewed with them. */
     setPublish(keys: string[]) {
-        const sorted = [...new Set(keys)].sort()
+        this.#declared = keys
+        this.#updateKeys()
+    }
+
+    get publish(): string[] {
+        return this.#publish
+    }
+
+    #updateKeys() {
+        const sorted = [...new Set([...this.#declared, ...this.#used])].sort()
         if (sorted.join("\n") === this.#publish.join("\n")) {
             return
         }
@@ -100,8 +100,26 @@ export class LeaseKeeper {
         }
     }
 
-    get publish(): string[] {
-        return this.#publish
+    /**
+     * A command is going out on `key`: the key joins the lease, and a lease not held is taken (taken over: only after
+     * RETAKE_AFTER_IDLE_MS without a command). The command itself goes now; the gateway drops it while another holds it.
+     */
+    command(client: LeaseClient | null, key: string) {
+        const now = this.now()
+        const idle = now - this.#lastCommandAt
+        this.#lastCommandAt = now
+        if (!client) {
+            return
+        }
+        this.#client = client
+        if (!this.#used.has(key) && !this.#declared.includes(key)) {
+            this.#used.add(key)
+            this.#updateKeys()
+        }
+        const status = this.state.get().status
+        if (status === "off" || (status === "takenOver" && idle >= RETAKE_AFTER_IDLE_MS)) {
+            void this.take(client)
+        }
     }
 
     /** Takes (or renews) the lease; resolves whether it's held. Never throws: a gateway that refuses it is "unsupported". */
@@ -117,7 +135,7 @@ export class LeaseKeeper {
                 for (;;) {
                     this.#again = false
                     const held = await this.#takeOnce(client)
-                    if (!this.#again || this.state.get().status === "takenOver") {
+                    if (!this.#again || this.state.get().status !== "held") {
                         return held
                     }
                 }
@@ -131,7 +149,7 @@ export class LeaseKeeper {
     async #takeOnce(client: LeaseClient): Promise<boolean> {
         try {
             // an older client or gateway ignores timeoutMs; 0.5.17 echoes it on the lease when it applies it
-            const handle = await client.lease({ group: LEASE_GROUP, publish: this.#publish, subscribe: LEASED_SUBSCRIBE_KEYS, allowTakeover: true, timeoutMs: LEASE_TIMEOUT_MS })
+            const handle = await client.lease({ group: LEASE_GROUP, publish: this.#publish, subscribe: [], allowTakeover: true, timeoutMs: LEASE_TIMEOUT_MS })
             this.#handle = handle
             handle.onLost((reason) => this.#lost(handle, reason))
             const timeoutMs = typeof handle.timeoutMs === "number" ? handle.timeoutMs : null
@@ -144,12 +162,10 @@ export class LeaseKeeper {
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error)
             if (client.state === "lost" || /connection lost|not connected|timed out/i.test(message)) {
-                // the link dropped or stalled mid-request: tried again once it's back (onConnected), or in a moment
-                this.state.update({ status: "taking" })
-                clearTimeout(this.#retry)
-                this.#retry = setTimeout(() => client.state !== "lost" && this.state.get().status === "taking" && void this.#retake(client), RETRY_MS)
+                // the link dropped or stalled mid-request: the next command asks again
+                this.state.set({ status: "off", reason: message })
             } else {
-                console.warn("[lease] the gateway refused the lease; every viewer pulls the streams", message)
+                console.warn("[lease] the gateway refused the lease; driving goes unleased", message)
                 this.state.set({ status: "unsupported", reason: message })
             }
             return false
@@ -165,50 +181,18 @@ export class LeaseKeeper {
             return
         }
         this.#handle = null
-        if (action === "takenOver") {
-            this.state.set({ status: "takenOver", reason })
-        } else if (this.#client && this.#client.state !== "lost") {
-            void this.#retake(this.#client)
-        } else {
-            this.state.update({ status: "taking" })
-        }
+        this.state.set(action === "takenOver" ? { status: "takenOver", reason } : { status: "off", reason })
     }
 
-    /** Takes a lapsed lease again, unless a viewer that leased meanwhile has already ended our subscriptions. */
-    #retake(client: LeaseClient): Promise<boolean> {
-        const rejected = this.rejection()
-        if (rejected !== null) {
-            this.subscriptionRejected(rejected)
-            return Promise.resolve(false)
-        }
-        return this.take(client)
-    }
-
-    /** One of our leased subscriptions was ended or refused for another client's lease: that viewer has them now. */
-    subscriptionRejected(reason: string) {
-        if (this.state.get().status !== "takenOver") {
-            this.#handle = null
-            this.state.set({ status: "takenOver", reason })
-        }
-    }
-
-    /** The gateway session is back (or new): a lease it dropped is taken again, unless another viewer has it. */
-    onConnected(client: LeaseClient) {
-        this.#client = client
-        if (this.state.get().status === "taking" && !this.#taking) {
-            void this.#retake(client)
-        }
-    }
-
-    /** A new gateway session (Reconnect): the old one's lease went with it. */
-    sessionReplaced(client: LeaseClient) {
+    /** A new gateway session (Reconnect): the old one's lease went with it; the next command takes it again. */
+    sessionReplaced() {
         this.#handle = null
         if (["held", "taking"].includes(this.state.get().status)) {
-            void this.take(client)
+            this.state.set({ status: "off", reason: "reconnected" })
         }
     }
 
-    /** "Take control back": takes the lease over from the newer viewer. */
+    /** "Take control back": takes the lease over from the viewer driving now. */
     takeBack(client: LeaseClient): Promise<boolean> {
         return this.take(client)
     }

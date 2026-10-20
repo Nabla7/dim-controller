@@ -24,20 +24,22 @@ function fakeBridge() {
             }
         },
     }
-    return { connection: { client } as unknown as Connection, puts, deadmen, cleared, opened }
+    const commanded: string[] = []
+    return { connection: { client, command: (key: string) => commanded.push(key) } as unknown as Connection, puts, deadmen, cleared, opened, commanded }
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 Deno.test("no arming: forward at the linear speed, shift doubles linear, and turns 1.1× normal at full speed, 1.5× standing still, a release flushes zeros then goes quiet", async () => {
     localStorage.clear()
-    const { connection, puts, deadmen } = fakeBridge()
+    const { connection, puts, deadmen, commanded } = fakeBridge()
     const drive = new Drive(connection, go2)
     drive.setRunning({ bp: [{ streams: [{ name: "cmd_vel", type: "dimos.msgs.geometry_msgs.Twist.Twist", direction: "in" }] }] })
     drive.setAxes("keys", { forward: 1, turn: 1 })
     await wait(150)
     const plain = puts.at(-1)!
     assertEquals(plain.key, "dimos/cmd_vel/geometry_msgs.Twist")
+    assertEquals(new Set(commanded), new Set(["dimos/cmd_vel/geometry_msgs.Twist"]), "each drive put goes through the drive lease")
     assertAlmostEquals(plain.twist.linear.x, go2.drive.speeds.linear)
     assertAlmostEquals(plain.twist.angular.z, go2.drive.speeds.angular)
     assertEquals(deadmen, ["dimos/cmd_vel/geometry_msgs.Twist"])

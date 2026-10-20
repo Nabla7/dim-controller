@@ -178,6 +178,7 @@ export class JoyPublisher {
             return
         }
         const now = this.now()
+        this.connection.command(dimosKey(JOY_TOPIC, JOY_TYPE))
         try {
             publisher.put(encode(JOY_TYPE, { header: { stamp: { sec: Math.floor(now / 1000), nsec: (now % 1000) * 1_000_000 }, frame_id: "" }, axes: sample.axes, buttons: sample.buttons }))
             this.published.set({ count: this.published.get().count + 1, last: sample })

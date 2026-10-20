@@ -97,11 +97,11 @@ export function gamepadChip(pad: GamepadStatus): { text: string; tone: Tone; det
         : { text: "center sticks", tone: "warn", detail: "nothing is sent until both sticks are at rest and the triggers are out" }
 }
 
-/** The text a page shows once a newer viewer took the lease (bar chip, camera views). */
-export const TAKEN_OVER_TEXT = "Another viewer took over"
+/** The text a page shows once a newer viewer took the drive lease (the bar's chip). */
+export const TAKEN_OVER_TEXT = "Another viewer is driving"
 export const TAKE_BACK_TEXT = "Take control back"
 
-/** The lease, only when another viewer has it: the bar's chip, a button that takes control back. Null: nothing to show. */
+/** The drive lease, only when another viewer has it: the bar's chip, a button that takes control back. Null: nothing to show. */
 export function leaseChip(lease: LeaseState, mobile = false): { text: string; tone: Tone; detail: string } | null {
     if (lease.status !== "takenOver") {
         return null
@@ -109,6 +109,6 @@ export function leaseChip(lease: LeaseState, mobile = false): { text: string; to
     return {
         text: mobile ? TAKE_BACK_TEXT : `${TAKEN_OVER_TEXT} · ${TAKE_BACK_TEXT}`,
         tone: "bad",
-        detail: `${TAKEN_OVER_TEXT}: a newer viewer has the cameras, point clouds and driving, so this page's streams stopped (the robot's link can't feed every viewer). Click to take control back${lease.reason ? ` (${lease.reason})` : ""}.`,
+        detail: `${TAKEN_OVER_TEXT}: a newer viewer drove, so the gateway drops this page's commands (watching goes on). Click, or drive again after a pause, to take control back${lease.reason ? ` (${lease.reason})` : ""}.`,
     }
 }

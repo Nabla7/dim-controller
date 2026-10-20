@@ -36,6 +36,7 @@ function fakeBridge() {
     }
     const connection = {
         client,
+        command() {},
         subscribe(_key: string, _options: unknown, handler: (message: { bytes: Uint8Array }) => void) {
             onState = handler
             return () => (onState = null)

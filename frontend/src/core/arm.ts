@@ -375,6 +375,7 @@ export class ArmControl {
         if (!publisher) {
             return
         }
+        this.connection.command(key)
         try {
             publisher.put(encode(type, message))
             this.#lastSentAt = performance.now()

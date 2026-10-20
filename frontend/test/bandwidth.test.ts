@@ -98,7 +98,7 @@ Deno.test("a pause closes the gateway subscription and a resume opens it again, 
     assertEquals(opened[1].options, { delivery: "latest", maxHz: 1, bandwidthPriority: 2 })
 })
 
-Deno.test("a paused key never opens (also when the connection opens it), and waits for the lease gate on resume", async () => {
+Deno.test("a paused key never opens (also when the connection opens it), and waits for the connection on resume", async () => {
     const { client, opened } = fakeClient()
     let gate: unknown = null
     const subscription = new LiveSubscription("dimos/color_image/sensor_msgs.Image", { delivery: "latest", encoding: "dimos_lcm_image" }, () => {}, () => {}, () => gate as never, { paused: true })

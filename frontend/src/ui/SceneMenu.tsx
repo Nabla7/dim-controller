@@ -134,6 +134,7 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
         }
         const frame = app.viewer.fixedFrame
         const { key, bytes } = clickedPoint(point, frame)
+        app.connection.command(key)
         try {
             await client.put(key, bytes)
             setNote(`Published clicked_point ${fmt(point.x)}, ${fmt(point.y)}, ${fmt(point.z)} (${frame})`)

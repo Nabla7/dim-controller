@@ -32,7 +32,7 @@ function setup() {
     const puts: { key: string; bytes: Uint8Array }[] = []
     let onState: ((message: { bytes: Uint8Array }) => void) | null = null
     const client = { state: "connected", publisher: (key: string) => ({ state: "open", put: (bytes: Uint8Array) => puts.push({ key, bytes }), setDeadman: () => Promise.resolve(), clearDeadman: () => Promise.resolve(), close() {} }) }
-    const connection = { client, subscribe: (_key: string, _options: unknown, handler: typeof onState) => ((onState = handler), () => (onState = null)) } as unknown as Connection
+    const connection = { client, command() {}, subscribe: (_key: string, _options: unknown, handler: typeof onState) => ((onState = handler), () => (onState = null)) } as unknown as Connection
     const drive = new Drive(connection, wheeled)
     drive.settings.update({ joint: undefined, jointTopic: wheeled.joint!.commandTopic })
     const arm = new ArmControl(connection, drive, armProfile.arm!)
@@ -111,7 +111,7 @@ Deno.test("driving's STOP holds a jogging joint; a halt holds it and refuses a n
 Deno.test("no joint state: the jog says so and sends nothing", () => {
     localStorage.clear()
     const puts: unknown[] = []
-    const connection = { client: { state: "connected", publisher: () => ({ state: "open", put: (bytes: unknown) => puts.push(bytes), close() {} }) }, subscribe: () => () => {} } as unknown as Connection
+    const connection = { command() {}, client: { state: "connected", publisher: () => ({ state: "open", put: (bytes: unknown) => puts.push(bytes), close() {} }) }, subscribe: () => () => {} } as unknown as Connection
     const drive = new Drive(connection, wheeled)
     const arm = new ArmControl(connection, drive, armProfile.arm!)
     arm.setRunning({ "r1pro-coordinator": R1_COORDINATOR }, R1_BRIDGE)

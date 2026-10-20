@@ -204,6 +204,11 @@ straight to the output topics through Desktop's gateway, each with its own deadm
 disconnects, the gateway sends a zero on every one. Nothing is sent while nobody steers (a release is followed by a second
 of zeros, then silence), so a parked browser never drowns out other teleop.
 
+Several viewers can watch at once (cameras, clouds, tf need no lease); only driving is exclusive. The first command a
+page sends (drive, Joy, the profile's controls, the arm's commands, a clicked point) takes the gateway lease on the keys
+it commands, so the newest viewer to drive wins: the one it took over shows "Another viewer is driving · Take control
+back", the gateway drops its commands, and it takes driving back with that button or a new press after a 1.5 s pause.
+
 If the control link's latency (the gateway heartbeat's round trip, or how long it has gone unanswered) passes Settings →
 Drive → Max latency (default 1000 ms), or the link drops, driving **disengages**: it stops (the usual zeros, once) and
 the bar says why ("Disengaged: latency 1240 ms > 1000 ms max. Reconnect to drive.") with **Reconnect**: a new gateway
