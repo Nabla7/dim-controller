@@ -12,6 +12,8 @@ export function GlassToGlass({ onClose }: { onClose: () => void }) {
     const [results, setResults] = useState<CameraResult[]>([])
     useEffect(() => {
         const element = canvas.current!
+        // opened at the bottom of the modal: bring the code into view
+        element.scrollIntoView({ block: "center", behavior: "smooth" })
         // a crisp code on a high-DPI screen: the canvas at device pixels
         element.width = element.height = Math.round(CODE_PX * devicePixelRatio)
         const stopCode = showCode(element)

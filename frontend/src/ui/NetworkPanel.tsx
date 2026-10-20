@@ -404,11 +404,6 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
     })()
     return (
         <div className="net-panel" data-testid="network-panel">
-            {glass ? <GlassToGlass onClose={() => setGlass(false)} /> : (
-                <div className="net-actions">
-                    <Button onClick={() => setGlass(true)} data-testid="open-glass-to-glass">Glass-to-glass</Button>
-                </div>
-            )}
             <div className="net-tiles">
                 <Tile label="Throughput" value={mbpsNumber(summary.rateNow)} unit="Mbps" detail={<>1 min avg {mbpsNumber(summary.rateAverage)} · peak {mbpsNumber(summary.ratePeak)}</>} />
                 <Tile label="Latency" value={msNumber(summary.latencyNow)} unit="ms" detail={<>spike {msNumber(summary.latencyP95)} · max {msNumber(summary.latencyMax)}{slowest && <span title={`slowest camera, source to screen: ${spreadText(slowest.total)}`}> · video {Math.round(slowest.total.p50)} ms</span>}</>} />
@@ -478,6 +473,11 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
                     <button type="button" className="net-link" onClick={onStatus}>Open Status</button>
                 </p>
             </details>
+            {glass ? <GlassToGlass onClose={() => setGlass(false)} /> : (
+                <div className="net-actions">
+                    <Button onClick={() => setGlass(true)} data-testid="open-glass-to-glass">Glass-to-glass</Button>
+                </div>
+            )}
         </div>
     )
 }

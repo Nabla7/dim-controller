@@ -890,7 +890,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .view-row .quality-name { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .view-row .view-float.dr-btn--icon { width: 40px; height: 40px; flex: none; }
 .view-row .view-float[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
-.net-actions { display: flex; justify-content: flex-end; }
+.net-actions { display: flex; justify-content: flex-start; }
 .g2g { display: grid; justify-items: center; gap: 10px; padding: 12px; border: 1px solid var(--border); text-align: center; }
 .g2g p { margin: 0; }
 .g2g-intro a { color: var(--primary); }
