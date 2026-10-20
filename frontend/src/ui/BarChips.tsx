@@ -5,7 +5,7 @@ import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { splatFallback } from "../core/render/rendering.ts"
 import { useEffect, useRef, useState } from "react"
-import { gamepadChip, leaseChip, LINK_REDRAW_MS, LINK_SAMPLE_MS, linkChip, smoothed } from "./barStatus.ts"
+import { gamepadChip, leaseChip, LINK_REDRAW_MS, LINK_SAMPLE_MS, linkChip, phoneChipText, smoothed } from "./barStatus.ts"
 import { Modal } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { NetworkPanel } from "./NetworkPanel.tsx"
@@ -79,10 +79,20 @@ export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
                     <span className="bar-value">{lease.text}</span>
                 </button>
             )}
-            <button type="button" className={`bar-chip tone-${link.tone} bar-button`} title={`${link.detail} (open Network: history and who's using the link)`} data-testid="bar-link" onClick={() => setNetworkOpen(true)}>
+            <button type="button" className={`bar-chip tone-${link.tone} bar-button bar-link`} title={`${link.detail} (open Network: history and who's using the link)`} data-testid="bar-link" onClick={() => setNetworkOpen(true)}>
                 <span className="bar-dot" />
-                <span className="bar-value">{link.text}</span>
-                {link.video && <span className="bar-value bar-video" data-testid="bar-video">· {link.video}</span>}
+                {api.mobile ? (
+                    // a phone: unpadded, the video latency on a second line, so both fit between the corners
+                    <span className="bar-link-lines">
+                        <span className="bar-value">{phoneChipText(link.text)}</span>
+                        {link.video && <span className="bar-value bar-video" data-testid="bar-video">{link.video}</span>}
+                    </span>
+                ) : (
+                    <>
+                        <span className="bar-value">{link.text}</span>
+                        {link.video && <span className="bar-value bar-video" data-testid="bar-video">· {link.video}</span>}
+                    </>
+                )}
             </button>
             <Modal open={networkOpen} onClose={() => setNetworkOpen(false)} title="Network" size="lg" data-testid="network-modal">
                 {networkOpen && <NetworkPanel app={app} onStatus={() => {

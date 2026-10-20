@@ -72,6 +72,11 @@ export function linkChip(connection: Pick<ConnectionState, "state" | "rttMs" | "
     }
 }
 
+/** A chip's text on a phone, where the corners leave ~120 px: without the fixed-width padding ("1.9 Mbps · 89 ms"). */
+export function phoneChipText(text: string): string {
+    return text.replaceAll(" ", "")
+}
+
 /** Driving stopped by the link watch, in full ("Disengaged: latency 1240 ms > 1000 ms max. Reconnect to drive."). */
 export function disengagedText(halt: Pick<DriveHalt, "reason" | "latencyMs" | "maxMs">): string {
     return halt.reason === "lost"

@@ -662,7 +662,16 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .net-step:hover:not(:disabled), .net-icon-button:hover { background: var(--accent); border-color: var(--border); }
 .net-step:disabled { opacity: 0.3; cursor: default; }
 .net-icon-button.set { color: var(--primary); }
+/* a narrow table (a phone) has no room for the video ms column: a camera's p50/p95 sits under its name instead, and its
+   stages open across the visible width, held there while the table scrolls sideways */
+.net-stream-video { display: none; }
+.net-latency-toggle.inline { font-size: 10px; padding: 1px 3px; }
 @container (max-width: 440px) {
+    .net-streams .net-col-video { display: none; }
+    .net-streams { min-width: 508px; }
+    .net-stream-video { display: inline; }
+    .net-streams .net-latency-row td { padding: 6px 8px 8px; }
+    .net-latency-row td > * { position: sticky; left: 8px; width: calc(100cqw - 24px); box-sizing: border-box; }
     .net-streams .net-col-rate { width: 62px; }
     .net-streams .net-col-priority { width: 100px; }
     .net-priority-value { width: 28px; font-size: 10px; }
@@ -746,6 +755,13 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .corner-chips > * { pointer-events: auto; }
 .corner-chips .bar-chip { height: 30px; padding: 0 7px; background: color-mix(in srgb, var(--card) 88%, transparent); }
 .corner-chips .bar-value { max-width: 110px; }
+/* a phone's link chip (ui/BarChips.tsx): ~116 px between the corners, so smaller, no dot (a problem still colours the
+   border), and the slowest camera's video latency on a second line */
+.corner-chips .bar-link { padding: 0 6px; }
+.corner-chips .bar-link .bar-dot { display: none; }
+.bar-link-lines { display: flex; flex-direction: column; min-width: 0; }
+.bar-link-lines .bar-value { font-size: 10px; line-height: 12px; max-width: 104px; }
+.bar-link-lines .bar-video { margin-left: 0; }
 /* a phone's main camera: the picture at the top, the space below it for the thumbs */
 .mobile .zone-stage .camera-media, .mobile .zone-stage .camera-overlay { object-position: top; }
 /* on its side, centred between the sticks over it */

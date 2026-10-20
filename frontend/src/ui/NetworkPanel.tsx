@@ -260,6 +260,25 @@ function StreamSettings({ streamKey, consumer, override, onClose }: { streamKey:
     )
 }
 
+/** A camera's video ms (p50/p95), a button that opens its stages under the row; `inline`: the copy under the stream's name that a narrow table shows instead of its column. */
+function LatencyToggle({ streamKey, measured, open, onToggle, inline = false }: { streamKey: string; measured: { video: VideoLatency | null; gateway: GatewayVideoLatency | null }; open: boolean; onToggle: () => void; inline?: boolean }) {
+    const { video, gateway } = measured
+    const pacer = gateway?.pacerP50Ms != null ? `; gateway pacer ${spreadText({ p50: gateway.pacerP50Ms, p95: gateway.pacerP95Ms ?? gateway.pacerP50Ms })} ms` : ""
+    return (
+        <button
+            type="button"
+            className={`net-latency-toggle ${inline ? "inline" : ""} ${open ? "open" : ""}`}
+            data-testid={inline ? "net-latency-toggle-inline" : "net-latency-toggle"}
+            aria-expanded={open}
+            aria-label={`${streamName(streamKey)}: video latency details`}
+            title={video ? `p50/p95 ms, ${video.frames} frames${pacer}` : "not measured: no frames shown yet, or a gateway before 0.5.21"}
+            onClick={onToggle}
+        >
+            {spreadText(video?.total)}{inline && " ms"}<span className="net-latency-caret">{open ? "▾" : "▸"}</span>
+        </button>
+    )
+}
+
 /** The Bandwidth Consumers table: every stream (paused ones at 0), ordered without jumping; the page's own subscriptions have controls, the rest (overhead, heartbeat, control, other apps') are shown only. */
 function ConsumersTable({ table, slots, consumers, drops, latency }: { table: StreamShare[]; slots: Map<string, number>; consumers: Record<string, Consumer>; drops: Record<string, { perSecond: number; total: number }>; latency: (key: string) => { video: VideoLatency | null; gateway: GatewayVideoLatency | null } }) {
     const overrides = useStore(bandwidthOverrides)
@@ -296,13 +315,13 @@ function ConsumersTable({ table, slots, consumers, drops, latency }: { table: St
                                     <td>
                                         <span className="net-swatch" style={{ background: colorOf(row.key === OTHER ? undefined : slots.get(row.key)) }} title="its colour in the chart" />
                                         <span className="net-stream-name">{streamName(row.key)}</span>
-                                        <span className="net-stream-tags">{tags.join(" · ")}</span>
+                                        <span className="net-stream-tags">{tags.join(" · ")}{measured && <span className="net-stream-video"> · <LatencyToggle streamKey={row.key} measured={measured} open={open} onToggle={() => toggle(row.key)} inline /></span>}</span>
                                     </td>
                                     <td className="net-col-rate">
                                         <span className="net-heat" style={{ width: `${heat * 100}%`, background: heatColor(heat) }} />
                                         <span className="net-rate" title={paused ? "paused: not subscribed" : `${Math.round(row.share * 100)}% of the link`}>{paused ? "0.00" : mbps(row.bytesPerSec).toFixed(2)}</span>
                                     </td>
-                                    <td className="net-col-video">{measured && <button type="button" className={`net-latency-toggle ${open ? "open" : ""}`} data-testid="net-latency-toggle" aria-expanded={open} aria-label={`${streamName(row.key)}: video latency details`} title={measured.video ? `p50/p95 ms, ${measured.video.frames} frames${measured.gateway?.pacerP50Ms != null ? `; gateway pacer ${spreadText({ p50: measured.gateway.pacerP50Ms, p95: measured.gateway.pacerP95Ms ?? measured.gateway.pacerP50Ms })} ms` : ""}` : "not measured: no frames shown yet, or a gateway before 0.5.21"} onClick={() => toggle(row.key)}>{spreadText(measured.video?.total)}<span className="net-latency-caret">{open ? "▾" : "▸"}</span></button>}</td>
+                                    <td className="net-col-video">{measured && <LatencyToggle streamKey={row.key} measured={measured} open={open} onToggle={() => toggle(row.key)} />}</td>
                                     <td className={`net-col-drops ${(drops[row.key]?.perSecond ?? 0) > 0 ? "dropping" : ""}`} title={drops[row.key] ? `${drops[row.key].total} dropped since subscribing` : "no gateway counts for it"}>{drops[row.key]?.perSecond ?? "·"}</td>
                                     <td className="net-col-priority">{controllable ? <PriorityStepper streamKey={row.key} offset={offset} disabled={reliable} /> : <span className="net-priority" title="not a subscription this page makes: zenoh-gateway's default priority"><span className="net-step-spacer" /><span className="net-priority-value" data-testid="net-priority">{priorityLabel(0)}</span><span className="net-step-spacer" /></span>}</td>
                                     <td className="net-col-gear">{controllable && <button type="button" className={`net-icon-button ${tags.includes("tuned") ? "set" : ""}`} aria-label={`${streamName(row.key)} settings`} onClick={() => setEditing(row.key)}><Icon name="settings" size={15} /></button>}</td>
