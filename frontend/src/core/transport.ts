@@ -1,7 +1,7 @@
 // The page's one connection to Desktop's zenoh-gateway (dim-app's getZenoh(): the backend's events ride it too), and
 // topic discovery. dimos names a channel
 // `dimos/<topic>/<msg type>`, so the key itself says what a topic carries.
-import { connect, type Message, Priority, type Publisher, type SubscribeOptions, type Subscription, type SubscriptionUpdate, type ZenohGateway } from "dimos-react/dim-app/vendor/zenoh-gateway/zenoh_gateway.js"
+import { connect, type Message, type VideoLatency, Priority, type Publisher, type SubscribeOptions, type Subscription, type SubscriptionUpdate, type ZenohGateway } from "../vendor/zenoh-gateway/zenoh_gateway.ts"
 import { getZenoh } from "dimos-react/dim-app/zenoh.js"
 import { Store } from "./store.ts"
 import { NetHistory, wireCounts, type WireCounts } from "./netHistory.ts"
@@ -11,8 +11,16 @@ import { applyOverride, bandwidthOverrides, defaultBandwidthPriority, isVideoOpt
 export { Priority }
 export type { Message, Publisher, SubscribeOptions, SubscriptionUpdate }
 
-/** Calling it unsubscribes; `update` changes the running subscription's options in place (same channel and video track). */
-export type LiveHandle = (() => void) & { update(changes: SubscriptionUpdate): Promise<void> }
+/**
+ * Calling it unsubscribes; `update` changes the running subscription's options in place (same channel and video track);
+ * `watchVideoLatency` times the frames a <video> of it shows (kept across resubscribes; returns a function that stops),
+ * `videoLatency` reads them (null before any, or from a gateway before 0.5.21).
+ */
+export type LiveHandle = (() => void) & {
+    update(changes: SubscriptionUpdate): Promise<void>
+    watchVideoLatency(element: HTMLVideoElement): () => void
+    videoLatency(windowMs?: number): VideoLatency | null
+}
 
 export interface Topic {
     /** the full zenoh key, e.g. dimos/lidar/sensor_msgs.PointCloud2 */
@@ -164,7 +172,7 @@ export class Connection {
     }
 
     async start() {
-        const client = (await this.#shared.ready).client as ZenohGateway
+        const client = (await this.#shared.ready).client as unknown as ZenohGateway
         this.client = client
         this.status.update({ state: "connected", error: null })
         client.onState((state) => {
@@ -289,7 +297,7 @@ export class Connection {
         }
         // the app's own option changes show in Bandwidth Consumers as its defaults
         const update = (changes: SubscriptionUpdate) => subscription.update(changes).finally(() => this.#refreshConsumers())
-        return Object.assign(unsubscribe, { update })
+        return Object.assign(unsubscribe, { update, watchVideoLatency: (element: HTMLVideoElement) => subscription.watchVideoLatency(element), videoLatency: (windowMs?: number) => subscription.videoLatency(windowMs) })
     }
 
     /** Each stream's link drops from the gateway's own counts: not its maxHz thinning, which is asked for. */
@@ -353,6 +361,12 @@ export class Connection {
         }
     }
 
+    /** The gateway's own stats for the page's subscription on `key` (its video stages, bytes sent), else null. */
+    gatewayStats(key: string): Record<string, unknown> | null {
+        const stats = (this.client?.stats as Record<string, { gateway?: { stats?: Record<string, unknown> } | null }> | undefined)?.[key]
+        return stats?.gateway?.stats ?? null
+    }
+
     /** Gateway clock now (ms), the clock message timestamps are in. */
     bridgeNow(): number {
         const client = this.client
@@ -370,6 +384,8 @@ export class LiveSubscription {
     /** the options the open gateway subscription runs with */
     #running: SubscribeOptions = {}
     #override: StreamOverride | undefined
+    /** <video> elements timing this stream's frames, each with what stops it on the open gateway subscription */
+    #watched = new Map<HTMLVideoElement, (() => void) | null>()
     /**
      * `openable()`: the client to open on now, or null (not connected, or the lease not tried yet: Connection opens it
      * then); `override`: this viewer's for the key.
@@ -404,6 +420,9 @@ export class LiveSubscription {
         this.#running = this.options
         const handle = client.subscribe(this.key, this.#running, this.onMessage)
         this.#handle = handle
+        for (const element of this.#watched.keys()) {
+            this.#watch(element)
+        }
         // refused when it opens (another viewer holds the lease); one ended later comes with the lease's onLost("takenOver")
         handle.ready().catch(() => handle === this.#handle && handle.rejectionReason !== null && this.onRejected(handle.rejectionReason))
     }
@@ -459,7 +478,35 @@ export class LiveSubscription {
         }
     }
     close() {
+        for (const [element, stop] of this.#watched) {
+            stop?.()
+            this.#watched.set(element, null)
+        }
         this.#handle?.close()
         this.#handle = null
+    }
+    /** Times the frames `element` shows of this stream, now and on every subscription it reopens with. */
+    watchVideoLatency(element: HTMLVideoElement): () => void {
+        if (!this.#watched.has(element)) {
+            this.#watched.set(element, null)
+            this.#watch(element)
+        }
+        return () => {
+            this.#watched.get(element)?.()
+            this.#watched.delete(element)
+        }
+    }
+    #watch(element: HTMLVideoElement) {
+        this.#watched.get(element)?.()
+        // requestVideoFrameCallback: Chrome, Firefox 132+, Safari; without it there's nothing to time
+        if (!this.#handle || typeof element.requestVideoFrameCallback !== "function") {
+            this.#watched.set(element, null)
+            return
+        }
+        this.#watched.set(element, this.#handle.watchVideoLatency(element))
+    }
+    /** The frames watched lately (zenoh-gateway >= 0.5.21), else null. */
+    videoLatency(windowMs?: number): VideoLatency | null {
+        return this.#handle?.videoLatency(windowMs) ?? null
     }
 }

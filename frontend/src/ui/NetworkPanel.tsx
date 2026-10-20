@@ -6,13 +6,14 @@
 // History is kept from page load (core/netHistory.ts, sampled by core/transport.ts), so opening it shows the recent past.
 // Every region has a fixed size and hovering only moves an overlay, so nothing reflows under the pointer.
 import type { ViewerApp } from "../core/app.ts"
-import { type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { Fragment, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { assignSlots, averageOf, breakdown, CONTROL, HEARTBEAT, type NetSample, nearestIndex, netSummary, niceCeil, OTHER, RESENT, RTP_HEADERS, stackOf, type StreamShare, streamTable } from "../core/netHistory.ts"
 import { useStore } from "../core/store.ts"
 import { type Consumer, parseKey } from "../core/transport.ts"
 import { bandwidthOverrides, DEFAULT_PRIORITY, DEFAULT_TRADEOFF, heatOf, levelOf, PRIORITY_LAST, PRIORITY_MAX, priorityLabel, setOverride, stepPriority, type StreamOverride } from "../core/bandwidth.ts"
 import { Button, NumberInput, Segmented, Slider, Toggle } from "dimos-react"
 import { Icon } from "./icons.tsx"
+import { gatewayVideoLatency, type GatewayVideoLatency, latencyStages, slowestVideo, spreadText, type VideoLatency } from "../core/videoLatency.ts"
 
 /** colour slots (styles.css --net-1..7); a stream past them is drawn with "other" */
 const SLOT_COUNT = 7
@@ -260,16 +261,22 @@ function StreamSettings({ streamKey, consumer, override, onClose }: { streamKey:
 }
 
 /** The Bandwidth Consumers table: every stream (paused ones at 0), ordered without jumping; the page's own subscriptions have controls, the rest (overhead, heartbeat, control, other apps') are shown only. */
-function ConsumersTable({ table, slots, consumers, drops }: { table: StreamShare[]; slots: Map<string, number>; consumers: Record<string, Consumer>; drops: Record<string, { perSecond: number; total: number }> }) {
+function ConsumersTable({ table, slots, consumers, drops, latency }: { table: StreamShare[]; slots: Map<string, number>; consumers: Record<string, Consumer>; drops: Record<string, { perSecond: number; total: number }>; latency: (key: string) => { video: VideoLatency | null; gateway: GatewayVideoLatency | null } }) {
     const overrides = useStore(bandwidthOverrides)
     const [editing, setEditing] = useState<string | null>(null)
+    const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+    const toggle = (key: string) => setExpanded((previous) => {
+        const next = new Set(previous)
+        next.has(key) ? next.delete(key) : next.add(key)
+        return next
+    })
     const busiest = Math.max(0, ...table.map((row) => row.bytesPerSec))
     return (
         <section className="net-table">
             <h4>Bandwidth Consumers <span className="dim">· {TABLE_AVERAGE_SAMPLES} s average, every {TABLE_REFRESH_MS / 1000} s</span></h4>
             <div className="net-table-scroll">
                 <table className="net-streams">
-                    <thead><tr><th className="net-col-on" title="off: unsubscribed until switched back on">on</th><th>stream</th><th className="net-col-rate" title="bar: how much it uses, against the busiest">Mbps</th><th className="net-col-drops" title="messages the gateway dropped for this stream in the last second because the link couldn't keep up (queue full or too old); not its own max Hz">dropped/s</th><th className="net-col-priority" title="bandwidth priority when the link is short">priority</th><th className="net-col-gear" /></tr></thead>
+                    <thead><tr><th className="net-col-on" title="off: unsubscribed until switched back on">on</th><th>stream</th><th className="net-col-rate" title="bar: how much it uses, against the busiest">Mbps</th><th className="net-col-video" title="video: source-to-screen latency of the frames its camera panel showed in the last 5 s, p50/p95 ms (zenoh-gateway >= 0.5.21); click for where it went">video ms</th><th className="net-col-drops" title="messages the gateway dropped for this stream in the last second because the link couldn't keep up (queue full or too old); not its own max Hz">dropped/s</th><th className="net-col-priority" title="bandwidth priority when the link is short">priority</th><th className="net-col-gear" /></tr></thead>
                     <tbody>
                         {table.map((row) => {
                             const consumer = consumers[row.key]
@@ -279,8 +286,12 @@ function ConsumersTable({ table, slots, consumers, drops }: { table: StreamShare
                             const { video, offset, reliable } = effectiveOf(consumer, override)
                             const heat = paused ? 0 : heatOf(row.bytesPerSec, busiest)
                             const tags = [paused ? "paused" : "", video ? "video" : reliable ? "reliable" : "", override && Object.keys(override).some((name) => name !== "paused") ? "tuned" : ""].filter(Boolean)
+                            const measured = video ? latency(row.key) : null
+                            const open = !!measured && expanded.has(row.key)
+                            const stages = open ? latencyStages(measured.video, measured.gateway) : []
                             return (
-                                <tr key={row.key} title={row.key} className={paused ? "paused" : ""} data-key={row.key} data-testid="net-consumer">
+                                <Fragment key={row.key}>
+                                <tr title={row.key} className={paused ? "paused" : ""} data-key={row.key} data-testid="net-consumer">
                                     <td className="net-col-on">{controllable ? <Toggle value={!paused} onChange={(on) => setOverride(row.key, { paused: on ? undefined : true })} aria-label={`${paused ? "Resume" : "Pause"} ${streamName(row.key)}`} /> : <span className="dim" title="not a subscription: can't be paused">·</span>}</td>
                                     <td>
                                         <span className="net-swatch" style={{ background: colorOf(row.key === OTHER ? undefined : slots.get(row.key)) }} title="its colour in the chart" />
@@ -291,13 +302,26 @@ function ConsumersTable({ table, slots, consumers, drops }: { table: StreamShare
                                         <span className="net-heat" style={{ width: `${heat * 100}%`, background: heatColor(heat) }} />
                                         <span className="net-rate" title={paused ? "paused: not subscribed" : `${Math.round(row.share * 100)}% of the link`}>{paused ? "0.00" : mbps(row.bytesPerSec).toFixed(2)}</span>
                                     </td>
+                                    <td className="net-col-video">{measured && <button type="button" className={`net-latency-toggle ${open ? "open" : ""}`} data-testid="net-latency-toggle" aria-expanded={open} aria-label={`${streamName(row.key)}: video latency details`} title={measured.video ? `p50/p95 ms, ${measured.video.frames} frames${measured.gateway?.pacerP50Ms != null ? `; gateway pacer ${spreadText({ p50: measured.gateway.pacerP50Ms, p95: measured.gateway.pacerP95Ms ?? measured.gateway.pacerP50Ms })} ms` : ""}` : "not measured: no frames shown yet, or a gateway before 0.5.21"} onClick={() => toggle(row.key)}>{spreadText(measured.video?.total)}<span className="net-latency-caret">{open ? "▾" : "▸"}</span></button>}</td>
                                     <td className={`net-col-drops ${(drops[row.key]?.perSecond ?? 0) > 0 ? "dropping" : ""}`} title={drops[row.key] ? `${drops[row.key].total} dropped since subscribing` : "no gateway counts for it"}>{drops[row.key]?.perSecond ?? "·"}</td>
                                     <td className="net-col-priority">{controllable ? <PriorityStepper streamKey={row.key} offset={offset} disabled={reliable} /> : <span className="net-priority" title="not a subscription this page makes: zenoh-gateway's default priority"><span className="net-step-spacer" /><span className="net-priority-value" data-testid="net-priority">{priorityLabel(0)}</span><span className="net-step-spacer" /></span>}</td>
                                     <td className="net-col-gear">{controllable && <button type="button" className={`net-icon-button ${tags.includes("tuned") ? "set" : ""}`} aria-label={`${streamName(row.key)} settings`} onClick={() => setEditing(row.key)}><Icon name="settings" size={15} /></button>}</td>
                                 </tr>
+                                {open && (
+                                    <tr className="net-latency-row" data-testid="net-latency-details">
+                                        <td colSpan={7}>
+                                            {stages.length ? (
+                                                <dl className="net-latency-stages">
+                                                    {stages.map((stage) => <div key={stage.name} title={stage.detail}><dt>{stage.name}</dt><dd>{stage.value}<span className="dim"> ms</span></dd></div>)}
+                                                </dl>
+                                            ) : <span className="dim">not measured: this gateway is older than zenoh-gateway 0.5.21, or no frame was shown yet</span>}
+                                        </td>
+                                    </tr>
+                                )}
+                                </Fragment>
                             )
                         })}
-                        {!table.length && <tr className="net-empty"><td colSpan={6}>nothing received in the last minute</td></tr>}
+                        {!table.length && <tr className="net-empty"><td colSpan={7}>nothing received in the last minute</td></tr>}
                     </tbody>
                 </table>
             </div>
@@ -331,6 +355,8 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
         assignSlots(slots, Object.keys(sample.streams).sort(), SLOT_COUNT)
     }
     const summary = netSummary(samples)
+    const latencyOf = (key: string) => ({ video: app.video.latency(key), gateway: gatewayVideoLatency(app.connection.gatewayStats(key)) })
+    const slowest = slowestVideo(Object.values(app.video.latencies()))
     const end = samples.at(-1)?.at ?? 0
     const span = Math.max(60_000, end - (samples[0]?.at ?? end))
     const stacks = samples.map((sample) => stackOf(sample, slots, SLOT_COUNT))
@@ -358,7 +384,7 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
         <div className="net-panel" data-testid="network-panel">
             <div className="net-tiles">
                 <Tile label="Throughput" value={mbpsNumber(summary.rateNow)} unit="Mbps" detail={<>1 min avg {mbpsNumber(summary.rateAverage)} · peak {mbpsNumber(summary.ratePeak)}</>} />
-                <Tile label="Latency" value={msNumber(summary.latencyNow)} unit="ms" detail={<>p95 {msNumber(summary.latencyP95)} · max {msNumber(summary.latencyMax)}</>} />
+                <Tile label="Latency" value={msNumber(summary.latencyNow)} unit="ms" detail={<>p95 {msNumber(summary.latencyP95)} · max {msNumber(summary.latencyMax)}{slowest && <> · video {spreadText(slowest.total)}</>}</>} />
                 <Tile label="Link" value={link.text} tone={link.tone} detail={connection.droppedPerSecond ? `${connection.droppedPerSecond} dropped/s` : "no drops"} />
                 <Tile label="Lease" value={leaseShown.text} tone={leaseShown.tone} detail={leaseShown.detail} />
             </div>
@@ -411,13 +437,14 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
                     }}
                 />
             </div>
-            <ConsumersTable table={table} slots={slots} consumers={consumers} drops={drops} />
+            <ConsumersTable table={table} slots={slots} consumers={consumers} drops={drops} latency={latencyOf} />
             <details className="net-about">
                 <summary>About these numbers</summary>
                 <p>
                     All counted by this browser (WebRTC stats), each second: throughput is the wire's bytes, a stream its data channel's
                     payload or its video track's. Protocol overhead is the wire beyond everything named (DTLS/SCTP framing, acks and
-                    SCTP resends, which the browser doesn't count on their own). Latency is the heartbeat's round trip. A
+                    SCTP resends, which the browser doesn't count on their own). Latency is the heartbeat's round trip; a camera's video ms is source to screen (the sample's timestamp to the frame
+                    shown in its panel, p50/p95 over the last 5 s, from zenoh-gateway 0.5.21 on), split into its stages under the row. A
                     stream switched off is unsubscribed until switched back on; priority (0 is what the page gives the stream: small state above
                     the main camera above other cameras above maps; when the link is short each step up halves what it gives up, each step down
                     doubles it, and "last" gives up first) and the gear's options are the gateway's, kept by this browser.{" "}

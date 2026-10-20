@@ -218,7 +218,10 @@ function CameraPanel({ app, panel, topics, onChange }: {
             video.current.srcObject = state.stream
             video.current.play().catch(() => {})
         }
+        // source-to-screen latency of the frames this panel shows (the chip and Network; zenoh-gateway >= 0.5.21)
+        const unwatch = !depth && video.current ? app.video.watchLatency(topic, video.current) : () => {}
         return () => {
+            unwatch()
             unsubscribe()
             app.video.release(topic)
         }

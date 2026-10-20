@@ -63,6 +63,7 @@ h3.dr-h3 { display: block; margin: 14px 0 6px; }
 .bar-battery .battery-fill { fill: var(--battery); }
 .bar-battery .battery-bolt { fill: var(--fg); stroke: var(--card); stroke-width: 0.8; }
 .bar-battery .bar-value { font-variant-numeric: tabular-nums; }
+.bar-chip .bar-video { margin-left: -2px; }
 .bar-button { cursor: pointer; }
 .bar-button:hover { background: var(--hover); }
 .dock-help.dr-btn--icon { width: 32px; height: 32px; padding: 0; flex: none; }
@@ -620,13 +621,22 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 /* a fixed height (about 6 rows) that scrolls on its own, so the modal never grows or shrinks with the stream count */
 .net-table-scroll { height: 268px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 /* never narrower than its columns plus a readable stream name: a phone scrolls it sideways instead */
-.net-streams { min-width: 520px; }
+.net-streams { min-width: 600px; }
 .net-streams th { position: sticky; top: 0; z-index: 1; background: var(--raised, var(--card)); text-align: left; font: 10px var(--mono); color: var(--muted-fg); font-weight: 400; border-bottom: 1px solid var(--border); padding: 2px 0 2px 6px; height: 24px; box-sizing: border-box; }
 .net-streams td { height: 40px; box-sizing: border-box; padding: 0 0 0 6px; border-bottom: 1px solid var(--hair, var(--border)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
 .net-streams .net-col-on { width: 44px; padding-left: 0; text-align: center; }
 .net-streams .net-col-rate { width: 84px; position: relative; text-align: right; padding-right: 6px; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .net-streams th.net-col-rate { text-align: right; }
 .net-streams .net-col-priority { width: 112px; text-align: center; }
+.net-streams .net-col-video { width: 92px; text-align: right; padding-right: 4px; }
+.net-latency-toggle { all: unset; cursor: pointer; font: 11px var(--mono); font-variant-numeric: tabular-nums; padding: 2px 4px; border-radius: 4px; }
+.net-latency-toggle:hover, .net-latency-toggle.open { background: var(--hair, var(--border)); }
+.net-latency-caret { margin-left: 3px; color: var(--muted-fg); }
+.net-streams .net-latency-row td { height: auto; padding: 6px 8px 8px 50px; white-space: normal; }
+.net-latency-stages { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 14px; margin: 0; font-size: 11px; }
+.net-latency-stages div { display: flex; justify-content: space-between; gap: 6px; }
+.net-latency-stages dt { color: var(--muted-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.net-latency-stages dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .net-streams .net-col-drops { width: 64px; text-align: right; font: 11px var(--mono); color: var(--muted-fg); }
 .net-streams .net-col-drops.dropping { color: var(--warn); font-weight: 600; }
 .net-streams .net-col-gear { width: 40px; text-align: center; padding-left: 2px; }

@@ -5,6 +5,7 @@ import type { ConnectionState } from "../core/transport.ts"
 import type { DriveHalt } from "../core/drive.ts"
 import type { GamepadStatus } from "../core/gamepad.ts"
 import type { LeaseState } from "../core/lease.ts"
+import { type VideoLatency, videoChipText } from "../core/videoLatency.ts"
 
 export type Tone = "ok" | "warn" | "bad"
 
@@ -50,15 +51,25 @@ export function rateText(bytesPerSecond: number): string {
     return `${padDigits(megabits.toFixed(1), 5)} Mbps`
 }
 
-/** The link chip, always shown: live throughput and latency ("  1.9 Mbps ·   89 ms", padded to a fixed width), coloured by linkProblem; lost or connecting says so instead. */
-export function linkChip(connection: Pick<ConnectionState, "state" | "rttMs" | "droppedPerSecond" | "error" | "throughputBytesPerSec">, latencyMs: number | null): { text: string; tone: Tone; detail: string } {
+/**
+ * The link chip, always shown: live throughput and latency ("  1.9 Mbps ·   89 ms", padded to a fixed width), and beside
+ * it (`video`) the slowest camera's source-to-screen latency once one is measured ("video 120/180 ms", p50/p95; absent
+ * from a gateway before 0.5.21), coloured by linkProblem; lost or connecting says so instead.
+ */
+export function linkChip(connection: Pick<ConnectionState, "state" | "rttMs" | "droppedPerSecond" | "error" | "throughputBytesPerSec">, latencyMs: number | null, video: VideoLatency | null = null): { text: string; tone: Tone; detail: string; video?: string } {
     const problem = linkProblem(connection)
     if (connection.state === "lost" || connection.state === "connecting") {
         return problem!
     }
     const rate = connection.throughputBytesPerSec === null ? `${padDigits("—", 5)} Mbps` : rateText(connection.throughputBytesPerSec)
     const latency = `${padDigits(latencyMs === null ? "—" : String(Math.min(Math.round(latencyMs), 9999)), 4)} ms`
-    return { text: `${rate} · ${latency}`, tone: problem?.tone ?? "ok", detail: `${problem?.detail ?? "Link healthy"}. Throughput reaching this page and the control link's round trip` }
+    const videoText = videoChipText(video)
+    return {
+        text: `${rate} · ${latency}`,
+        ...(videoText ? { video: videoText } : {}),
+        tone: problem?.tone ?? "ok",
+        detail: `${problem?.detail ?? "Link healthy"}. Throughput reaching this page and the control link's round trip${videoText ? "; video: the slowest camera's source-to-screen latency over the last 5 s (p50/p95)" : ""}`,
+    }
 }
 
 /** Driving stopped by the link watch, in full ("Disengaged: latency 1240 ms > 1000 ms max. Reconnect to drive."). */

@@ -12,6 +12,7 @@ import { NetworkPanel } from "./NetworkPanel.tsx"
 import { gamepadStatus } from "./useGamepad.ts"
 import type { WorkspaceApi } from "./Workspace.tsx"
 import { batteryChip, batteryReadings } from "../core/batteryFeed.ts"
+import { slowestVideo, type VideoLatency } from "../core/videoLatency.ts"
 
 /** The robot's battery (every BatteryState topic; core/batteryFeed.ts), Go2-app style: the outline filled to the charge, a bolt while charging. */
 function BatteryChip() {
@@ -40,9 +41,9 @@ function BatteryChip() {
 }
 
 /** The link's throughput and latency averaged over a few seconds and redrawn once a second, so the chip is readable; driving's latency gate still uses the raw round trip. */
-function useSmoothedLink(app: ViewerApp): { rate: number | null; latency: number | null } {
+function useSmoothedLink(app: ViewerApp): { rate: number | null; latency: number | null; video: VideoLatency | null } {
     const average = useRef<{ rate: number | null; latency: number | null }>({ rate: null, latency: null })
-    const [shown, setShown] = useState(average.current)
+    const [shown, setShown] = useState<{ rate: number | null; latency: number | null; video: VideoLatency | null }>({ ...average.current, video: null })
     useEffect(() => {
         const sample = setInterval(() => {
             const { rate, latency } = average.current
@@ -51,7 +52,8 @@ function useSmoothedLink(app: ViewerApp): { rate: number | null; latency: number
                 latency: smoothed(latency, app.connection.latencyMs(), LINK_SAMPLE_MS),
             }
         }, LINK_SAMPLE_MS)
-        const redraw = setInterval(() => setShown(average.current), LINK_REDRAW_MS)
+        // the video's is already over its last few seconds of frames
+        const redraw = setInterval(() => setShown({ ...average.current, video: slowestVideo(Object.values(app.video.latencies())) }), LINK_REDRAW_MS)
         return () => {
             clearInterval(sample)
             clearInterval(redraw)
@@ -67,7 +69,7 @@ export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
     const fallback = useStore(splatFallback)
     const pad = gamepadChip(useStore(gamepadStatus))
     const average = useSmoothedLink(app)
-    const link = linkChip({ ...connection, throughputBytesPerSec: average.rate }, average.latency)
+    const link = linkChip({ ...connection, throughputBytesPerSec: average.rate }, average.latency, average.video)
     const lease = leaseChip(useStore(app.connection.lease.state), api.mobile)
     return (
         <>
@@ -80,6 +82,7 @@ export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
             <button type="button" className={`bar-chip tone-${link.tone} bar-button`} title={`${link.detail} (open Network: history and who's using the link)`} data-testid="bar-link" onClick={() => setNetworkOpen(true)}>
                 <span className="bar-dot" />
                 <span className="bar-value">{link.text}</span>
+                {link.video && <span className="bar-value bar-video" data-testid="bar-video">· {link.video}</span>}
             </button>
             <Modal open={networkOpen} onClose={() => setNetworkOpen(false)} title="Network" size="lg" data-testid="network-modal">
                 {networkOpen && <NetworkPanel app={app} onStatus={() => {

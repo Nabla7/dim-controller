@@ -5,6 +5,7 @@ import { Store } from "./store.ts"
 import { PRIORITY_TIERS } from "./bandwidth.ts"
 import { type Connection, type LiveHandle, parseKey, type SubscribeOptions, type SubscriptionUpdate, type Topic } from "./transport.ts"
 import { loadQuality, presetFor, saveQuality, type VideoQuality } from "./videoQuality.ts"
+import { VIDEO_LATENCY_WINDOW_MS, type VideoLatency } from "./videoLatency.ts"
 
 export interface VideoState {
     stream: MediaStream | null
@@ -92,7 +93,9 @@ interface Source {
     /** the options the bridge subscription runs with now */
     options: SubscribeOptions
     /** the bridge subscription: calling it stops it, `update` changes its options in place */
-    stop: (() => void) & Partial<Pick<LiveHandle, "update">>
+    stop: (() => void) & Partial<Pick<LiveHandle, "update" | "watchVideoLatency" | "videoLatency">>
+    /** camera panels' <video> elements timing its frames (core/videoLatency.ts), each with what stops it on the running subscription */
+    watched: Map<HTMLVideoElement, () => void>
     video: Store<VideoState>
     depth: Store<{ image: DepthImage | null }>
     /** this viewer's latency/quality preset (core/videoQuality.ts): the bridge's size / bitrate / rate while viewed */
@@ -116,7 +119,7 @@ export class VideoSources {
         const video = new Store<VideoState>({ stream: null, width: 0, height: 0, fps: 0 })
         const depth = new Store<{ image: DepthImage | null }>({ image: null })
         const quality = new Store<{ quality: VideoQuality }>({ quality: isDepthTopic(topic) ? "balanced" : loadQuality(topic.key) })
-        source = { uses: { view: 0, preview: 0 }, options: {}, stop: () => {}, video, depth, quality, element: null }
+        source = { uses: { view: 0, preview: 0 }, options: {}, stop: () => {}, watched: new Map(), video, depth, quality, element: null }
         source.uses[use] = 1
         source.options = this.#wanted(topic, source)
         this.#open(topic, source)
@@ -174,6 +177,34 @@ export class VideoSources {
                     video.set({ stream: message.mediaStream ?? state.stream, width, height, fps })
                 }
             })
+        for (const element of source.watched.keys()) {
+            source.watched.set(element, source.stop.watchVideoLatency?.(element) ?? (() => {}))
+        }
+    }
+
+    /** Times the frames a camera panel's <video> shows of `topic`'s stream (kept across resubscribes); call the result to stop. */
+    watchLatency(topic: Topic, element: HTMLVideoElement): () => void {
+        const source = this.#sources.get(topic.key)
+        if (!source || isDepthTopic(topic)) {
+            return () => {}
+        }
+        source.watched.get(element)?.()
+        source.watched.set(element, source.stop.watchVideoLatency?.(element) ?? (() => {}))
+        return () => {
+            source.watched.get(element)?.()
+            source.watched.delete(element)
+        }
+    }
+
+    /** A camera's latency over the last few seconds of frames its panel showed; null before any (or an older gateway). */
+    latency(key: string): VideoLatency | null {
+        const source = this.#sources.get(key)
+        return source?.watched.size ? source.stop.videoLatency?.(VIDEO_LATENCY_WINDOW_MS) ?? null : null
+    }
+
+    /** Every camera a panel is timing, by key. */
+    latencies(): Record<string, VideoLatency | null> {
+        return Object.fromEntries([...this.#sources.keys()].filter((key) => this.#sources.get(key)!.watched.size).map((key) => [key, this.latency(key)]))
     }
 
     /**

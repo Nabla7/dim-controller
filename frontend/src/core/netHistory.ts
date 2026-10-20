@@ -53,10 +53,17 @@ export class Ring<T> {
 export interface WireCounts {
     wire: number | null
     parts: Record<string, number>
+    /**
+     * each counter on its own (getStats id → its part and bytes): a channel or track remade (a camera resubscribed, a
+     * transceiver reused) vanishes from the report and a new one starts from 0, which a part's sum hides
+     */
+    counters?: Record<string, { part: string; bytes: number }>
 }
 
 type Stat = Record<string, unknown>
 const count = (value: unknown) => typeof value === "number" ? value : 0
+/** a stat's getStats id (one counter's name across reports), with a suffix for each of its counters */
+const idOf = (stat: Stat, suffix = "") => typeof stat.id === "string" ? stat.id + suffix : undefined
 
 /** What a data channel carries, from the label zenoh-gateway's client gives it: a key, control or the heartbeat. */
 function channelOf(label: string): { part: string; mid?: string } {
@@ -86,8 +93,12 @@ export function wireCounts(report: { forEach(callback: (stat: Stat) => void): vo
     report.forEach((stat) => stats.push(stat))
     let wire: number | null = null
     const parts: Record<string, number> = {}
-    const add = (part: string, bytes: number) => {
+    const counters: Record<string, { part: string; bytes: number }> = {}
+    const add = (part: string, bytes: number, id?: string) => {
         parts[part] = (parts[part] ?? 0) + bytes
+        if (id !== undefined) {
+            counters[id] = { part, bytes }
+        }
     }
     const keyOfMid = new Map<string, string>()
     for (const stat of stats) {
@@ -95,7 +106,7 @@ export function wireCounts(report: { forEach(callback: (stat: Stat) => void): vo
             wire = Math.max(wire ?? 0, stat.bytesReceived)
         } else if (stat.type === "data-channel" && typeof stat.label === "string") {
             const { part, mid } = channelOf(stat.label)
-            add(part, count(stat.bytesReceived))
+            add(part, count(stat.bytesReceived), idOf(stat))
             if (mid !== undefined) {
                 keyOfMid.set(mid, part)
             }
@@ -106,11 +117,11 @@ export function wireCounts(report: { forEach(callback: (stat: Stat) => void): vo
             continue
         }
         const resent = count(stat.retransmittedBytesReceived)
-        add(keyOfMid.get(String(stat.mid)) ?? `video (mid ${stat.mid})`, count(stat.bytesReceived) - resent)
-        add(RTP_HEADERS, count(stat.headerBytesReceived))
-        add(RESENT, resent)
+        add(keyOfMid.get(String(stat.mid)) ?? `video (mid ${stat.mid})`, count(stat.bytesReceived) - resent, idOf(stat))
+        add(RTP_HEADERS, count(stat.headerBytesReceived), idOf(stat, "/headers"))
+        add(RESENT, resent, idOf(stat, "/resent"))
     }
-    return { wire, parts }
+    return Object.keys(counters).length ? { wire, parts, counters } : { wire, parts }
 }
 
 /** Bytes/s per part between two reports; a part new since the last, or whose count went back (a channel remade), has none. */
@@ -121,6 +132,24 @@ export function partRates(previous: Record<string, number>, next: Record<string,
         if (elapsedMs > 0 && before !== undefined && bytes >= before) {
             rates[part] = ((bytes - before) * 1000) / elapsedMs
         }
+    }
+    return rates
+}
+
+/**
+ * Bytes/s per part between two reports, counter by counter: one seen before counts what it grew by (one that went back
+ * was reset, so all it has now), a new one (a channel or track opened since) all it has; each counter's growth goes to
+ * the part it belongs to now. A part's own sum would drop when a channel is remade and lose that second.
+ */
+export function counterRates(previous: Record<string, { bytes: number }>, next: Record<string, { part: string; bytes: number }>, elapsedMs: number): Record<string, number> {
+    const rates: Record<string, number> = {}
+    if (!(elapsedMs > 0)) {
+        return rates
+    }
+    for (const [id, { part, bytes }] of Object.entries(next)) {
+        const before = previous[id]?.bytes
+        const grown = before !== undefined && bytes >= before ? bytes - before : bytes
+        rates[part] = (rates[part] ?? 0) + (grown * 1000) / elapsedMs
     }
     return rates
 }
@@ -174,7 +203,8 @@ export class NetHistory {
         }
         const elapsed = at - last.at
         const wire = counts.wire !== null && last.counts.wire !== null && counts.wire >= last.counts.wire && elapsed > 0 ? ((counts.wire - last.counts.wire) * 1000) / elapsed : null
-        this.samples.push({ at, bytesPerSec: wire, latencyMs, streams: partRates(last.counts.parts, counts.parts, elapsed) })
+        const streams = counts.counters && last.counts.counters ? counterRates(last.counts.counters, counts.counters, elapsed) : partRates(last.counts.parts, counts.parts, elapsed)
+        this.samples.push({ at, bytesPerSec: wire, latencyMs, streams })
     }
 }
 

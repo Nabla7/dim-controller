@@ -1,7 +1,7 @@
 // The Network panel's history (core/netHistory.ts): a ring of samples, the wire's parts from the page's WebRTC stats,
 // and who's using the link.
 import { assertEquals } from "jsr:@std/assert@1"
-import { assignSlots, averageOf, breakdown, CONTROL, HEARTBEAT, NetHistory, nearestIndex, netSummary, niceCeil, OTHER, partRates, percentile, RESENT, Ring, RTP_HEADERS, stableOrder, stackOf, streamTable, wireCounts } from "../src/core/netHistory.ts"
+import { assignSlots, averageOf, breakdown, CONTROL, HEARTBEAT, NetHistory, nearestIndex, netSummary, niceCeil, OTHER, counterRates, partRates, percentile, RESENT, Ring, RTP_HEADERS, stableOrder, stackOf, streamTable, wireCounts } from "../src/core/netHistory.ts"
 
 
 Deno.test("the ring keeps the newest items, oldest first", () => {
@@ -36,6 +36,26 @@ Deno.test("the wire's parts: each data channel under its key, control and heartb
 
 Deno.test("a part's rate is its growth over the elapsed time; a new or reset part has none", () => {
     assertEquals(partRates({ a: 1000, b: 500 }, { a: 3000, b: 100, c: 70 }, 500), { a: 4000 })
+})
+
+Deno.test("per counter: growth, or all of a new or reset one, goes to the part it belongs to now", () => {
+    const previous = { D1: { bytes: 5000 }, rtp1: { bytes: 90_000 }, gone: { bytes: 1_000_000 } }
+    // D1 grew 1000; D2 is a camera's remade channel (500 since it opened); rtp1 was reset to 2000; the closed one is gone
+    assertEquals(counterRates(previous, { D1: { part: "a", bytes: 6000 }, D2: { part: "cam", bytes: 500 }, rtp1: { part: "cam", bytes: 2000 } }, 1000), { a: 1000, cam: 2500 })
+    assertEquals(counterRates(previous, { D1: { part: "a", bytes: 6000 } }, 0), {})
+})
+
+Deno.test("a camera resubscribed keeps its rate: its old channel and track vanish, the new ones start from 0", () => {
+    const camera = (channelId: string, rtpId: string, mid: string, channelBytes: number, rtpBytes: number) => [
+        { type: "transport", bytesReceived: channelBytes + rtpBytes },
+        { ...sub("dimos/cam/a.B", channelBytes, mid), id: channelId },
+        { type: "inbound-rtp", id: rtpId, mid, bytesReceived: rtpBytes, headerBytesReceived: 0 },
+    ]
+    const history = new NetHistory(10)
+    history.sample(0, wireCounts(report(camera("D7", "IT1", "1", 50_000, 6_000_000))), null)
+    history.sample(1000, wireCounts(report(camera("D7", "IT1", "1", 54_000, 6_400_000))), null)
+    history.sample(2000, wireCounts(report(camera("D8", "IT2", "2", 4000, 300_000))), null)
+    assertEquals(history.samples.toArray().map((sample) => sample.streams["dimos/cam/a.B"]), [undefined, 404_000, 304_000])
 })
 
 Deno.test("who's using the link: largest first, shares of the wire, the rest of the wire as other", () => {
