@@ -16,6 +16,12 @@ Deno.test("the link chip always shows live throughput and latency, coloured by t
     assertEquals(linkChip(link("connected"), 89).numbers, { rate: "1.9", ms: "89" }, "the numbers for the chip's fixed-width slots")
     assertEquals(linkChip(link("connected"), 89, { total: { p50: 120, p95: 180 } } as VideoLatency).numbers, { rate: "1.9", ms: "120" }, "the video's typical ms once measured, no spike")
     assertEquals(linkChip(link("connected", 20, null), null).numbers, { rate: "—", ms: "—" })
+    // the colour follows the number shown: a video 5 s behind is bad even while the control round trip is quick
+    const late = { total: { p50: 5451, p95: 6000 } } as VideoLatency
+    assertEquals(linkChip(link("connected", 20), 20, late, 1000).tone, "bad")
+    assertEquals(linkChip(link("connected", 20), 20, { total: { p50: 400, p95: 500 } } as VideoLatency, 1000).tone, "warn")
+    assertEquals(linkChip(link("connected", 20), 1500, null, 1000).tone, "bad", "a smoothed round trip past driving's max")
+    assertEquals(linkChip(link("connected", 20), 20, { total: { p50: 40, p95: 60 } } as VideoLatency, 1000).tone, "ok")
     assertEquals("numbers" in linkChip(link("lost"), null), false)
     assertEquals([rateText(940), rateText(240_000), rateText(3_140_000), rateText(1e12)], ["\u2007\u20070.0 Mbps", "\u2007\u20071.9 Mbps", "\u200725.1 Mbps", "999.9 Mbps"])
 })

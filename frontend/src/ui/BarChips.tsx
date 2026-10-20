@@ -14,6 +14,7 @@ import { gamepadStatus } from "./useGamepad.ts"
 import type { WorkspaceApi } from "./Workspace.tsx"
 import { batteryChip, batteryReadings } from "../core/batteryFeed.ts"
 import { slowestVideo, type VideoLatency } from "../core/videoLatency.ts"
+import { maxLatencyOf } from "../core/linkWatch.ts"
 
 /** The robot's battery (every BatteryState topic; core/batteryFeed.ts), Go2-app style: the outline filled to the charge, a bolt while charging. */
 function BatteryChip() {
@@ -107,7 +108,7 @@ export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
     const fallback = useStore(splatFallback)
     const pad = gamepadChip(useStore(gamepadStatus))
     const average = useSmoothedLink(app)
-    const link = linkChip({ ...connection, throughputBytesPerSec: average.rate }, average.latency, average.video)
+    const link = linkChip({ ...connection, throughputBytesPerSec: average.rate }, average.latency, average.video, maxLatencyOf(useStore(app.settings).maxLatencyMs))
     const lease = leaseChip(useStore(app.connection.lease.state), api.mobile)
     return (
         <>

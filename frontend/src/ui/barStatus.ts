@@ -56,7 +56,7 @@ export function rateText(bytesPerSecond: number): string {
  * the slowest camera's typical (p50) source-to-screen ms once one is measured (zenoh-gateway >= 0.5.21), else the control
  * round trip; its spike and the round trip are in `detail`. Coloured by linkProblem; lost or connecting says so instead.
  */
-export function linkChip(connection: Pick<ConnectionState, "state" | "rttMs" | "droppedPerSecond" | "error" | "throughputBytesPerSec">, latencyMs: number | null, video: VideoLatency | null = null): { text: string; tone: Tone; detail: string; numbers?: { rate: string; ms: string } } {
+export function linkChip(connection: Pick<ConnectionState, "state" | "rttMs" | "droppedPerSecond" | "error" | "throughputBytesPerSec">, latencyMs: number | null, video: VideoLatency | null = null, badMs = Infinity): { text: string; tone: Tone; detail: string; numbers?: { rate: string; ms: string } } {
     const problem = linkProblem(connection)
     if (connection.state === "lost" || connection.state === "connecting") {
         return problem!
@@ -66,11 +66,15 @@ export function linkChip(connection: Pick<ConnectionState, "state" | "rttMs" | "
     const ms = shownMs === null ? "—" : String(Math.min(Math.round(shownMs), 9999))
     const latency = `${padDigits(ms, 4)} ms`
     const roundTrip = latencyMs === null ? "—" : `${Math.round(latencyMs)} ms`
+    // the number shown colours the chip too: slow past SLOW_RTT_MS, bad past driving's own max latency (`badMs`)
+    const shownTone: Tone = shownMs === null ? "ok" : shownMs > badMs ? "bad" : shownMs > SLOW_RTT_MS ? "warn" : "ok"
+    const tones: Tone[] = ["ok", "warn", "bad"]
+    const tone = tones[Math.max(tones.indexOf(problem?.tone ?? "ok"), tones.indexOf(shownTone))]
     return {
         text: `${rate} · ${latency}`,
         numbers: { rate: rate.replace(" Mbps", "").replaceAll("\u2007", ""), ms },
-        tone: problem?.tone ?? "ok",
-        detail: `${problem?.detail ?? "Link healthy"}. ${video
+        tone,
+        detail: `${problem?.detail ?? (shownTone === "ok" ? "Link healthy" : `${video ? "Video" : "Round trip"} ${Math.round(shownMs!)} ms: ${shownTone === "bad" ? `over driving's ${badMs} ms max` : `over ${SLOW_RTT_MS} ms`}`)}. ${video
             ? `Throughput reaching this page and the slowest camera's typical (p50) source-to-screen latency over the last 5 s: ${spreadText(video.total)}, the spike being its p95, the slowest 1 in 20 frames; control round trip ${roundTrip}`
             : "Throughput reaching this page and the control link's round trip"}`,
     }
