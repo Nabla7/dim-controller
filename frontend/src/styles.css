@@ -667,7 +667,9 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .net-stream-video { display: none; }
 .net-latency-toggle.inline { font-size: 10px; padding: 1px 3px; }
 @container (max-width: 440px) {
-    .net-streams .net-col-video { display: none; }
+    /* a fixed table keeps a display: none column's width, so the column goes to zero instead */
+    .net-streams .net-col-video { width: 0; padding: 0; }
+    .net-streams .net-col-video > *, .net-streams th.net-col-video { visibility: hidden; font-size: 0; }
     .net-streams { min-width: 508px; }
     .net-stream-video { display: inline; }
     .net-streams .net-latency-row td { padding: 6px 8px 8px; }
