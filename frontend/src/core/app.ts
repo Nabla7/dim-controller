@@ -22,6 +22,7 @@ import { Manipulation } from "./manipulation.ts"
 import { AgentLink } from "./agent.ts"
 import { LocationLabels } from "./labels.ts"
 import { robotPose } from "./robot.ts"
+import { behind, ChaseHeading, headingOf, ridesOn, turnAbout } from "./followHeading.ts"
 import { disposeTree } from "dimos-react/three"
 import { plannerRunning, RunWatch } from "./runs.ts"
 import { persistentStore, Store } from "./store.ts"
@@ -38,8 +39,10 @@ export interface ViewSettings {
     /** "" = the profile's, else picked from the tree */
     fixedFrame: string
     follow: boolean
-    /** the TF frame the 3D camera follows: "" = the robot's (the profile's base frame, base_link for most) */
+    /** the TF frame the 3D camera follows: "" = base_link when it's in TF, else the profile's base frame */
     followFrame: string
+    /** following, the camera turns with the followed frame's heading (yaw only: the world stays level) */
+    followTurns: boolean
     showStats: boolean
     /** the robot type's stand-in model at the robot's pose */
     robotModel: boolean
@@ -61,7 +64,7 @@ export class ViewerApp {
     readonly highlight: FrameHighlight
     readonly video: VideoSources
     readonly layers: LayerManager
-    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: "", fixedFrame: "", follow: true, followFrame: "", showStats: false, robotModel: true, maxLatencyMs: DEFAULT_MAX_LATENCY_MS, camerasIn3d: false, viewCube: false })
+    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: "", fixedFrame: "", follow: true, followFrame: "", followTurns: true, showStats: false, robotModel: true, maxLatencyMs: DEFAULT_MAX_LATENCY_MS, camerasIn3d: false, viewCube: false })
     #profile: RobotProfile
     /** the robot type in use, whether it was picked or auto, and why */
     readonly robot: Store<{ type: RobotType; auto: boolean; reason: string }>
@@ -91,6 +94,9 @@ export class ViewerApp {
     #robotPosition: THREE.Vector3 | null = null
     /** where the followed frame is now (followed or not) */
     #followPosition: THREE.Vector3 | null = null
+    /** the followed frame's heading, low-passed, that the camera turns with (core/followHeading.ts) */
+    #chase = new ChaseHeading()
+    #lastFrameAt = 0
     /** Desktop's robots (robots.json types, its default robot); null until it answers, or without Desktop */
     #robots: RobotsAnswer | null = null
     /** the stand-in model drawn at the robot's pose, and the type it's for */
@@ -120,7 +126,7 @@ export class ViewerApp {
         feedTf(this.connection, this.tf, this.viewer, this.tfHistory)
         feedBattery(this.connection, () => this.profile.name)
         this.connection.status.subscribe(() => this.#updateDriveCandidates())
-        this.viewer.onFrame(() => this.#eachFrame())
+        this.viewer.onFrame((frame) => this.#eachFrame(frame.now))
         this.connection.start()
         this.labels = new LocationLabels(this)
         this.agent = new AgentLink(this)
@@ -229,7 +235,14 @@ export class ViewerApp {
             .catch(() => {})
     }
 
-    #eachFrame() {
+    #eachFrame(now: number) {
+        const dt = this.#lastFrameAt ? (now - this.#lastFrameAt) / 1000 : 0
+        this.#lastFrameAt = now
+        const picked = this.settings.get().fixedFrame
+        if (picked && this.tf.has(picked) && this.tf.parentOf(this.robotFrame) !== null && ridesOn(picked, this.robotFrame, (frame) => this.tf.parentOf(frame))) {
+            // a frame on the robot as the fixed frame tilts and turns the whole world with it: follow it instead
+            this.settings.update({ fixedFrame: "", followFrame: picked, follow: true })
+        }
         const chosen = this.settings.get().fixedFrame || this.profile.fixedFrame
         const fixedFrame = chosen || this.tf.defaultFixedFrame()
         if (fixedFrame !== this.viewer.fixedFrame) {
@@ -241,15 +254,18 @@ export class ViewerApp {
         this.robotMatrix = robot
         const position = robot ? new THREE.Vector3().setFromMatrixPosition(robot) : null
         this.#robotPosition = position
+        const followFrame = this.followFrame
+        const followPose = followFrame === this.profile.baseFrame ? robot : this.tf.lookup(followFrame, fixedFrame)
+        const followed = followPose ? new THREE.Vector3().setFromMatrixPosition(followPose) : null
+        const heading = followPose ? headingOf(followPose, followFrame) : null
         if (position && !this.#framed) {
             this.#framed = true
-            this.viewer.followTarget = position
-            this.viewer.frame(position, this.#profile.viewDistance ?? 7)
+            this.viewer.followTarget = followed ?? position
+            this.#frameBehind(followed ?? position, heading)
         }
-        const followFrame = this.followFrame
-        const followed = followFrame === this.profile.baseFrame ? position : this.#framePosition(followFrame, fixedFrame)
         this.#followPosition = followed
         this.viewer.followTarget = this.settings.get().follow ? followed : null
+        this.#turnWithHeading(heading, dt)
         this.#placeModel(robot)
         const info = this.frameInfo.get()
         if (info.fixedFrame !== fixedFrame || info.robotFound !== !!position || info.followFound !== !!followed) {
@@ -257,14 +273,38 @@ export class ViewerApp {
         }
     }
 
-    /** the TF frame the 3D camera follows (Settings → Follow frame; the robot's by default) */
+    /** the TF frame the 3D camera follows (Settings → Follow frame; by default the robot's) */
     get followFrame(): string {
-        return this.settings.get().followFrame || this.profile.baseFrame
+        return this.settings.get().followFrame || this.robotFrame
     }
 
-    #framePosition(frame: string, fixedFrame: string): THREE.Vector3 | null {
-        const matrix = this.tf.lookup(frame, fixedFrame)
-        return matrix ? new THREE.Vector3().setFromMatrixPosition(matrix) : null
+    /** the robot's frame: base_link when it's in TF, else the profile's base frame */
+    get robotFrame(): string {
+        return this.tf.has("base_link") ? "base_link" : this.profile.baseFrame
+    }
+
+    /** Following with Follow turns on: turns the camera about the followed point with the frame's (smoothed) heading. */
+    #turnWithHeading(heading: number | null, dt: number) {
+        if (!this.following || this.settings.get().followTurns === false || !this.#followPosition) {
+            this.#chase.reset()
+            return
+        }
+        const turn = this.#chase.step(heading, dt)
+        if (Math.abs(turn) > 1e-6) {
+            turnAbout(this.viewer.camera, this.viewer.controls.target, turn)
+            this.viewer.requestRender()
+        }
+    }
+
+    /** Frames `target` (the profile's distance away), from behind `heading` with Follow turns on, else from the view's angle. */
+    #frameBehind(target: THREE.Vector3, heading: number | null) {
+        const distance = this.#profile.viewDistance ?? 7
+        if (heading !== null && this.settings.get().followTurns !== false) {
+            // viewer.frame() keeps the camera's direction from its target: point that direction behind the frame first
+            this.viewer.camera.position.copy(this.viewer.controls.target).add(behind(target, heading, distance).sub(target))
+        }
+        this.viewer.frame(target.clone(), distance)
+        this.#chase.reset()
     }
 
     #checkTf() {
@@ -341,7 +381,8 @@ export class ViewerApp {
         }
         this.viewer.resumeFollow()
         if (wasFollowing && this.#followPosition) {
-            this.viewer.frame(this.#followPosition.clone(), this.#profile.viewDistance ?? 7)
+            const pose = this.tf.lookup(this.followFrame, this.viewer.fixedFrame)
+            this.#frameBehind(this.#followPosition, pose ? headingOf(pose, this.followFrame) : null)
             return
         }
         if (this.#followPosition) {

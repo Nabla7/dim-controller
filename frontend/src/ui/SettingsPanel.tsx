@@ -65,6 +65,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                 <Heading level={3}>3D view</Heading>
                 <Field inline label="Follow robot" title="the 3D camera tracks a TF frame; a pan stops it, the follow button resumes it"><Toggle value={view.follow} onChange={(follow: any) => app.settings.update({ follow })} /></Field>
                 <FollowFramePicker app={app} frames={frames} />
+                <Field inline label="Follow turns" title="following, the camera turns with the frame's heading (yaw only: the world stays level), like a third-person game; orbit and zoom stay an offset from it"><Toggle value={view.followTurns !== false} onChange={(followTurns: any) => app.settings.update({ followTurns })} /></Field>
                 <Field inline label="Cameras in 3D" title="each camera's picture and frustum at its CameraInfo frame; an open camera panel's stream is shared, else a small one a few times a second"><CamerasIn3dToggle app={app} /></Field>
             </section>
             <Heading level={3}>Rendering</Heading>
@@ -139,13 +140,13 @@ function MaxLatencyInput({ app }: { app: ViewerApp }) {
 /** the TF frame the 3D camera follows: the robot's by default, or any frame in the tree (refreshed while shown) */
 function FollowFramePicker({ app, frames }: { app: ViewerApp; frames: string[] }) {
     const view = useStore(app.settings)
-    const base = app.profile.baseFrame
+    const base = app.robotFrame
     const others = followFrameOptions(frames, view.followFrame || base).filter(({ frame }) => frame !== base)
     return (
         <Field inline label="Follow frame" title="the 3D view's follow button follows this frame">
             <Select
                 aria-label="Frame to follow"
-                value={view.followFrame === app.profile.baseFrame ? "" : view.followFrame}
+                value={view.followFrame === base ? "" : view.followFrame}
                 options={[["", `robot (${base})${frames.includes(base) ? "" : " (waiting)"}`], ...others.map(({ frame, waiting }) => [frame, `${frame}${waiting ? " (waiting)" : ""}`] as [string, string])]}
                 onChange={(followFrame: string) => app.settings.update({ followFrame })}
             />
