@@ -8,7 +8,6 @@ import { useEffect, useRef, useState } from "react"
 import { gamepadChip, leaseChip, LINK_REDRAW_MS, LINK_SAMPLE_MS, linkChip, phoneChipText, smoothed } from "./barStatus.ts"
 import { Modal } from "dimos-react"
 import { Icon } from "./icons.tsx"
-import { Spread } from "./Spread.tsx"
 import { NetworkPanel } from "./NetworkPanel.tsx"
 import { gamepadStatus } from "./useGamepad.ts"
 import type { WorkspaceApi } from "./Workspace.tsx"
@@ -83,17 +82,9 @@ export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
             <button type="button" className={`bar-chip tone-${link.tone} bar-button bar-link`} title={`${link.detail} (open Network: history and who's using the link)`} data-testid="bar-link" onClick={() => setNetworkOpen(true)}>
                 <span className="bar-dot" />
                 {api.mobile ? (
-                    // a phone: unpadded, the video latency on a second line, so both fit between the corners
-                    <span className="bar-link-lines">
-                        <span className="bar-value">{phoneChipText(link.text)}</span>
-                        {link.video && <span className="bar-value bar-video" data-testid="bar-video"><Spread parts={link.video} /> ms</span>}
-                    </span>
-                ) : (
-                    <>
-                        <span className="bar-value">{link.text}</span>
-                        {link.video && <span className="bar-value bar-video" data-testid="bar-video">· video <Spread parts={link.video} /> ms</span>}
-                    </>
-                )}
+                    // a phone: unpadded, so it fits between the corners
+                    <span className="bar-link-lines"><span className="bar-value">{phoneChipText(link.text)}</span></span>
+                ) : <span className="bar-value">{link.text}</span>}
             </button>
             <Modal open={networkOpen} onClose={() => setNetworkOpen(false)} title="Network" size="lg" data-testid="network-modal">
                 {networkOpen && <NetworkPanel app={app} onStatus={() => {

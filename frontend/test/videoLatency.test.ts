@@ -1,7 +1,7 @@
 // Video latency, source to screen (core/videoLatency.ts): the gateway's stats parsed (nothing from an older gateway),
 // the slowest camera picked, and the chip's and Network panel's text.
 import { assertEquals } from "jsr:@std/assert@1"
-import { gatewayVideoLatency, latencyStages, slowestVideo, spreadParts, spreadText, videoChipText, type VideoLatency } from "../src/core/videoLatency.ts"
+import { gatewayVideoLatency, latencyStages, slowestVideo, spreadParts, spreadText, type VideoLatency } from "../src/core/videoLatency.ts"
 import { linkChip } from "../src/ui/barStatus.ts"
 
 const latency = (p50: number, p95: number, extra: Partial<VideoLatency> = {}): VideoLatency => ({
@@ -25,17 +25,16 @@ Deno.test("the slowest camera by p50; none measured is null", () => {
     assertEquals(slowestVideo([null, undefined]), null)
 })
 
-Deno.test("the chip shows the video's typical ms and its spike beside the control round trip, and nothing before it's measured", () => {
+Deno.test("a spread is its typical ms and its spike; the chip shows the video's typical ms in place of the round trip once it's measured", () => {
     assertEquals(spreadParts({ p50: 119.6, p95: 180.2 }), { typical: "120", spike: "spike 180" })
     assertEquals(spreadParts(null), { typical: "—", spike: null })
     assertEquals(spreadText({ p50: 119.6, p95: 180.2 }), "120 ms (spike 180)")
     assertEquals(spreadText(null), "—")
-    assertEquals(videoChipText(latency(120, 180)), { typical: "120", spike: "spike 180" })
-    assertEquals(videoChipText(null), null)
     const connection = { state: "connected" as const, rttMs: 6, droppedPerSecond: 0, error: null, throughputBytesPerSec: 250_000 }
     const chip = linkChip(connection, 6, latency(1840, 2400))
-    assertEquals([chip.text, chip.video], ["  2.0 Mbps ·    6 ms", { typical: "1840", spike: "spike 2400" }])
-    assertEquals("video" in linkChip(connection, 6), false)
+    assertEquals(chip.text, "\u2007\u20072.0 Mbps · 1840 ms")
+    assertEquals(chip.detail.includes("1840 ms (spike 2400)") && chip.detail.includes("control round trip 6 ms"), true)
+    assertEquals(linkChip(connection, 6).text, "\u2007\u20072.0 Mbps · \u2007\u2007\u20076 ms")
 })
 
 Deno.test("a camera's details: each stage, the browser's split where it reports one, the in-packet check and the gateway's pacer", () => {

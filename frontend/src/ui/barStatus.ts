@@ -5,7 +5,7 @@ import type { ConnectionState } from "../core/transport.ts"
 import type { DriveHalt } from "../core/drive.ts"
 import type { GamepadStatus } from "../core/gamepad.ts"
 import type { LeaseState } from "../core/lease.ts"
-import { type VideoLatency, videoChipText } from "../core/videoLatency.ts"
+import { spreadText, type VideoLatency } from "../core/videoLatency.ts"
 
 export type Tone = "ok" | "warn" | "bad"
 
@@ -52,23 +52,25 @@ export function rateText(bytesPerSecond: number): string {
 }
 
 /**
- * The link chip, always shown: live throughput and latency ("  1.9 Mbps ·   89 ms", padded to a fixed width), and beside
- * it (`video`) the slowest camera's source-to-screen latency once one is measured (typical 120 ms with its spike, the p95, 180; absent
- * from a gateway before 0.5.21), coloured by linkProblem; lost or connecting says so instead.
+ * The link chip, always shown: live throughput and latency ("  1.9 Mbps ·   89 ms", padded to a fixed width), the latency
+ * the slowest camera's typical (p50) source-to-screen ms once one is measured (zenoh-gateway >= 0.5.21), else the control
+ * round trip; its spike and the round trip are in `detail`. Coloured by linkProblem; lost or connecting says so instead.
  */
-export function linkChip(connection: Pick<ConnectionState, "state" | "rttMs" | "droppedPerSecond" | "error" | "throughputBytesPerSec">, latencyMs: number | null, video: VideoLatency | null = null): { text: string; tone: Tone; detail: string; video?: { typical: string; spike: string | null } } {
+export function linkChip(connection: Pick<ConnectionState, "state" | "rttMs" | "droppedPerSecond" | "error" | "throughputBytesPerSec">, latencyMs: number | null, video: VideoLatency | null = null): { text: string; tone: Tone; detail: string } {
     const problem = linkProblem(connection)
     if (connection.state === "lost" || connection.state === "connecting") {
         return problem!
     }
     const rate = connection.throughputBytesPerSec === null ? `${padDigits("—", 5)} Mbps` : rateText(connection.throughputBytesPerSec)
-    const latency = `${padDigits(latencyMs === null ? "—" : String(Math.min(Math.round(latencyMs), 9999)), 4)} ms`
-    const videoText = videoChipText(video)
+    const shownMs = video ? video.total.p50 : latencyMs
+    const latency = `${padDigits(shownMs === null ? "—" : String(Math.min(Math.round(shownMs), 9999)), 4)} ms`
+    const roundTrip = latencyMs === null ? "—" : `${Math.round(latencyMs)} ms`
     return {
         text: `${rate} · ${latency}`,
-        ...(videoText ? { video: videoText } : {}),
         tone: problem?.tone ?? "ok",
-        detail: `${problem?.detail ?? "Link healthy"}. Throughput reaching this page and the control link's round trip${videoText ? "; video: the slowest camera's source-to-screen latency over the last 5 s, typical (p50) ms and its spike (p95, the slowest 1 in 20 frames)" : ""}`,
+        detail: `${problem?.detail ?? "Link healthy"}. ${video
+            ? `Throughput reaching this page and the slowest camera's typical (p50) source-to-screen latency over the last 5 s: ${spreadText(video.total)}, the spike being its p95, the slowest 1 in 20 frames; control round trip ${roundTrip}`
+            : "Throughput reaching this page and the control link's round trip"}`,
     }
 }
 

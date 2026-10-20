@@ -63,7 +63,6 @@ h3.dr-h3 { display: block; margin: 14px 0 6px; }
 .bar-battery .battery-fill { fill: var(--battery); }
 .bar-battery .battery-bolt { fill: var(--fg); stroke: var(--card); stroke-width: 0.8; }
 .bar-battery .bar-value { font-variant-numeric: tabular-nums; }
-.bar-chip .bar-video { margin-left: -2px; }
 .bar-button { cursor: pointer; }
 .bar-button:hover { background: var(--hover); }
 .dock-help.dr-btn--icon { width: 32px; height: 32px; padding: 0; flex: none; }
@@ -762,13 +761,12 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .corner-chips > * { pointer-events: auto; }
 .corner-chips .bar-chip { height: 30px; padding: 0 7px; background: color-mix(in srgb, var(--card) 88%, transparent); }
 .corner-chips .bar-value { max-width: 110px; }
-/* a phone's link chip (ui/BarChips.tsx): ~116 px between the corners, so smaller, no dot (a problem still colours the
-   border), and the slowest camera's video latency on a second line */
+/* a phone's link chip (ui/BarChips.tsx): ~116 px between the corners, so smaller and no dot (a problem still colours the
+   border) */
 .corner-chips .bar-link { padding: 0 6px; }
 .corner-chips .bar-link .bar-dot { display: none; }
 .bar-link-lines { display: flex; flex-direction: column; min-width: 0; }
 .bar-link-lines .bar-value { font-size: 10px; line-height: 12px; max-width: 104px; }
-.bar-link-lines .bar-video { margin-left: 0; }
 /* a phone's main camera: the picture at the top, the space below it for the thumbs */
 .mobile .zone-stage .camera-media, .mobile .zone-stage .camera-overlay { object-position: top; }
 /* on its side, centred between the sticks over it */

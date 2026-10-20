@@ -64,11 +64,6 @@ export function spreadText(spread: LatencySpread | null | undefined): string {
     return spike ? `${typical} ms (${spike})` : typical
 }
 
-/** The chip's part: the slowest camera's typical and spike ms; null (nothing shown) before any frame was measured or on an older gateway. */
-export function videoChipText(latency: VideoLatency | null): { typical: string; spike: string | null } | null {
-    return latency ? spreadParts(latency.total) : null
-}
-
 /** One row of a camera's latency details: its typical ms (`value`), the spike beside it when it has one, and what it measures. */
 export interface LatencyStage {
     name: string
