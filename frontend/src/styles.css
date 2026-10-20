@@ -757,8 +757,10 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .phone-corners > * { pointer-events: auto; }
 .corner-button.dr-btn--icon { width: 40px; height: 40px; padding: 0; flex: none; background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(8px); box-shadow: var(--shadow-md); }
 .corner-button[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
-/* a phone's chips: their own row under the top buttons, over the main view (the main view doesn't move as they come and go) */
-.corner-chips { position: absolute; top: 100%; left: 8px; right: 8px; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-start; pointer-events: none; }
+/* a phone's chips: a second row of the top bar, which grows for them (the main view starts under it, never under a chip) */
+.phone-corners { flex-wrap: wrap; }
+.corner-chips { order: 1; flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-start; pointer-events: none; }
+.corner-chips:empty { display: none; }
 .corner-chips > * { pointer-events: auto; }
 .corner-chips .bar-chip { height: 30px; padding: 0 7px; background: color-mix(in srgb, var(--card) 88%, transparent); }
 .corner-chips .bar-value { max-width: 110px; }
@@ -904,7 +906,6 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .bar-battery.quiet { --battery: var(--muted-fg); }
 /* a phone: the panel list on the left, Record, the palette and the drawer on the right */
 .phone-corners > .record-control { margin-left: auto; }
-.corner-chips .bar-chip.quiet { background: color-mix(in srgb, var(--card) 72%, transparent); backdrop-filter: blur(6px); }
 /* a phone's Status / Settings / TF page: the whole screen, a back bar where the top buttons were */
 .ws-sheet { position: absolute; z-index: 20; background: var(--surface); animation: drawer-right 0.16s ease-out; }
 .ws-sheet-head { position: absolute; top: 0; left: 0; right: 0; z-index: 22; box-sizing: border-box; display: flex; align-items: flex-end; padding: 0 8px 6px; background: var(--surface); border-bottom: 1px solid var(--border); }
