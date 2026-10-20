@@ -1,6 +1,6 @@
 // The drive loop against a fake bridge client: what gets published, when, and with which speeds.
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
-import { Drive } from "../src/core/drive.ts"
+import { Drive, fastTurnScale } from "../src/core/drive.ts"
 import { decode } from "../src/core/lcm/lcm.ts"
 import go2 from "../src/profile/dog.ts"
 import drone from "../src/profile/drone.ts"
@@ -29,7 +29,7 @@ function fakeBridge() {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-Deno.test("no arming: forward at the linear speed, shift doubles linear, and turns only gently at full speed but 1.5× standing still, a release flushes zeros then goes quiet", async () => {
+Deno.test("no arming: forward at the linear speed, shift doubles linear, and turns 1.1× normal at full speed, 1.5× standing still, a release flushes zeros then goes quiet", async () => {
     localStorage.clear()
     const { connection, puts, deadmen } = fakeBridge()
     const drive = new Drive(connection, go2)
@@ -45,7 +45,7 @@ Deno.test("no arming: forward at the linear speed, shift doubles linear, and tur
     await wait(120)
     const boosted = puts.at(-1)!
     assertAlmostEquals(boosted.twist.linear.x, go2.drive.speeds.linear * 2)
-    assertAlmostEquals(boosted.twist.angular.z, go2.drive.speeds.angular * 0.3)
+    assertAlmostEquals(boosted.twist.angular.z, go2.drive.speeds.angular * 1.1)
     drive.setAxes("keys", { turn: 1 })
     await wait(120)
     assertAlmostEquals(puts.at(-1)!.twist.angular.z, go2.drive.speeds.angular * 1.5)
@@ -164,4 +164,17 @@ Deno.test("a missing speed setting (NaN) never counts as moving", async () => {
     assertEquals(puts.length, 0)
     drive.settings.update({ linear })
     drive.dispose()
+})
+
+Deno.test("fast mode keeps most of its turn at full speed: 1.5× normal stopped, 1.4× at half speed, 1.1× at full, smooth and clamped", () => {
+    assertAlmostEquals(fastTurnScale(0), 1.5)
+    assertAlmostEquals(fastTurnScale(0.5), 1.4)
+    assertAlmostEquals(fastTurnScale(1), 1.1)
+    assertAlmostEquals(fastTurnScale(2), 1.1)
+    assertAlmostEquals(fastTurnScale(-1), 1.5)
+    assert(fastTurnScale(1) / fastTurnScale(0) >= 0.7, "at least 70% of the standing turn rate at full speed")
+    for (let going = 0; going < 1; going += 0.05) {
+        const step = fastTurnScale(going) - fastTurnScale(going + 0.05)
+        assert(step >= 0 && step < 0.05, `no jump at ${going}`)
+    }
 })
