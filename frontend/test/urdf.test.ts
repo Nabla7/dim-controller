@@ -4,7 +4,7 @@
 import { assert, assertAlmostEquals, assertEquals, assertThrows } from "jsr:@std/assert@1"
 import { DOMParser } from "https://esm.sh/@xmldom/xmldom@0.8.10"
 import * as THREE from "three"
-import { decodeMeshFile, meshGeometry, meshUris, parseUrdf } from "../src/core/urdf.ts"
+import { decodeMeshFile, meshGeometry, meshUris, parseUrdf } from "dimos-react/three"
 import { Kinematics, RobotModel } from "../src/core/robotDescription.ts"
 
 // deno has no DOMParser; the browser's is what the page uses

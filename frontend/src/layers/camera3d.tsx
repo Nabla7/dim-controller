@@ -9,7 +9,7 @@ import { useStore, type Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { cameraInfoFor, isDepthTopic } from "../core/video.ts"
 import { DEFAULT_DEPTH_LOOK, DEPTH_COLORMAPS, DepthMaterial, type DepthLook } from "../core/render/depth.ts"
-import { type CameraModel, cameraModel, pixelRay } from "../core/render/cameraColor.ts"
+import { type CameraModel, cameraModel, curvedPicture } from "dimos-react/three"
 import { Field, NumberInput, Row, Select, Slider, Toggle } from "dimos-react"
 
 export interface Camera3dSettings {
@@ -36,11 +36,6 @@ interface Intrinsics {
     /** the full lens model, when the CameraInfo gave one */
     model?: CameraModel
 }
-
-/** grid columns of the curved picture (rows follow the aspect) */
-const CURVED_COLUMNS = 64
-/** rays further out than this on the z = 1 plane (past ~76°) are a fisheye's rim: left out */
-const MAX_RAY_SLOPE = 4
 
 // optical (x right, y down, z forward) → body (x forward, y left, z up)
 const OPTICAL_TO_BODY = new THREE.Matrix4().set(0, 0, 1, 0, -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 1)
@@ -238,47 +233,6 @@ class Camera3dLayer {
         this.#video?.dispose()
         this.#frustum.dispose()
     }
-}
-
-/**
- * The picture on a curved surface: a grid over the image, each vertex on its pixel's own ray (the lens model inverted)
- * at `distance` meters, so straight edges in the room stay straight. Grid cells with a corner past the lens' usable
- * rim are left out.
- */
-function curvedPicture(model: CameraModel, distance: number): THREE.BufferGeometry {
-    const columns = CURVED_COLUMNS
-    const rows = Math.max(2, Math.round((columns * model.height) / model.width))
-    const positions: number[] = []
-    const uvs: number[] = []
-    const valid: boolean[] = []
-    for (let row = 0; row < rows; row++) {
-        for (let column = 0; column < columns; column++) {
-            const u = (column / (columns - 1)) * (model.width - 1)
-            const v = (row / (rows - 1)) * (model.height - 1)
-            const ray = pixelRay(model, u, v)
-            const ok = !!ray && Math.abs(ray[0]) < MAX_RAY_SLOPE && Math.abs(ray[1]) < MAX_RAY_SLOPE
-            const [x, y] = ok ? ray! : [0, 0]
-            const scale = distance / Math.hypot(x, y, 1)
-            positions.push(x * scale, y * scale, scale)
-            uvs.push(u / (model.width - 1), 1 - v / (model.height - 1))
-            valid.push(ok)
-        }
-    }
-    const index: number[] = []
-    for (let row = 0; row + 1 < rows; row++) {
-        for (let column = 0; column + 1 < columns; column++) {
-            const a = row * columns + column
-            const [b, c, e] = [a + 1, a + columns, a + columns + 1]
-            if (valid[a] && valid[b] && valid[c] && valid[e]) {
-                index.push(a, c, b, b, c, e)
-            }
-        }
-    }
-    const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3))
-    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2))
-    geometry.setIndex(index)
-    return geometry
 }
 
 function guess(width: number, height: number): Intrinsics {

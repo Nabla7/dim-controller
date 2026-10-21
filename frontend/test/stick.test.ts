@@ -1,6 +1,6 @@
 // Thumb-stick shaping and smoothing (core/stick.ts): dead zone, expo, single-axis sticks, and a release that never eases.
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
-import { DEAD_ZONE, shapeStick, smoothToward } from "../src/core/stick.ts"
+import { shapeStick, smoothToward, STICK_DEAD_ZONE as DEAD_ZONE } from "dimos-react"
 
 Deno.test("a resting thumb inside the dead zone sends nothing; the edge is full speed; up is +y", () => {
     assertEquals(shapeStick(0, 0, 60), { x: 0, y: 0 })

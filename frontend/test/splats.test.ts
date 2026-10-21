@@ -5,7 +5,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1"
 import { DOMParser } from "https://esm.sh/@xmldom/xmldom@0.8.10"
 import * as THREE from "three"
-import { parseUrdf } from "../src/core/urdf.ts"
+import { parseUrdf } from "dimos-react/three"
 import { splitHash } from "../src/core/meshCache.ts"
 import { type SplatAsset, splatFileType } from "../src/core/splats.ts"
 import { groupNames, Kinematics, linkGroups, modelPartsOf, RobotModel } from "../src/core/robotDescription.ts"

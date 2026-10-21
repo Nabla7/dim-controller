@@ -3,6 +3,8 @@
 
     inputs = {
         nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+        # the page's deno: nixos-25.11's 2.6.10, the version dimos pins (unstable's newer deno refuses packages younger than a day)
+        nixpkgs-deno.url = "github:NixOS/nixpkgs/nixos-25.11";
         rust-overlay.url = "github:oxalica/rust-overlay";
         rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
         # deps build once into their own derivation (keyed on Cargo.toml / Cargo.lock), so a commit that only edits our code rebuilds just our crate
@@ -13,7 +15,7 @@
         extra-trusted-public-keys = [ "dimos-desktop.cachix.org-1:A4P35aGJGmCan92LWyamtSFXMqaVE+VRFYnrJ8QMTeQ=" ];
     };
 
-    outputs = { self, nixpkgs, rust-overlay, crane }:
+    outputs = { self, nixpkgs, nixpkgs-deno, rust-overlay, crane }:
         let
             systems = [ "aarch64-darwin" "x86_64-darwin" "x86_64-linux" "aarch64-linux" ];
             forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f (import nixpkgs { inherit system; overlays = [ (import rust-overlay) ]; }));
@@ -22,17 +24,48 @@
                 let
                     rust = pkgs.rust-bin.stable.latest.default;
 
-                    # the page: React + Vite (type-checked first), from package-lock.json
-                    frontend = pkgs.buildNpmPackage {
-                        pname = "dim-controller-frontend";
-                        version = "0.1.0";
-                        src = ./frontend;
-                        npmDepsHash = "sha256-l1GsaZUU/CiUPrhOxxVY8K4w3Ovv2ZVzdcYEahhD0fk=";
-                        # npm writes the git dependency (dimos-react) into its cache while installing
-                        makeCacheWritable = true;
-                        installPhase = ''
-                            cp -r dist $out
+                    deno = nixpkgs-deno.legacyPackages.${pkgs.stdenv.hostPlatform.system}.deno;
+                    denoEnv = "export HOME=$TMPDIR DENO_DIR=$TMPDIR/deno DENO_NO_UPDATE_CHECK=1 DENO_NO_PROMPT=1";
+                    frontendFiles = paths: pkgs.lib.fileset.toSource { root = ./frontend; fileset = pkgs.lib.fileset.unions paths; };
+                    # `deno install --frozen` (deno.lock pins every package): the only step with network, so fixed-output.
+                    # Its hash is per build machine (vite's native rollup and esbuild differ by OS and CPU). After changing
+                    # frontend/deno.json or deno.lock: set this system's hash to "", `nix build .#frontendModules`, paste the "got:".
+                    frontendModules = pkgs.stdenvNoCC.mkDerivation {
+                        name = "dim-controller-frontend-modules";
+                        src = frontendFiles [ ./frontend/deno.json ./frontend/deno.lock ];
+                        nativeBuildInputs = [ deno ];
+                        buildPhase = ''
+                            ${denoEnv}
+                            export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+                            deno install --frozen
+                            # deno's own record of the install: not needed, and not byte-identical between installs
+                            rm -f node_modules/.deno/.setup-cache.bin
                         '';
+                        installPhase = "cp -R node_modules $out";
+                        dontFixup = true;
+                        outputHashMode = "recursive";
+                        outputHashAlgo = "sha256";
+                        outputHash = {
+                            aarch64-darwin = "sha256-7pBtJpxnSLBT/SDgaHYzFj8TizogNVMTC8tcceJDe30=";
+                            x86_64-darwin = "";
+                            x86_64-linux = "";
+                            aarch64-linux = "";
+                        }.${pkgs.stdenv.hostPlatform.system};
+                    };
+
+                    # the page: React + Vite (type-checked first) against those modules, offline
+                    frontend = pkgs.stdenvNoCC.mkDerivation {
+                        name = "dim-controller-frontend";
+                        src = frontendFiles [ ./frontend/deno.json ./frontend/deno.lock ./frontend/index.html ./frontend/vite.config.ts ./frontend/tsconfig.json ./frontend/src ./frontend/public ];
+                        nativeBuildInputs = [ deno ];
+                        buildPhase = ''
+                            ${denoEnv}
+                            cp -R ${frontendModules} node_modules
+                            chmod -R u+w node_modules
+                            deno run -A --cached-only --node-modules-dir=manual npm:typescript/tsc --noEmit -p .
+                            deno run -A --cached-only --node-modules-dir=manual npm:vite build
+                        '';
+                        installPhase = "cp -R dist $out";
                     };
 
                     # the backend: serves the page and records topics to mcap (independent of the page, so a page
@@ -103,7 +136,7 @@
                             cp ${./icon.svg} $out/icon.svg
                         '';
                 in {
-                    inherit frontend server;
+                    inherit frontend frontendModules server;
                     # what Desktop builds: bin/dimos-app-server, which serves everything under /apps/<name>/
                     dimosApp = pkgs.runCommand "dim-controller" { nativeBuildInputs = [ pkgs.makeWrapper ]; } ''
                         mkdir -p $out/bin

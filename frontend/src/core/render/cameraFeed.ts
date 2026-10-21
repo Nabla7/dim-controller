@@ -8,7 +8,7 @@ import { subscribeDecoded } from "../layers/helpers.ts"
 import { headerFrameId } from "../lcm/lcm.ts"
 import type { Topic } from "../transport.ts"
 import { cameraInfoFor } from "../video.ts"
-import { type CameraModel, cameraModel } from "./cameraColor.ts"
+import { type CameraModel, cameraModel } from "dimos-react/three"
 
 export class CameraFeed {
     readonly texture: THREE.VideoTexture

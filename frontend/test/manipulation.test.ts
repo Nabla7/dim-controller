@@ -3,7 +3,7 @@
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
 import * as THREE from "three"
 import { Kinematics, meshGeometries, type RobotDescription, RobotModel, urdfPositions } from "../src/core/robotDescription.ts"
-import { solveIk } from "../src/core/ik.ts"
+import { solveIk } from "dimos-react/three"
 import { defaultSelection, jointControl, Manipulation, type ManipulationPlan, wholePlan, wrapAngle, canonical } from "../src/core/manipulation.ts"
 import { obstacleObject } from "../src/core/armManipView.ts"
 

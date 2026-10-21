@@ -460,8 +460,8 @@ weight normalized, restyled; the wheeled robot puts the humanoid's upper body on
 ## Develop
 
 ```sh
-cd frontend && npm install && npm run dev      # vite on :5173, proxied to a Desktop on :7077 (DESKTOP_URL)
-npm run typecheck && npm test                  # types; LCM decoder tests (deno)
+cd frontend && deno task dev                   # vite on :5173, proxied to a Desktop on :7077 (DESKTOP_URL)
+deno task typecheck && deno task test          # types; the tests (deno)
 cd ../server && cargo test                     # every endpoint; the recorder and driving over zenoh on loopback
 deno task check-endpoints [--write]            # dimos.yaml's provides: = the served openapi.json
 nix build .#dimosApp                           # what Desktop builds: bin/dimos-app-server serving the page

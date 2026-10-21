@@ -3,7 +3,7 @@
         "@std/yaml": "jsr:@std/yaml@1"
     },
     "tasks": {
-        "test": "cd server && cargo test --locked && cd ../frontend && npm run typecheck && npm test",
+        "test": "cd server && cargo test --locked && cd ../frontend && deno task typecheck && deno task test",
         "check": "deno task check-endpoints",
         "check-endpoints": "deno run -A scripts/check_endpoints.ts"
     },
