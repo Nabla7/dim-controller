@@ -896,7 +896,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .g2g-intro a { color: var(--primary); }
 .g2g-code { image-rendering: pixelated; background: #fff; }
 .g2g-note { font-size: 11px; max-width: 46ch; }
-.g2g-table { border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 12px; }
+.g2g-table { border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 12px; white-space: pre; }
 .g2g-table th, .g2g-table td { padding: 3px 8px; text-align: right; }
 .g2g-table th:first-child, .g2g-table td:first-child { text-align: left; }
 .g2g-table th { color: var(--muted-fg); font-weight: 500; }

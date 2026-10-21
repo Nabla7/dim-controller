@@ -11,6 +11,9 @@ import type { ViewerApp } from "../core/app.ts"
 
 const CODE_PX = 220
 
+/** a reading as 4 digit-wide places (figure spaces before it), so the numbers keep one width as they change */
+const ms4 = (value: number) => String(Math.min(9999, Math.round(value))).padStart(4, "\u2007")
+
 /** the test's window: open or not (the Network modal opens it) */
 export const glassWindow = new Store<{ open: boolean }>({ open: false })
 
@@ -109,9 +112,9 @@ export function GlassToGlass({ app, onClose }: { app: ViewerApp; onClose: () => 
                                 : (
                                     <tr key={result.panel} data-testid="g2g-row">
                                         <td>{panelTitle(result.panel)}</td>
-                                        <td>{Math.round(quantile(result.samples, 0.5))} ms</td>
-                                        <td>{Math.round(quantile(result.samples, 0.95))} ms</td>
-                                        <td>{Math.round(Math.min(...result.samples))} ms</td>
+                                        <td>{ms4(quantile(result.samples, 0.5))} ms</td>
+                                        <td>{ms4(quantile(result.samples, 0.95))} ms</td>
+                                        <td>{ms4(Math.min(...result.samples))} ms</td>
                                         <td>{result.samples.length}</td>
                                     </tr>
                                 ))}
