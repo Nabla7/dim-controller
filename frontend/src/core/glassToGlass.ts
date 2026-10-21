@@ -1,6 +1,8 @@
 // Glass-to-glass latency: this page shows a QR code that changes every screen frame, carrying the time it was drawn;
 // held up to one of the robot's cameras, it comes back in that camera's video, and the frame that shows it is timed
-// against the code's time. Both times are this page's clock (performance.now), so no clock sync is needed.
+// against the code's time. Both are the gateway's clock (each page's own clock plus its sync offset to the gateway), so
+// one device can show the code and another scan it: a browser that won't give a page its WebRTC video's pixels
+// (Firefox on Android) can still show the code, while another viewer measures the same WebRTC path to its screen.
 import qrcode from "qrcode-generator"
 
 const PREFIX = "g2g:"
@@ -49,7 +51,7 @@ export const holdMs = () => cameraFrameMs === null ? UNMEASURED_HOLD_MS : HOLD_F
  * frame when it changed every screen frame), each carrying the time it first went up, until the returned function is
  * called.
  */
-export function showCode(canvas: HTMLCanvasElement): () => void {
+export function showCode(canvas: HTMLCanvasElement, gatewayNow: () => number): () => void {
     const context = canvas.getContext("2d")!
     let frame = 0
     let shownAt = -Infinity
@@ -59,7 +61,7 @@ export function showCode(canvas: HTMLCanvasElement): () => void {
             return
         }
         shownAt = now
-        const modules = qrModules(encodeTime(now))
+        const modules = qrModules(encodeTime(gatewayNow()))
         const quiet = 4
         const cells = modules.length + quiet * 2
         const cell = Math.floor(canvas.width / cells)
@@ -78,14 +80,19 @@ export interface CameraResult {
     /** the camera panel's id */
     panel: string
     samples: number[]
+    /** its frames come back blank: this browser keeps the WebRTC video's pixels from the page (Firefox on Android) */
+    unreadable?: boolean
 }
+
+/** this many blank frames in a row (and no code yet) mark a camera unreadable */
+const BLANK_FRAMES = 6
 
 /**
  * Watches every camera panel's <video> for the code: each frame it shows is scanned in a worker (one at a time per
  * camera, so a slow scan skips frames instead of queueing them) and a code seen for the first time is timed from when it was drawn
  * to when that frame reached the screen. `onChange` gets every camera's results so far. Returns what stops it.
  */
-export function watchCameras(onChange: (results: CameraResult[]) => void): () => void {
+export function watchCameras(onChange: (results: CameraResult[]) => void, toGateway: (performanceMs: number) => number): () => void {
     const worker = new Worker(new URL("./glassToGlassWorker.ts", import.meta.url), { type: "module" })
     const results = new Map<string, CameraResult>()
     const watching = new Map<HTMLVideoElement, number>()
@@ -96,13 +103,23 @@ export function watchCameras(onChange: (results: CameraResult[]) => void): () =>
     const pending = new Map<number, { panel: string; shownAt: number }>()
     let nextId = 0
     let stopped = false
-    worker.onmessage = (event: MessageEvent<{ id: number; text: string | null }>) => {
+    const blankRun = new Map<string, number>()
+    worker.onmessage = (event: MessageEvent<{ id: number; text: string | null; blank: boolean }>) => {
         const frame = pending.get(event.data.id)
         pending.delete(event.data.id)
         if (!frame || stopped) {
             return
         }
         busy.delete(frame.panel)
+        // frames that keep coming back blank: this browser keeps the video's pixels from the page
+        const run = event.data.blank ? (blankRun.get(frame.panel) ?? 0) + 1 : 0
+        blankRun.set(frame.panel, run)
+        const unreadable = run >= BLANK_FRAMES
+        const known = results.get(frame.panel)
+        if (unreadable !== !!known?.unreadable) {
+            results.set(frame.panel, { ...(known ?? { panel: frame.panel, samples: [] }), unreadable })
+            onChange([...results.values()])
+        }
         const codeMs = event.data.text === null ? null : decodeTime(event.data.text)
         // the same code in two frames: the later one isn't when it arrived
         if (codeMs === null || lastCode.get(frame.panel) === codeMs) {
@@ -149,7 +166,7 @@ export function watchCameras(onChange: (results: CameraResult[]) => void): () =>
             lastFrameAt = metadata.presentationTime
             // when this frame is on the screen (the second glass): never before it went to the compositor (a headless
             // Chrome's expectedDisplayTime can come whole vsyncs before that)
-            scan(video, panel, Math.max(metadata.expectedDisplayTime, metadata.presentationTime))
+            scan(video, panel, toGateway(Math.max(metadata.expectedDisplayTime, metadata.presentationTime)))
             watching.set(video, video.requestVideoFrameCallback(next))
         }
         watching.set(video, video.requestVideoFrameCallback(next))

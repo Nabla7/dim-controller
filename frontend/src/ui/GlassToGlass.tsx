@@ -4,10 +4,11 @@ import { useEffect, useRef, useState } from "react"
 import { Button } from "dimos-react"
 import { type CameraResult, holdMs, quantile, showCode, watchCameras } from "../core/glassToGlass.ts"
 import { panelTitle } from "./commands.ts"
+import type { ViewerApp } from "../core/app.ts"
 
 const CODE_PX = 260
 
-export function GlassToGlass({ onClose }: { onClose: () => void }) {
+export function GlassToGlass({ app, onClose }: { app: ViewerApp; onClose: () => void }) {
     const canvas = useRef<HTMLCanvasElement>(null)
     const [results, setResults] = useState<CameraResult[]>([])
     useEffect(() => {
@@ -16,8 +17,11 @@ export function GlassToGlass({ onClose }: { onClose: () => void }) {
         element.scrollIntoView({ block: "center", behavior: "smooth" })
         // a crisp code on a high-DPI screen: the canvas at device pixels
         element.width = element.height = Math.round(CODE_PX * devicePixelRatio)
-        const stopCode = showCode(element)
-        const stopWatch = watchCameras(setResults)
+        // the gateway's clock (this page's plus its sync offset), so a code shown here can be read by any other viewer
+        const client = app.connection.client
+        const offset = () => client?.clockOffsetMs ?? 0
+        const stopCode = showCode(element, () => (client ? client.now() : performance.timeOrigin + performance.now()) + offset())
+        const stopWatch = watchCameras(setResults, (performanceMs) => performance.timeOrigin + performanceMs + offset())
         return () => {
             stopCode()
             stopWatch()
@@ -39,15 +43,26 @@ export function GlassToGlass({ onClose }: { onClose: () => void }) {
                             <tr><th>Camera</th><th>typical</th><th>spike</th><th>best</th><th>frames</th></tr>
                         </thead>
                         <tbody>
-                            {results.map((result) => (
-                                <tr key={result.panel} data-testid="g2g-row">
-                                    <td>{panelTitle(result.panel)}</td>
-                                    <td>{Math.round(quantile(result.samples, 0.5))} ms</td>
-                                    <td>{Math.round(quantile(result.samples, 0.95))} ms</td>
-                                    <td>{Math.round(Math.min(...result.samples))} ms</td>
-                                    <td>{result.samples.length}</td>
-                                </tr>
-                            ))}
+                            {results.map((result) => result.unreadable && !result.samples.length
+                                ? (
+                                    <tr key={result.panel} data-testid="g2g-row">
+                                        <td>{panelTitle(result.panel)}</td>
+                                        <td colSpan={4} className="g2g-unreadable">
+                                            this browser won't let the page read its video (Firefox on Android:{" "}
+                                            <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1479947" target="_blank" rel="noreferrer">bug 1479947</a>):
+                                            show the code here and read it in another viewer, or use Chrome
+                                        </td>
+                                    </tr>
+                                )
+                                : (
+                                    <tr key={result.panel} data-testid="g2g-row">
+                                        <td>{panelTitle(result.panel)}</td>
+                                        <td>{Math.round(quantile(result.samples, 0.5))} ms</td>
+                                        <td>{Math.round(quantile(result.samples, 0.95))} ms</td>
+                                        <td>{Math.round(Math.min(...result.samples))} ms</td>
+                                        <td>{result.samples.length}</td>
+                                    </tr>
+                                ))}
                         </tbody>
                     </table>
                 )}

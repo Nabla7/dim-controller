@@ -938,3 +938,4 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 @media (pointer: coarse) {
     .net-table-scroll { height: auto; overflow: visible; overscroll-behavior: auto; }
 }
+.g2g-unreadable { text-align: left !important; white-space: normal; color: var(--warn); max-width: 34ch; }

@@ -473,7 +473,7 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
                     <button type="button" className="net-link" onClick={onStatus}>Open Status</button>
                 </p>
             </details>
-            {glass ? <GlassToGlass onClose={() => setGlass(false)} /> : (
+            {glass ? <GlassToGlass app={app} onClose={() => setGlass(false)} /> : (
                 <div className="net-actions">
                     <Button onClick={() => setGlass(true)} data-testid="open-glass-to-glass">Glass-to-glass</Button>
                 </div>
