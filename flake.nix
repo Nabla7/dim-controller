@@ -27,7 +27,7 @@
                         pname = "dim-controller-frontend";
                         version = "0.1.0";
                         src = ./frontend;
-                        npmDepsHash = "sha256-93O7MpJkLvXy+1LGcFmzLkus2XWJOYxZFe/DWFqDIYQ=";
+                        npmDepsHash = "sha256-l1GsaZUU/CiUPrhOxxVY8K4w3Ovv2ZVzdcYEahhD0fk=";
                         # npm writes the git dependency (dimos-react) into its cache while installing
                         makeCacheWritable = true;
                         installPhase = ''
