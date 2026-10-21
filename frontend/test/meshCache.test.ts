@@ -7,7 +7,7 @@ import { encode } from "../src/core/lcm/lcm.ts"
 import { Store } from "../src/core/store.ts"
 import type { Connection, ConnectionState } from "../src/core/transport.ts"
 import { cachedFile, resetCacheConnection, storeFile } from "../src/core/meshCache.ts"
-import { MESH_INFO, ROBOT_DESCRIPTION, UrdfSource } from "../src/core/urdfSource.ts"
+import { MESH_INFO, URDF_INFO, UrdfSource } from "../src/core/urdfSource.ts"
 
 ;(globalThis as { DOMParser?: unknown }).DOMParser = DOMParser
 const global = globalThis as { indexedDB?: IDBFactory }
@@ -46,7 +46,7 @@ function stl(): Uint8Array {
     return bytes
 }
 
-/** files.MeshFile's wire form: `<f64 ts><u32 uri length><uri><file bytes>` */
+/** shape_msgs.MeshFile's wire form: `<f64 ts><u32 uri length><uri><file bytes>` */
 function meshInfo(uri: string, data: Uint8Array): Uint8Array {
     const name = new TextEncoder().encode(uri)
     const bytes = new Uint8Array(12 + name.length + data.length)
@@ -85,7 +85,7 @@ async function load() {
     } as unknown as Connection
     const source = new UrdfSource(connection)
     const release = source.acquire()
-    handlers.get(ROBOT_DESCRIPTION)!({ bytes: encode("std_msgs.String", { data: URDF }) })
+    handlers.get(URDF_INFO)!({ bytes: encode("std_msgs.String", { data: URDF }) })
     for (let tries = 0; tries < 100 && source.state.get().meshesLoaded < 1; tries++) {
         await wait(20)
     }

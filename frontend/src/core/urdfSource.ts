@@ -1,10 +1,9 @@
 // The robot's URDF and its meshes from dimos's UrdfManager, one per page, shared by the robot model layer and the arm
-// view: /robot_description's XML (re-sent every 5 s, nothing is latched; an empty /mesh_request has it sent now, which
-// the page sends on subscribing and on every connect) and each mesh asked for on /mesh_request, its reply on /mesh_info
-// (files.MeshFile) matched by URL (replies come in any order, possibly from more than one publisher). Subscribed only
-// while something uses it (acquire). A mesh named with ?hash=<sha256> is kept in IndexedDB (core/meshCache.ts) and
-// asked for with `&have=<the cached hash>` only when that isn't the URDF's; one without a hash is asked for each load,
-// uncached.
+// view: /urdf_info's XML (re-sent every 5 s, nothing is latched; an empty /mesh_request has it sent now, which the page
+// sends on subscribing and on every connect) and each mesh asked for on /mesh_request, its reply on
+// /mesh_info matched by URL (replies come in any order, possibly from more than one publisher). Subscribed only while
+// something uses it (acquire). A mesh named with ?hash=<sha256> is kept in IndexedDB (core/meshCache.ts) and asked for
+// with `&have=<the cached hash>` only when that isn't the URDF's; one without a hash is asked for each load, uncached.
 // Splat files (core/splats.ts) come the same way and are kept apart from the meshes.
 import type * as THREE from "three"
 import { decode, encode } from "./lcm/lcm.ts"
@@ -15,9 +14,9 @@ import { cachedFile, meshLog, splitHash, storeFile } from "./meshCache.ts"
 import { loadSplats, type SplatAsset, splatFileType, StaleBuildError } from "./splats.ts"
 import type { RobotDescription } from "./robotDescription.ts"
 
-export const ROBOT_DESCRIPTION = dimosKey("/robot_description", "std_msgs.String")
+export const URDF_INFO = dimosKey("/urdf_info", "std_msgs.String")
 export const MESH_REQUEST = dimosKey("/mesh_request", "std_msgs.String")
-export const MESH_INFO = dimosKey("/mesh_info", "files.MeshFile")
+export const MESH_INFO = dimosKey("/mesh_info", "shape_msgs.MeshFile")
 /** files asked for at once: one reply can be several MB, so two at a time keep the link for driving and video (and a
  * burst of them loses some on the way, each then waiting out MESH_RETRY_MS) */
 const MESHES_IN_FLIGHT = 2
@@ -25,7 +24,7 @@ const MESHES_IN_FLIGHT = 2
 const MESH_RETRY_MS = 60000
 /** a splat file is tens of MB (a 1.2M-splat home's SPZ is ~27 MB, ~2 min at 2 Mbit/s): asking again sooner would send it twice */
 const SPLAT_RETRY_MS = 600000
-/** an empty /mesh_request (asking for /robot_description now) is re-sent this often until it comes: the first can go out before the subscription is open */
+/** an empty /mesh_request (asking for /urdf_info now) is re-sent this often until it comes: the first can go out before the subscription is open */
 const URDF_ASK_MS = 250
 /** ...for at most this long: by then the 5 s re-send has come, if anything publishes it */
 const URDF_ASK_FOR_MS = 5000
@@ -70,7 +69,7 @@ export class UrdfSource {
     #urdfAt = 0
     #ranks = new Map<string, number>()
     #drawnRanks = new Set<number>()
-    /** while asking for /robot_description: the re-ask timer, and when asking stops */
+    /** while asking for /urdf_info: the re-ask timer, and when asking stops */
     #urdfAsk: { timer: ReturnType<typeof setInterval>; until: number } | null = null
 
     constructor(readonly connection: Connection) {}
@@ -78,7 +77,7 @@ export class UrdfSource {
     /** Starts listening (first user); the returned function lets go (the last one stops it, keeping what's loaded). */
     acquire(): () => void {
         if (this.#users++ === 0) {
-            this.#stops.push(this.connection.subscribe(ROBOT_DESCRIPTION, { delivery: "latest" }, (message) => this.#onUrdf(message.bytes)))
+            this.#stops.push(this.connection.subscribe(URDF_INFO, { delivery: "latest" }, (message) => this.#onUrdf(message.bytes)))
             // the model loads once, behind everything live
             this.#stops.push(this.connection.subscribe(MESH_INFO, { delivery: "reliable", compress: "zstd", priority: Priority.BACKGROUND, bandwidthPriority: 0.2 }, (message) => this.#onMesh(message.bytes)))
             this.#timer = setInterval(() => this.#askForMeshes(), 1000)
@@ -109,7 +108,7 @@ export class UrdfSource {
         }
     }
 
-    /** Asks for /robot_description now (an empty /mesh_request), again every URDF_ASK_MS until it comes. */
+    /** Asks for /urdf_info now (an empty /mesh_request), again every URDF_ASK_MS until it comes. */
     #askForUrdf() {
         this.#stopAskingForUrdf()
         const ask = () => {
@@ -146,7 +145,7 @@ export class UrdfSource {
         try {
             xml = String(decode("std_msgs.String", bytes).data)
         } catch (error) {
-            this.state.update({ problem: `/robot_description isn't a std_msgs.String: ${error}` })
+            this.state.update({ problem: `/urdf_info isn't a std_msgs.String: ${error}` })
             return
         }
         // nothing yet (or an empty one) isn't a URDF
@@ -170,7 +169,7 @@ export class UrdfSource {
             this.#count()
             this.#loadCached(description)
         } catch (error) {
-            this.state.update({ problem: `/robot_description: ${error}` })
+            this.state.update({ problem: `/urdf_info: ${error}` })
         }
     }
 

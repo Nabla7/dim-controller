@@ -16,7 +16,7 @@ nothing is configured by topic name. Details for every part: [docs/reference.md]
 ## 3D view
 
 Every topic is drawn by its message type (point clouds, odometry, paths, markers, detections, costmaps, TF, cameras in
-3D) and placed by TF. A robot with a URDF on `/robot_description` is drawn from it, meshes and Gaussian splats included.
+3D) and placed by TF. A robot with a URDF on `/urdf_info` is drawn from it, meshes and Gaussian splats included.
 
 <p>
 <img src="docs/scene.jpg" alt="3D view as the main view: the URDF scene's meshes and splats, with lidar" width="49%">
