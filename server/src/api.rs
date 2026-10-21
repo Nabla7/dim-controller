@@ -170,9 +170,6 @@ pub fn routes() -> Routes<Api> {
         // the page's plumbing: its event socket, its reports, its answers to the backend's capture requests
         .plumbing("POST", "api/pages/{page}", annotations::report_page)
         .plumbing("POST", "api/pages/{page}/close", annotations::close_page)
-        // remote debugging: run JS in an open page (a phone's) and read back the result
-        .plumbing("GET", "api/debug/pages", annotations::debug_pages)
-        .plumbing("POST", "api/debug/eval", annotations::debug_eval)
         .plumbing("POST", "api/captures/{request}", annotations::answer_capture)
         .plumbing("GET", "openapi.json", || async { Json(openapi()) })
 }

@@ -51,12 +51,6 @@ fn world() -> String {
 #[derive(Clone, Debug, Serialize)]
 pub struct Page {
     visible: bool,
-    /// the page took remote debugging (the palette's "Remote debug"): it runs api/debug/eval's code
-    #[serde(default)]
-    debug: bool,
-    /// its browser (navigator.userAgent), to tell a phone from a laptop
-    #[serde(default)]
-    agent: String,
     #[serde(rename = "lastActive")]
     last_active: u64,
     /// the page's last report (it reports every few seconds while open)
@@ -239,24 +233,11 @@ impl Annotations {
         let page = self
             .active_page()
             .ok_or("no Controller page is open (open_app the Controller first)")?;
-        self.ask(&page, kind, args, Duration::from_secs(15)).await
-    }
-
-    /// The pages that took remote debugging, newest activity first: (id, page).
-    pub fn debug_pages(&self) -> Vec<(String, Page)> {
-        let mut pages: Vec<(String, Page)> = self.pages.lock().unwrap().iter().filter(|(_, page)| page.debug).map(|(id, page)| (id.clone(), page.clone())).collect();
-        pages.sort_by_key(|(_, page)| std::cmp::Reverse(page.last_active.max(page.seen)));
-        pages
-    }
-
-    /// Asks one page (by id) and waits up to `wait` for its answer.
-    pub async fn ask(&self, page: &str, kind: &str, args: Value, wait: Duration) -> Result<Value, String> {
-        let page = page.to_string();
         let request = format!("r{}", self.next.fetch_add(1, Ordering::Relaxed));
         let (sender, receiver) = oneshot::channel();
         self.pending.lock().unwrap().insert(request.clone(), sender);
         let _ = self.events.send(json!({ "type": "capture", "page": page, "request": request, "kind": kind, "args": args }));
-        let answer = tokio::time::timeout(wait, receiver).await;
+        let answer = tokio::time::timeout(Duration::from_secs(15), receiver).await;
         self.pending.lock().unwrap().remove(&request);
         match answer {
             Ok(Ok(value)) => match value.get("error").and_then(Value::as_str) {
@@ -292,10 +273,6 @@ pub struct PageReport {
     visible: bool,
     #[serde(default)]
     active: bool,
-    #[serde(default)]
-    debug: bool,
-    #[serde(default)]
-    agent: String,
 }
 
 pub async fn list_annotations(Extract(state): Extract<Arc<Annotations>>) -> Response {
@@ -357,14 +334,10 @@ pub async fn report_page(
     let now = now_ms();
     let entry = pages.entry(page).or_insert(Page {
         visible: report.visible,
-        debug: false,
-        agent: String::new(),
         last_active: 0,
         seen: now,
     });
     entry.visible = report.visible;
-    entry.debug = report.debug;
-    entry.agent = report.agent;
     entry.seen = now;
     if report.active {
         entry.last_active = now;
@@ -567,31 +540,5 @@ mod tests {
             .unwrap()
             .seen -= PAGE_TTL_MS;
         assert_eq!(annotations.page_count(), 0);
-    }
-}
-
-/// Pages that run api/debug/eval's code: id, visible, browser.
-pub async fn debug_pages(Extract(state): Extract<Arc<Annotations>>) -> Response {
-    let pages: Vec<Value> = state.debug_pages().into_iter().map(|(id, page)| json!({ "page": id, "visible": page.visible, "agent": page.agent })).collect();
-    Json(json!({ "pages": pages })).into_response()
-}
-
-/// Runs `code` (an async function body; `app` and `z`, the gateway client, in scope) in one page: `page`, else the
-/// debug page active last. Answers its return value as JSON, or {error}.
-pub async fn debug_eval(Extract(state): Extract<Arc<Annotations>>, Body(body): Body) -> Response {
-    let Some(code) = body["code"].as_str() else {
-        return error(StatusCode::BAD_REQUEST, "code is required");
-    };
-    let page = match body["page"].as_str() {
-        Some(page) => page.to_string(),
-        None => match state.debug_pages().into_iter().next() {
-            Some((id, _)) => id,
-            None => return error(StatusCode::NOT_FOUND, "no page has remote debugging on"),
-        },
-    };
-    let wait = Duration::from_secs(body["timeoutSecs"].as_u64().unwrap_or(30).clamp(1, 120));
-    match state.ask(&page, "eval", json!({ "code": code }), wait).await {
-        Ok(value) => Json(json!({ "page": page, "result": value["result"] })).into_response(),
-        Err(problem) => error(StatusCode::BAD_GATEWAY, problem),
     }
 }
