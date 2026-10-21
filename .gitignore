@@ -6,3 +6,4 @@ server/target
 deno.lock
 frontend/public/gallery_cloud.txt
 docs/shots/
+!frontend/deno.lock
