@@ -940,6 +940,8 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 }
 .g2g-unreadable { text-align: left !important; white-space: normal; color: var(--warn); max-width: 34ch; }
 /* the glass-to-glass test's own window (ui/GlassToGlass.tsx): over the view, dragged by its header */
-.g2g-window { position: fixed; z-index: 40; width: min(300px, calc(100vw - 16px)); background: var(--card); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
+.g2g-window { position: fixed; z-index: 40; max-width: calc(100vw - 8px); background: var(--card); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
 .g2g-window-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 6px 6px 12px; font-size: 12px; font-weight: 600; cursor: grab; touch-action: none; user-select: none; border-bottom: 1px solid var(--border); }
 .g2g-window .g2g { border: 0; padding: 10px; }
+.g2g-window .g2g-code { width: 100%; height: auto; aspect-ratio: 1; }
+.g2g-window-resize { position: absolute; right: 0; bottom: 0; width: 22px; height: 22px; cursor: nwse-resize; touch-action: none; background: linear-gradient(135deg, transparent 50%, var(--border-strong) 50%, var(--border-strong) 60%, transparent 60%, transparent 72%, var(--border-strong) 72%, var(--border-strong) 82%, transparent 82%); }

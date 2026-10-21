@@ -55,13 +55,20 @@ export function showCode(canvas: HTMLCanvasElement, gatewayNow: () => number): (
     const context = canvas.getContext("2d")!
     let frame = 0
     let shownAt = -Infinity
+    let modules: boolean[][] = []
+    let drawnWidth = 0
     const draw = (now: number) => {
-        if (now - shownAt < holdMs()) {
+        const due = now - shownAt >= holdMs()
+        // a resized canvas comes back blank: the same code again at once, not after the hold
+        if (!due && canvas.width === drawnWidth) {
             frame = requestAnimationFrame(draw)
             return
         }
-        shownAt = now
-        const modules = qrModules(encodeTime(gatewayNow()))
+        if (due) {
+            shownAt = now
+            modules = qrModules(encodeTime(gatewayNow()))
+        }
+        drawnWidth = canvas.width
         const quiet = 4
         const cells = modules.length + quiet * 2
         const cell = Math.floor(canvas.width / cells)
