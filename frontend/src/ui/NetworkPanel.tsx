@@ -14,7 +14,6 @@ import { bandwidthOverrides, DEFAULT_PRIORITY, DEFAULT_TRADEOFF, heatOf, levelOf
 import { Button, NumberInput, Segmented, Slider, Toggle } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { Spread } from "./Spread.tsx"
-import { GlassToGlass } from "./GlassToGlass.tsx"
 import { gatewayVideoLatency, type GatewayVideoLatency, latencyStages, slowestVideo, spreadText, type VideoLatency } from "../core/videoLatency.ts"
 
 /** colour slots (styles.css --net-1..7); a stream past them is drawn with "other" */
@@ -351,14 +350,14 @@ function ConsumersTable({ table, slots, consumers, drops, latency }: { table: St
     )
 }
 
-export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () => void }) {
+/** `onGlass`: the glass-to-glass test (its own window over the view, the modal closed so the camera shows) */
+export function NetworkPanel({ app, onStatus, onGlass }: { app: ViewerApp; onStatus: () => void; onGlass: () => void }) {
     const history = app.connection.network
     const connection = useStore(app.connection.status)
     const lease = useStore(app.connection.lease.state)
     const [, redraw] = useState(0)
     const slots = useRef(new Map<string, number>()).current
     const [hover, setHover] = useState<Hover | null>(null)
-    const [glass, setGlass] = useState(false)
     const consumers = useStore(app.connection.consumers)
     const drops = useStore(app.connection.drops)
     // the page's subscriptions and every paused stream are listed even without traffic
@@ -473,11 +472,9 @@ export function NetworkPanel({ app, onStatus }: { app: ViewerApp; onStatus: () =
                     <button type="button" className="net-link" onClick={onStatus}>Open Status</button>
                 </p>
             </details>
-            {glass ? <GlassToGlass app={app} onClose={() => setGlass(false)} /> : (
-                <div className="net-actions">
-                    <Button onClick={() => setGlass(true)} data-testid="open-glass-to-glass">Glass-to-glass</Button>
-                </div>
-            )}
+            <div className="net-actions">
+                <Button onClick={onGlass} data-testid="open-glass-to-glass">Glass-to-glass</Button>
+            </div>
         </div>
     )
 }

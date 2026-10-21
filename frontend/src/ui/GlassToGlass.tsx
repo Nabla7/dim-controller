@@ -1,20 +1,52 @@
-// The Network modal's glass-to-glass test (core/glassToGlass.ts): a moving QR code to hold up to a robot camera, and
-// each camera's latency from the code being drawn here to its frame being on this screen.
+// The glass-to-glass test (core/glassToGlass.ts), opened from the Network modal into its own window over the view (the
+// modal closes, so the camera shows): a moving QR code to hold up to a robot camera, and each camera's latency from the
+// code being drawn here to its frame being on this screen. The window drags by its header.
 import { useEffect, useRef, useState } from "react"
+import { Store, useStore } from "../core/store.ts"
+import { startPointerDrag } from "./panelDrag.ts"
 import { Button } from "dimos-react"
 import { type CameraResult, holdMs, quantile, showCode, watchCameras } from "../core/glassToGlass.ts"
 import { panelTitle } from "./commands.ts"
 import type { ViewerApp } from "../core/app.ts"
 
-const CODE_PX = 260
+const CODE_PX = 220
+
+/** the test's window: open or not (the Network modal opens it) */
+export const glassWindow = new Store<{ open: boolean }>({ open: false })
+
+/** The test in a window that floats over the view and drags by its header (kept on screen). */
+export function GlassWindow({ app }: { app: ViewerApp }) {
+    const { open } = useStore(glassWindow)
+    const [at, setAt] = useState({ x: 16, y: 72 })
+    if (!open) {
+        return null
+    }
+    const keepOnScreen = (x: number, y: number) => ({ x: Math.max(0, Math.min(innerWidth - 120, x)), y: Math.max(0, Math.min(innerHeight - 40, y)) })
+    return (
+        <div className="g2g-window" style={{ left: at.x, top: at.y }} data-testid="glass-window">
+            <header
+                className="g2g-window-head"
+                onPointerDown={(event) => {
+                    if ((event.target as HTMLElement).closest("button")) {
+                        return
+                    }
+                    const start = at
+                    startPointerDrag(event, (dx, dy) => setAt(keepOnScreen(start.x + dx, start.y + dy)))
+                }}
+            >
+                <span>Glass-to-glass</span>
+                <button type="button" className="net-icon-button" aria-label="Close the glass-to-glass test" onClick={() => glassWindow.set({ open: false })}>×</button>
+            </header>
+            <GlassToGlass app={app} onClose={() => glassWindow.set({ open: false })} />
+        </div>
+    )
+}
 
 export function GlassToGlass({ app, onClose }: { app: ViewerApp; onClose: () => void }) {
     const canvas = useRef<HTMLCanvasElement>(null)
     const [results, setResults] = useState<CameraResult[]>([])
     useEffect(() => {
         const element = canvas.current!
-        // opened at the bottom of the modal: bring the code into view
-        element.scrollIntoView({ block: "center", behavior: "smooth" })
         // a crisp code on a high-DPI screen: the canvas at device pixels
         element.width = element.height = Math.round(CODE_PX * devicePixelRatio)
         // the gateway's clock (this page's plus its sync offset), so a code shown here can be read by any other viewer
@@ -68,8 +100,7 @@ export function GlassToGlass({ app, onClose }: { app: ViewerApp; onClose: () => 
                 )}
             <p className="g2g-note dim">
                 From this page drawing the code to the camera's frame showing it reaching this screen (typical is the median, spike the
-                p95). Each code stays up for two of the camera's frames ({Math.round(holdMs())} ms), so a reading runs up to one
-                camera frame high; best is the closest. The camera needs to be streaming in a panel.
+                p95). Typical is what you see: it includes waiting for the camera's next frame (a change in front of the robot waits the same), so a slow camera reads high; best is the luckiest frame. Each code stays up two camera frames ({Math.round(holdMs())} ms). The camera needs to be streaming in a panel.
             </p>
             <Button onClick={onClose}>Stop</Button>
         </section>

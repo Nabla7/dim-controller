@@ -10,6 +10,7 @@ import { gamepadChip, leaseChip, LINK_REDRAW_MS, LINK_SAMPLE_MS, linkChip, smoot
 import { Modal } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { NetworkPanel } from "./NetworkPanel.tsx"
+import { glassWindow } from "./GlassToGlass.tsx"
 import { gamepadStatus } from "./useGamepad.ts"
 import type { WorkspaceApi } from "./Workspace.tsx"
 import { batteryChip, batteryReadings } from "../core/batteryFeed.ts"
@@ -126,7 +127,10 @@ export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
                 </span>
             </button>
             <Modal open={networkOpen} onClose={() => setNetworkOpen(false)} title="Network" size="lg" data-testid="network-modal">
-                {networkOpen && <NetworkPanel app={app} onStatus={() => {
+                {networkOpen && <NetworkPanel app={app} onGlass={() => {
+                    setNetworkOpen(false)
+                    glassWindow.set({ open: true })
+                }} onStatus={() => {
                     setNetworkOpen(false)
                     api.act("status", "show")
                 }} />}

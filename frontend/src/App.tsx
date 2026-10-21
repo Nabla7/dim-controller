@@ -8,6 +8,7 @@ import { ViewerApp } from "./core/app.ts"
 import { Store, useStore } from "./core/store.ts"
 import { ActionDock } from "./ui/ActionDock.tsx"
 import { ActionBar } from "./ui/ActionBar.tsx"
+import { GlassWindow } from "./ui/GlassToGlass.tsx"
 import { PhoneCorners } from "./ui/PhoneCorners.tsx"
 import { ZoomDebug } from "./ui/ZoomDebug.tsx"
 import { CameraPanels, cameraLayout, useCameraActions } from "./ui/CameraPanels.tsx"
@@ -90,6 +91,7 @@ export function App() {
                 </div>
                 {app && <Driving app={app} api={api} />}
                 {app && <ActionBar api={api} />}
+                {app && <GlassWindow app={app} />}
                 {app && <Overlays app={app} api={api} cameras={cameraActions} />}
                 {app && <StatsOverlay app={app} />}
                 <SteamDeckBanner />
