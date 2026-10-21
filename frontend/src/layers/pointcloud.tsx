@@ -5,12 +5,16 @@ import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { headerFrameId } from "../core/lcm/lcm.ts"
 import { applyLook, makePointMaterial } from "dimos-react/three"
-import type { Store } from "../core/store.ts"
+import { Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { PointLookEditor } from "../ui/PointLookEditor.tsx"
 import { materialLook, type PointLook, rendering, splatFallback } from "../core/render/rendering.ts"
-import { Field, Select } from "dimos-react"
+import { Field, Select, Slider, Toggle } from "dimos-react"
 import { useStore } from "../core/store.ts"
+import { addCameraColor, CameraDepthPass, type CameraUniforms, setCameraModel } from "../core/render/cameraColor.ts"
+import { CameraFeed } from "../core/render/cameraFeed.ts"
+import { isImage, pickDefault } from "../core/cameraChoice.ts"
+import { isDepthTopic } from "../core/video.ts"
 import { CLOUD_PRESETS, cloudQualities, cloudQualityOf, CloudStream, type CloudQuality, formatBytes, formatCount, setCloudQuality, setCloudRate } from "../core/cloudQuality.ts"
 
 export interface CloudSettings {
@@ -21,7 +25,22 @@ export interface CloudSettings {
     windowSeconds: number
     /** accumulate: ring capacity */
     maxPoints: number
+    /** color the points with a live camera picture where the camera sees them */
+    camera?: CameraColorSettings
 }
+
+export interface CameraColorSettings {
+    on: boolean
+    /** image topic key; "" = the profile's preferred color camera */
+    topic: string
+    /** meters a point may sit behind the nearest one the camera sees and still take its color */
+    tolerance: number
+}
+
+const CAMERA_DEFAULTS: CameraColorSettings = { on: false, topic: "", tolerance: 0.08 }
+
+/** the color cameras on the bus, for the settings' camera menu (the layers keep it current) */
+const colorCameras = new Store<{ topics: Topic[] }>({ topics: [] })
 
 const isMap = (topic: Topic) => /map|global|voxel|terrain|costmap/i.test(topic.name)
 
@@ -30,6 +49,7 @@ const DEFAULTS: CloudSettings = {
     mode: "latest",
     windowSeconds: 10,
     maxPoints: 2_000_000,
+    camera: CAMERA_DEFAULTS,
 }
 
 const SPLAT_BUDGET = 3_000_000
@@ -59,12 +79,20 @@ class CloudLayer {
     #lastCount = 0
     #settings: Store<CloudSettings>
     #mode: CloudSettings["mode"]
+    #camera: CameraUniforms
+    #cameraPass: CameraDepthPass
+    #feed: CameraFeed | null = null
+    /** the camera's picture, pose or the points changed since the depth pass last ran */
+    #cameraDirty = true
+    #cameraPose = new THREE.Matrix4()
 
     constructor(readonly context: LayerContext, readonly topic: Topic, settings: Store<CloudSettings>) {
         this.#settings = settings
         this.#mode = settings.get().mode
         this.#fixedFrame = context.viewer.fixedFrame // a scan before the first frame isn't cleared as a fixed frame change
         this.#material = makePointMaterial(context.viewer.pixelsPerMeter)
+        this.#camera = addCameraColor(this.#material)
+        this.#cameraPass = new CameraDepthPass(this.#camera)
         this.#points = new THREE.Points(this.#geometry, this.#material)
         this.#points.frustumCulled = false
         this.#points.matrixAutoUpdate = false
@@ -93,6 +121,71 @@ class CloudLayer {
         this.#material.uniforms.uWindow.value = settings.mode === "accumulate" && settings.windowSeconds > 0 ? settings.windowSeconds : -1
         applyLook(this.#material, this.#look(), this.#range)
         this.#syncSplatBudget()
+        this.#syncCamera()
+        this.context.viewer.requestRender()
+    }
+
+    #cameraSettings(): CameraColorSettings {
+        return { ...CAMERA_DEFAULTS, ...this.#settings.get().camera }
+    }
+
+    /** The camera to color from: the chosen topic while it's on the bus, else the profile's preferred color camera. */
+    #cameraTopic(): Topic | null {
+        const images = this.context.topics().filter((topic) => isImage(topic) && !isDepthTopic(topic))
+        const chosen = this.#cameraSettings().topic
+        return images.find((topic) => topic.key === chosen) ?? pickDefault(this.context.profile.cameras.preferred, images)
+    }
+
+    /** Opens, swaps or closes the camera feed to match the settings. */
+    #syncCamera() {
+        const settings = this.#cameraSettings()
+        const topic = settings.on ? this.#cameraTopic() : null
+        if (this.#feed && this.#feed.topic.key !== topic?.key) {
+            this.#feed.dispose()
+            this.#feed = null
+        }
+        if (topic && !this.#feed) {
+            this.#feed = new CameraFeed(this.context, topic, () => {
+                this.#cameraDirty = true
+                this.context.viewer.requestRender()
+            })
+            this.#camera.uCamImage.value = this.#feed.texture
+        }
+        this.#camera.uCamTolerance.value = settings.tolerance
+        this.#camera.uCamColor.value = 0
+        this.#cameraDirty = true
+    }
+
+    /** The camera pass for this frame: where the camera is, then which points it sees nearest; off when it can't run. */
+    #updateCamera(fixedFrame: string) {
+        const feed = this.#feed
+        const renderer = this.context.viewer.renderer
+        if (!feed || !renderer) {
+            return
+        }
+        const waiting = feed.waitingFor
+        const pose = feed.frame ? this.context.tf.lookup(feed.frame, fixedFrame) : null
+        if (waiting || !feed.model || !pose) {
+            if (this.#camera.uCamColor.value) {
+                this.#camera.uCamColor.value = 0
+                this.context.viewer.requestRender()
+            }
+            return
+        }
+        if (!pose.equals(this.#cameraPose)) {
+            this.#cameraPose.copy(pose)
+            this.#camera.uCamFromWorld.value.copy(pose).invert()
+            this.#cameraDirty = true
+        }
+        if (!this.#cameraDirty || !this.#points.visible) {
+            return
+        }
+        this.#cameraDirty = false
+        setCameraModel(this.#camera, feed.model)
+        const look = this.#look()
+        this.#points.updateMatrixWorld()
+        this.#camera.uCamDepth.value = this.#cameraPass.render(renderer, this.#points, look.size, look.style === "voxel", feed.model)
+        this.#camera.uCamColor.value = 1
         this.context.viewer.requestRender()
     }
 
@@ -214,6 +307,7 @@ class CloudLayer {
         this.#geometry.setDrawRange(0, this.#filled)
         this.#syncSplatBudget()
         this.#updateRange(positions, intensity, placement)
+        this.#cameraDirty = true
         this.context.viewer.noteData(timestamp)
     }
 
@@ -287,6 +381,21 @@ class CloudLayer {
             }
         }
         this.#material.uniforms.uNow.value = frame.now / 1000
+        if (frame.now - this.#rateSince > 1000) {
+            const cameras = this.context.topics().filter((topic) => isImage(topic) && !isDepthTopic(topic))
+            if (cameras.map((topic) => topic.key).join() !== colorCameras.get().topics.map((topic) => topic.key).join()) {
+                colorCameras.set({ topics: cameras })
+            }
+        }
+        if (this.#cameraSettings().on) {
+            if (frame.now - this.#rateSince > 1000) {
+                if (this.#feed?.topic.key !== this.#cameraTopic()?.key) {
+                    this.#syncCamera() // the camera came onto the bus, or the chosen one left it
+                }
+                this.#feed?.findInfo()
+            }
+            this.#updateCamera(frame.fixedFrame)
+        }
         if (this.#settings.get().mode === "accumulate" && this.#settings.get().windowSeconds > 0) {
             this.context.viewer.requestRender() // old points fade out by time even with no new scans
         }
@@ -295,7 +404,8 @@ class CloudLayer {
             const rate = this.#stream.sample(frame.now)
             setCloudRate(this.topic.key, rate)
             const shown = this.#settings.get().mode === "accumulate" ? `${formatCount(this.#filled)} kept · ` : ""
-            this.context.setStatus({ info: this.#frame === null ? "waiting for frame_id…" : `${shown}${formatCount(this.#lastCount)} pts · ${rate.hz.toFixed(1)} Hz · ${formatBytes(rate.bytesPerSecond)}/s · ${this.#frame || "no frame"}` })
+            const camera = this.#feed ? ` · camera colors: ${this.#camera.uCamColor.value ? this.#feed.topic.name : `waiting for ${this.#feed.waitingFor ?? "a TF path"}`}` : ""
+            this.context.setStatus({ info: this.#frame === null ? "waiting for frame_id…" : `${shown}${formatCount(this.#lastCount)} pts · ${rate.hz.toFixed(1)} Hz · ${formatBytes(rate.bytesPerSecond)}/s · ${this.#frame || "no frame"}${camera}` })
         }
     }
 
@@ -304,6 +414,8 @@ class CloudLayer {
         this.#unsubscribe.forEach((stop) => stop())
         this.#stream.close()
         setCloudRate(this.topic.key, null)
+        this.#feed?.dispose()
+        this.#cameraPass.dispose()
         this.#geometry.dispose()
         this.#material.dispose()
     }
@@ -331,6 +443,31 @@ function CloudSettingsEditor({ settings, topic }: { settings: Store<CloudSetting
             <Field inline label="Bandwidth" title={`this viewer's: ${CLOUD_PRESETS.map((preset) => `${preset.label}: ${preset.about}`).join("; ")}`}>
                 <CloudQualitySelect topicKey={topic.key} />
             </Field>
+            <CameraColorEditor settings={settings} />
+        </>
+    )
+}
+
+function CameraColorEditor({ settings }: { settings: Store<CloudSettings> }) {
+    const value = useStore(settings)
+    const camera = { ...CAMERA_DEFAULTS, ...value.camera }
+    const update = (change: Partial<CameraColorSettings>) => settings.update({ camera: { ...camera, ...change } })
+    const images = useStore(colorCameras).topics
+    return (
+        <>
+            <Field inline label="Camera colors" title="color the points with the live camera picture where the camera sees them (nearest surface only)">
+                <Toggle value={camera.on} onChange={(on: boolean) => update({ on })} />
+            </Field>
+            {camera.on && (
+                <>
+                    <Field inline label="Camera">
+                        <Select value={camera.topic} options={[["", "auto (main camera)"], ...images.map((topic) => [topic.key, topic.name] as [string, string])]} onChange={(topic: string) => update({ topic })} />
+                    </Field>
+                    <Field inline label="Occlusion" title="how far behind the nearest surface the camera sees a point may be and still take its color">
+                        <Slider min={0.02} max={0.5} step={0.01} value={camera.tolerance} format={(meters: number) => `${Math.round(meters * 100)} cm`} onChange={(tolerance: number) => update({ tolerance })} />
+                    </Field>
+                </>
+            )}
         </>
     )
 }
