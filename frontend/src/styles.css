@@ -945,3 +945,4 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .g2g-window .g2g { border: 0; padding: 10px; }
 .g2g-window .g2g-code { width: 100%; height: auto; aspect-ratio: 1; }
 .g2g-window-resize { position: absolute; right: 0; bottom: 0; width: 22px; height: 22px; cursor: nwse-resize; touch-action: none; background: linear-gradient(135deg, transparent 50%, var(--border-strong) 50%, var(--border-strong) 60%, transparent 60%, transparent 72%, var(--border-strong) 72%, var(--border-strong) 82%, transparent 82%); }
+.g2g-warning { font-size: 12px; color: var(--warn); max-width: 40ch; }

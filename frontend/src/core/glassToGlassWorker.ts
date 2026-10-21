@@ -12,16 +12,22 @@ self.onmessage = (event: MessageEvent<{ id: number; frame: ImageBitmap }>) => {
     context.drawImage(frame, 0, 0)
     frame.close()
     const image = context.getImageData(0, 0, canvas.width, canvas.height)
-    // a frame the browser kept from the page comes back empty (all zero, or one flat colour): say so instead of scanning
-    let low = 255, high = 0
+    // a frame the browser kept from the page comes back empty: all white, all black, transparent or one flat colour
+    // (Firefox on Android hands back no pixels of a hardware-decoded WebRTC video); say which instead of scanning
+    let low = 255, high = 0, alpha = 0, samples = 0
     for (let i = 0; i < image.data.length; i += 4 * 97) {
-        low = Math.min(low, image.data[i])
-        high = Math.max(high, image.data[i])
+        for (let channel = 0; channel < 3; channel++) {
+            low = Math.min(low, image.data[i + channel])
+            high = Math.max(high, image.data[i + channel])
+        }
+        alpha += image.data[i + 3]
+        samples++
     }
-    if (high - low < 8) {
-        self.postMessage({ id, text: null, blank: true })
+    if (alpha / samples < 8 || high - low < 8) {
+        const blank = alpha / samples < 8 ? "transparent" : low > 240 ? "white" : high < 16 ? "black" : "flat"
+        self.postMessage({ id, text: null, blank })
         return
     }
     const found = jsQR(image.data, image.width, image.height, { inversionAttempts: "dontInvert" })
-    self.postMessage({ id, text: found?.data ?? null, blank: false })
+    self.postMessage({ id, text: found?.data ?? null, blank: null })
 }

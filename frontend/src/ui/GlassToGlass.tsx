@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react"
 import { Store, useStore } from "../core/store.ts"
 import { startPointerDrag } from "./panelDrag.ts"
 import { Button } from "dimos-react"
-import { type CameraResult, holdMs, quantile, showCode, watchCameras } from "../core/glassToGlass.ts"
+import { type CameraResult, holdMs, pixelsBlocked, quantile, showCode, watchCameras } from "../core/glassToGlass.ts"
 import { panelTitle } from "./commands.ts"
 import type { ViewerApp } from "../core/app.ts"
 
@@ -89,6 +89,7 @@ export function GlassToGlass({ app, onClose }: { app: ViewerApp; onClose: () => 
                 <a href="https://bloggeek.me/webrtcglossary/glass-to-glass/" target="_blank" rel="noreferrer">glass-to-glass</a>{" "}
                 latency test.
             </p>
+            {pixelsBlocked() && <FirefoxWarning />}
             <canvas ref={canvas} className="g2g-code" aria-label="Glass-to-glass test code" />
             {results.length === 0
                 ? <p className="g2g-status dim">Looking for the code in the camera views…</p>
@@ -103,8 +104,8 @@ export function GlassToGlass({ app, onClose }: { app: ViewerApp; onClose: () => 
                                     <tr key={result.panel} data-testid="g2g-row">
                                         <td>{panelTitle(result.panel)}</td>
                                         <td colSpan={4} className="g2g-unreadable">
-                                            this browser won't let the page read its video (Firefox on Android:{" "}
-                                            <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1479947" target="_blank" rel="noreferrer">bug 1479947</a>):
+                                            its frames come back {result.unreadable}: this browser won't let the page read its video (Firefox on
+                                            Android:{" "}<a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1479947" target="_blank" rel="noreferrer">bug 1479947</a>):
                                             show the code here and read it in another viewer, or use Chrome
                                         </td>
                                     </tr>
@@ -127,5 +128,16 @@ export function GlassToGlass({ app, onClose }: { app: ViewerApp; onClose: () => 
             </p>
             <Button onClick={onClose}>Stop</Button>
         </section>
+    )
+}
+
+/** Firefox on Android can't read its own video: said up front, before the blank frames prove it */
+function FirefoxWarning() {
+    return (
+        <p className="g2g-warning" data-testid="g2g-firefox-warning">
+            Firefox on Android won't let the page read its WebRTC video (
+            <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1479947" target="_blank" rel="noreferrer">bug 1479947</a>), so it can't
+            measure here: show this code to the robot and read it in another viewer, or open this page in Chrome.
+        </p>
     )
 }

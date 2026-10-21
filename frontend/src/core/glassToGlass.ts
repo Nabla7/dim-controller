@@ -87,8 +87,9 @@ export interface CameraResult {
     /** the camera panel's id */
     panel: string
     samples: number[]
-    /** its frames come back blank: this browser keeps the WebRTC video's pixels from the page (Firefox on Android) */
-    unreadable?: boolean
+    /** its frames come back blank (how: white, black, transparent, flat): this browser keeps the video's pixels from
+     * the page (Firefox on Android) */
+    unreadable?: string
 }
 
 /** this many blank frames in a row (and no code yet) mark a camera unreadable */
@@ -111,7 +112,7 @@ export function watchCameras(onChange: (results: CameraResult[]) => void, toGate
     let nextId = 0
     let stopped = false
     const blankRun = new Map<string, number>()
-    worker.onmessage = (event: MessageEvent<{ id: number; text: string | null; blank: boolean }>) => {
+    worker.onmessage = (event: MessageEvent<{ id: number; text: string | null; blank: string | null }>) => {
         const frame = pending.get(event.data.id)
         pending.delete(event.data.id)
         if (!frame || stopped) {
@@ -121,9 +122,9 @@ export function watchCameras(onChange: (results: CameraResult[]) => void, toGate
         // frames that keep coming back blank: this browser keeps the video's pixels from the page
         const run = event.data.blank ? (blankRun.get(frame.panel) ?? 0) + 1 : 0
         blankRun.set(frame.panel, run)
-        const unreadable = run >= BLANK_FRAMES
+        const unreadable = run >= BLANK_FRAMES ? event.data.blank ?? undefined : undefined
         const known = results.get(frame.panel)
-        if (unreadable !== !!known?.unreadable) {
+        if (unreadable !== known?.unreadable) {
             results.set(frame.panel, { ...(known ?? { panel: frame.panel, samples: [] }), unreadable })
             onChange([...results.values()])
         }
@@ -203,3 +204,6 @@ export function quantile(values: number[], q: number): number {
     const sorted = [...values].sort((a, b) => a - b)
     return sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(q * (sorted.length - 1))))]
 }
+
+/** Firefox on Android: a hardware-decoded WebRTC video gives the page no pixels (bugzilla 1479947) */
+export const pixelsBlocked = () => /Android/.test(navigator.userAgent) && /Firefox\//.test(navigator.userAgent)
