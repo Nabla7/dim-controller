@@ -16,17 +16,17 @@ export function Unavailable({ what, reason }: { what: string; reason: string }) 
 
 /** Catches a render-time throw in one view so it can't take the whole page down with it. */
 export class ContainCrash extends Component<{ what: string; children: ReactNode }, { error: string | null }> {
-    state = { error: null as string | null }
+    override state = { error: null as string | null }
 
     static getDerivedStateFromError(error: unknown) {
         return { error: error instanceof Error ? error.message : String(error) }
     }
 
-    componentDidCatch(error: unknown) {
+    override componentDidCatch(error: unknown) {
         console.error(`${this.props.what} crashed`, error)
     }
 
-    render() {
+    override render() {
         return this.state.error ? <Unavailable what={this.props.what} reason={this.state.error} /> : this.props.children
     }
 }

@@ -15,21 +15,7 @@
         "allowImportingTsExtensions": true,
         "resolveJsonModule": true,
         "allowJs": true,
-        "maxNodeModuleJsDepth": 3,
-        "paths": {
-            "dimos-react": [
-                "./src/vendor/dimos-react/src/index.ts"
-            ],
-            "dimos-react/three": [
-                "./src/vendor/dimos-react/src/three.ts"
-            ],
-            "dimos-react/graph": [
-                "./src/vendor/dimos-react/src/graph.ts"
-            ],
-            "dimos-react/dim-app/*": [
-                "./src/vendor/dimos-react/src/vendor/dim-app/*"
-            ]
-        }
+        "maxNodeModuleJsDepth": 3
     },
     "include": [
         "src"

@@ -27,9 +27,9 @@
                     deno = nixpkgs-deno.legacyPackages.${pkgs.stdenv.hostPlatform.system}.deno;
                     denoEnv = "export HOME=$TMPDIR DENO_DIR=$TMPDIR/deno DENO_NO_UPDATE_CHECK=1 DENO_NO_PROMPT=1";
                     frontendFiles = paths: pkgs.lib.fileset.toSource { root = ./frontend; fileset = pkgs.lib.fileset.unions paths; };
-                    # `deno install --frozen` (deno.lock pins every package): the only step with network, so fixed-output.
-                    # Its hash is per build machine (vite's native rollup and esbuild differ by OS and CPU). After changing
-                    # frontend/deno.json or deno.lock: set this system's hash to "", `nix build .#frontendModules`, paste the "got:".
+                    # `deno install --frozen` (deno.lock pins every package) with network, so fixed-output. Its hash is per
+                    # build machine (vite's native rollup and esbuild differ by OS and CPU): `deno task update-hashes` refreshes
+                    # this machine's after frontend/deno.json or deno.lock change.
                     frontendModules = pkgs.stdenvNoCC.mkDerivation {
                         name = "dim-controller-frontend-modules";
                         src = frontendFiles [ ./frontend/deno.json ./frontend/deno.lock ];
@@ -53,17 +53,37 @@
                         }.${pkgs.stdenv.hostPlatform.system};
                     };
 
-                    # the page: React + Vite (type-checked first) against those modules, offline
+                    pageFiles = frontendFiles [ ./frontend/deno.json ./frontend/deno.lock ./frontend/index.html ./frontend/vite.config.ts ./frontend/tools ./frontend/src ./frontend/public ];
+                    # dimos-react as esm.sh builds its tag (frontend/tools/esm_fetch.ts): a vite build with network that
+                    # keeps only what it fetched, so fixed-output; the same on every system. `deno task update-hashes` refreshes it.
+                    frontendEsm = pkgs.stdenvNoCC.mkDerivation {
+                        name = "dim-controller-frontend-esm";
+                        src = pageFiles;
+                        nativeBuildInputs = [ deno ];
+                        buildPhase = ''
+                            ${denoEnv}
+                            export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+                            cp -R ${frontendModules} node_modules
+                            chmod -R u+w node_modules
+                            ESM_CACHE=$TMPDIR/esm deno run -A --cached-only --node-modules-dir=manual npm:vite build --logLevel warn
+                        '';
+                        installPhase = "cp -R $TMPDIR/esm $out";
+                        dontFixup = true;
+                        outputHashMode = "recursive";
+                        outputHashAlgo = "sha256";
+                        outputHash = "sha256-wy1psdo8Ws9HsBigZ8xEt88S01XcqNtiQ5bjH0Pv07s=";
+                    };
+
+                    # the page: React + Vite against those modules and that esm.sh cache, offline
                     frontend = pkgs.stdenvNoCC.mkDerivation {
                         name = "dim-controller-frontend";
-                        src = frontendFiles [ ./frontend/deno.json ./frontend/deno.lock ./frontend/index.html ./frontend/vite.config.ts ./frontend/tsconfig.json ./frontend/src ./frontend/public ];
+                        src = pageFiles;
                         nativeBuildInputs = [ deno ];
                         buildPhase = ''
                             ${denoEnv}
                             cp -R ${frontendModules} node_modules
                             chmod -R u+w node_modules
-                            deno run -A --cached-only --node-modules-dir=manual npm:typescript/tsc --noEmit -p .
-                            deno run -A --cached-only --node-modules-dir=manual npm:vite build
+                            ESM_CACHE=${frontendEsm} ESM_OFFLINE=1 deno run -A --cached-only --node-modules-dir=manual npm:vite build
                         '';
                         installPhase = "cp -R dist $out";
                     };
@@ -136,7 +156,7 @@
                             cp ${./icon.svg} $out/icon.svg
                         '';
                 in {
-                    inherit frontend frontendModules server;
+                    inherit frontend frontendModules frontendEsm server;
                     # what Desktop builds: bin/dimos-app-server, which serves everything under /apps/<name>/
                     dimosApp = pkgs.runCommand "dim-controller" { nativeBuildInputs = [ pkgs.makeWrapper ]; } ''
                         mkdir -p $out/bin
