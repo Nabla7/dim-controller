@@ -506,15 +506,19 @@ h3.dr-h3.first { margin-top: 4px; }
     display: grid; grid-template-columns: 1fr 104px 1fr; align-items: stretch; gap: 0; height: min(40vh, 330px);
     background: none; border: 0; box-shadow: none; backdrop-filter: none; pointer-events: none; touch-action: none;
     --stick: clamp(112px, min(33vw, 26vh), 160px); --stick-white: color-mix(in srgb, var(--fg) 40%, transparent); }
+/* a browser without color-mix (Chrome before 111, e.g. an Android 16 phone's Chrome 108) drops the declarations that use
+   it: the sticks' ring and knob keep the plain colours set before them instead of vanishing */
 .drive-hud.mobile > .stick-zone, .hud-center > * { pointer-events: auto; }
 /* the column between the sticks only takes taps on its buttons (a camera can sit above them) */
 .drive-hud.mobile > .hud-center { pointer-events: none; }
 .stick-zone { position: relative; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; min-width: 0; }
 .dr-thumbstick-base { position: absolute; left: 50%; top: 55%; width: var(--stick); height: var(--stick); transform: translate(-50%, -50%); border-radius: 50%;
+    border: 1px solid var(--border-strong); background: var(--card);
     border: 1px solid var(--stick-white); background: radial-gradient(circle, color-mix(in srgb, var(--card) 35%, transparent), color-mix(in srgb, var(--card) 70%, transparent));
     backdrop-filter: blur(6px); pointer-events: none; transition: border-color 0.12s, box-shadow 0.12s; }
 .stick-zone.dr-thumbstick--active .dr-thumbstick-base { border-color: var(--fg); box-shadow: 0 0 14px var(--lv-over-video), inset 0 0 10px color-mix(in srgb, var(--fg) 12%, transparent); transition: none; }
 .dr-thumbstick-knob { position: absolute; left: 50%; top: 50%; width: 44%; height: 44%; margin: -22% 0 0 -22%; border-radius: 50%; pointer-events: none;
+    border: 1.5px solid var(--fg); background: var(--muted-fg);
     border: 1.5px solid color-mix(in srgb, var(--fg) 80%, transparent); background: color-mix(in srgb, var(--primary) 55%, transparent); }
 .stick-zone.dr-thumbstick--active .dr-thumbstick-knob { background: var(--primary); border-color: var(--fg); box-shadow: 0 0 12px var(--lv-over-video); }
 /* which way it moves: a cross, or one bar for a single-axis stick */
