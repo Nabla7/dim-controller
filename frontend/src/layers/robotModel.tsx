@@ -1,4 +1,4 @@
-// The robot's own model from its URDF (dimos's UrdfManager: /urdf_info, meshes on /mesh_request → /mesh_info), any
+// The robot's own model from its URDF (dimos's UrdfManager: /robot_description, meshes on /mesh_request → /mesh_info), any
 // robot. Each link sits at its TF frame (UrdfManager puts every joint on tf, frames named by link), its visuals at
 // their URDF origins; a link with no TF frame follows its parent through the joint's origin. Meshes fill in as they arrive.
 // A visual naming a splat file (a scene: a Gaussian-splat home next to its collision meshes) is drawn with Spark. A
@@ -93,7 +93,7 @@ class RobotModelLayer {
     #status() {
         const { description, meshesLoaded, meshesWanted, problem, armDraws } = this.#source.state.get()
         if (!description) {
-            this.context.setStatus({ info: "waiting for /urdf_info", problem })
+            this.context.setStatus({ info: "waiting for /robot_description", problem })
             return
         }
         const meshes = meshesWanted ? ` · meshes ${meshesLoaded}/${meshesWanted}` : ""
@@ -222,7 +222,7 @@ registerLayer<RobotModelSettings>({
     id: "robot-model",
     label: "Robot model (URDF)",
     types: ["std_msgs.String"],
-    names: ["/urdf_info"],
+    names: ["/robot_description"],
     defaults: { opacity: 1, display: "visual", textures: true, splatCutAbove: 2.5 },
     create: (context, _topic, settings) => new RobotModelLayer(context, settings),
     Rows: RobotModelRows,

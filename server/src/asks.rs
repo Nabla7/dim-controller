@@ -1,7 +1,8 @@
 //! What a recording needs that dimos only sends when asked: the robot's meshes (UrdfManager answers each `package://`
 //! name on /mesh_request with the file on /mesh_info) and a simulated world (a SceneData module answers
-//! /scene_data_request on /scene_data). A recording of /urdf_info or /scene_info also records the answer stream, and
-//! this asks for what the announcement names, so the file can draw the robot and the world with no robot around.
+//! /scene_data_request on /scene_data). A recording of /robot_description or /scene_info also records the answer
+//! stream, and this asks for what the announcement names, so the file can draw the robot and the world with no robot
+//! around.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,14 +25,14 @@ fn sibling(key: &str, name: &str, type_name: &str, sibling: &str) -> Option<Stri
     prefix.ends_with('/').then(|| format!("{prefix}{sibling}"))
 }
 
-/// The answer streams a recorded key brings along (/urdf_info → /mesh_info, /scene_info → /scene_data).
+/// The answer streams a recorded key brings along (/robot_description → /mesh_info, /scene_info → /scene_data).
 pub fn answer_keys(key: &str) -> Vec<String> {
     [
         sibling(
             key,
-            "urdf_info",
+            "robot_description",
             "std_msgs.String",
-            "mesh_info/shape_msgs.MeshFile",
+            "mesh_info/files.MeshFile",
         ),
         sibling(
             key,
@@ -83,7 +84,7 @@ pub fn mesh_uris(urdf: &str) -> BTreeSet<String> {
     uris
 }
 
-/// shape_msgs.MeshFile's uri: `<f64 ts><u32 uri length LE><uri><file bytes>` (dimos/msgs/shape_msgs/MeshFile.py).
+/// files.MeshFile's uri: `<f64 ts><u32 uri length LE><uri><file bytes>` (dimos/msgs/files/MeshFile.py).
 pub fn mesh_file_uri(payload: &[u8]) -> Option<String> {
     let length = u32::from_le_bytes(payload.get(8..12)?.try_into().ok()?) as usize;
     Some(String::from_utf8_lossy(payload.get(12..12 + length)?).into_owned())
@@ -91,7 +92,7 @@ pub fn mesh_file_uri(payload: &[u8]) -> Option<String> {
 
 #[derive(Default)]
 struct Meshes {
-    /// where to ask (the /mesh_request beside the /urdf_info heard)
+    /// where to ask (the /mesh_request beside the /robot_description heard)
     request_key: String,
     wanted: BTreeSet<String>,
     got: HashSet<String>,
@@ -146,7 +147,7 @@ impl Asks {
         let mut wanted = self.wanted.lock().unwrap();
         if let Some(request_key) = sibling(
             key,
-            "urdf_info",
+            "robot_description",
             "std_msgs.String",
             "mesh_request/std_msgs.String",
         ) {
@@ -156,7 +157,7 @@ impl Asks {
                 meshes.request_key = request_key;
                 meshes.wanted.extend(mesh_uris(&urdf));
             }
-        } else if key.ends_with("/mesh_info/shape_msgs.MeshFile") {
+        } else if key.ends_with("/mesh_info/files.MeshFile") {
             if let Some(uri) = mesh_file_uri(payload) {
                 wanted.meshes.got.insert(uri);
             }
@@ -221,15 +222,15 @@ mod tests {
     #[test]
     fn announcements_bring_their_answer_streams() {
         assert_eq!(
-            answer_keys("dimos/urdf_info/std_msgs.String"),
-            vec!["dimos/mesh_info/shape_msgs.MeshFile"]
+            answer_keys("dimos/robot_description/std_msgs.String"),
+            vec!["dimos/mesh_info/files.MeshFile"]
         );
         assert_eq!(
             answer_keys("dimos/r1/scene_info/std_msgs.String"),
             vec!["dimos/r1/scene_data/std_msgs.String"]
         );
         assert!(answer_keys("dimos/odom/nav_msgs.Odometry").is_empty());
-        assert!(answer_keys("dimos/not_urdf_info/std_msgs.String").is_empty());
+        assert!(answer_keys("dimos/not_robot_description/std_msgs.String").is_empty());
     }
 
     #[test]

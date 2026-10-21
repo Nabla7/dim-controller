@@ -199,7 +199,8 @@ pub struct State {
     pub labels: Labels,
 }
 
-/// The keys plus the answer streams their announcements bring (a recorded /urdf_info records /mesh_info too).
+/// The keys plus the answer streams their announcements bring (a recorded /robot_description records /mesh_info
+/// too).
 fn with_answers(keys: Vec<String>) -> Vec<String> {
     let answers: Vec<String> = keys.iter().flat_map(|key| asks::answer_keys(key)).collect();
     keys.into_iter().chain(answers).collect()
@@ -1024,7 +1025,7 @@ mod tests {
         robot.close().await.unwrap();
     }
 
-    /// A recorded /urdf_info asks for its meshes, so the file holds them on /mesh_info though no viewer asked.
+    /// A recorded /robot_description asks for its meshes, so the file holds them on /mesh_info though no viewer asked.
     #[tokio::test(flavor = "multi_thread")]
     async fn a_recording_asks_for_the_meshes_its_urdf_names() {
         let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
@@ -1047,7 +1048,7 @@ mod tests {
                 mesh.extend_from_slice(uri.as_bytes());
                 mesh.extend_from_slice(b"solid x");
                 let answers = answers.clone();
-                tokio::spawn(async move { answers.put("dimos/mesh_info/shape_msgs.MeshFile", mesh).await.unwrap() });
+                tokio::spawn(async move { answers.put("dimos/mesh_info/files.MeshFile", mesh).await.unwrap() });
             })
             .await
             .unwrap();
@@ -1058,13 +1059,13 @@ mod tests {
             &app,
             "POST",
             "/api/recorder/start",
-            r#"{"keys":["dimos/urdf_info/std_msgs.String"],"name":"meshes.mcap"}"#,
+            r#"{"keys":["dimos/robot_description/std_msgs.String"],"name":"meshes.mcap"}"#,
         )
         .await;
         assert_eq!(status, StatusCode::OK, "{body}");
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let urdf = r#"<robot name="r"><link name="a"><visual><geometry><mesh filename="package://r/a.stl"/></geometry></visual></link><link name="b"><visual><geometry><mesh filename="package://r/b.stl"/></geometry></visual></link><link name="c"><visual><geometry><mesh filename="package://r/c.stl"/></geometry></visual></link></robot>"#;
-        robot.put("dimos/urdf_info/std_msgs.String", asks::encode_string(urdf)).await.unwrap();
+        robot.put("dimos/robot_description/std_msgs.String", asks::encode_string(urdf)).await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
         let (status, body) = call(&app, "POST", "/api/recorder/stop", "").await;
         assert_eq!(status, StatusCode::OK, "{body}");

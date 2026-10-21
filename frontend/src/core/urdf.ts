@@ -1,5 +1,5 @@
-// A URDF as dimos's UrdfManager shares it: the XML on /urdf_info (std_msgs.String, every 5 s), each mesh asked for by
-// its `package://` name on /mesh_request and answered on /mesh_info (shape_msgs.MeshFile: the file's own bytes).
+// A URDF as dimos's UrdfManager shares it: the XML on /robot_description (std_msgs.String, every 5 s), each mesh asked
+// for by its `package://` name on /mesh_request and answered on /mesh_info (files.MeshFile: the file's own bytes).
 // parseUrdf turns the XML into the RobotDescription the arm view and the robot model layer build from; its meshes are
 // named by their URI and loaded apart (meshGeometry).
 import * as THREE from "three"
@@ -133,7 +133,7 @@ export function meshUris(description: RobotDescription): string[] {
     return [...new Set(uris)]
 }
 
-/** shape_msgs.MeshFile's wire form (dimos/msgs/shape_msgs/MeshFile.py): `<f64 ts><u32 uri length><uri><file bytes>`, little endian. */
+/** files.MeshFile's wire form (dimos/msgs/files/MeshFile.py): `<f64 ts><u32 uri length><uri><file bytes>`, little endian. */
 export function decodeMeshFile(bytes: Uint8Array): { ts: number; uri: string; data: Uint8Array } {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
     if (bytes.byteLength < 12) {
