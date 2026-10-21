@@ -5,12 +5,17 @@
 //   deno task update-hashes
 const flake = new URL("../flake.nix", import.meta.url)
 const system = new TextDecoder().decode(
-    (await new Deno.Command("nix", { args: ["eval", "--impure", "--raw", "--expr", "builtins.currentSystem"] }).output()).stdout,
+    (await new Deno.Command("nix", { args: ["eval", "--impure", "--raw", "--expr", "builtins.currentSystem"] })
+        .output()).stdout,
 )
 
 /** builds `.#attr` and returns the hash nix says it got, or null when it built (the hash was already right) */
 async function gotHash(attr: string): Promise<string | null> {
-    const { stderr, success } = await new Deno.Command("nix", { args: ["build", `.#${attr}`, "--no-link"], cwd: new URL("..", import.meta.url), stderr: "piped" }).output()
+    const { stderr, success } = await new Deno.Command("nix", {
+        args: ["build", `.#${attr}`, "--no-link"],
+        cwd: new URL("..", import.meta.url),
+        stderr: "piped",
+    }).output()
     const text = new TextDecoder().decode(stderr)
     const got = text.match(/got:\s+(sha256-[A-Za-z0-9+/=]+)/)?.[1]
     if (got) {
@@ -41,5 +46,9 @@ for (const [attr, pattern] of targets) {
     const old = setHash(pattern, "")
     const got = await gotHash(attr)
     setHash(pattern, got ?? old)
-    console.log(`${attr} (${attr === "frontendModules" ? system : "every system"}): ${got && got !== old ? `${old || "(none)"} -> ${got}` : "unchanged"}`)
+    console.log(
+        `${attr} (${attr === "frontendModules" ? system : "every system"}): ${
+            got && got !== old ? `${old || "(none)"} -> ${got}` : "unchanged"
+        }`,
+    )
 }
