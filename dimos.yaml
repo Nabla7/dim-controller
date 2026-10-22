@@ -5,6 +5,8 @@ uses:
     "@dimos-gateway":
         # what's running (and its log dir, for recordings), then its Twist inputs, for the drive topic picker
         - GET /active
+        - GET /active/modules
+        - POST /active/modules/{id}/rpcs/{name}
         - GET /catalog/blueprints/{name}
         - GET /info
         # robots.json's robot types, for the auto robot type

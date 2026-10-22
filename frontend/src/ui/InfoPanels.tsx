@@ -9,14 +9,19 @@ import { TfPanel } from "./TfPanel.tsx"
 import { ArmsPanel, armsPanelShown } from "./ArmsPanel.tsx"
 import { ARMS_PANEL } from "./workspace.ts"
 import { panelTitle } from "./commands.ts"
+import { PolicyPanel } from "./PolicyPanel.tsx"
 
 export function InfoPanels({ app }: { app: ViewerApp }) {
     const { issues } = useStore(app.tfIssues)
     const robot = useStore(app.robot)
     const runs = useStore(app.runs.state)
     const manipulation = useStore(app.manipulation.state)
+    const policy = useStore(app.policy.state)
     return (
         <>
+            {policy.required && <Panel id="sonic" title="SONIC" icon="humanoid" bodyClassName="panel-body">
+                <PolicyPanel app={app} />
+            </Panel>}
             <Panel id="status" title={panelTitle("status")} icon="signal" bodyClassName="panel-body" testid="status-panel-frame">
                 <StatusPanel app={app} />
             </Panel>

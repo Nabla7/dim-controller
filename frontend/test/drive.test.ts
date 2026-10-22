@@ -30,6 +30,23 @@ function fakeBridge() {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+Deno.test("policy blocking drops held input and cannot resume it after activation", () => {
+    const { connection } = fakeBridge()
+    const drive = new Drive(connection, go2)
+    try {
+        drive.setAxes("keys", { forward: 1 })
+        drive.setPolicyBlock("Activate SONIC")
+        drive.setAxes("keys", { forward: 1 })
+        assertEquals(drive.state.get().twist.linear, [0, 0, 0])
+        drive.setPolicyBlock(null)
+        assertEquals(drive.state.get().twist.linear, [0, 0, 0])
+        drive.setAxes("keys", { forward: 1 })
+        assert(drive.state.get().twist.linear[0] > 0)
+    } finally {
+        drive.dispose()
+    }
+})
+
 Deno.test("no arming: forward at the linear speed, shift doubles linear, and turns 1.1× normal at full speed, 1.5× standing still, a release flushes zeros then goes quiet", async () => {
     localStorage.clear()
     const { connection, puts, deadmen, commanded } = fakeBridge()

@@ -27,6 +27,7 @@ export default defineConfig({
     plugins: [esmFetch(dimosReact), react()],
     server: {
         proxy: {
+            "/gateways/dimos": { target: desktop, changeOrigin: true },
             "/zenoh-gateway": { target: desktop, ws: true, changeOrigin: true },
             "/api": { target: `${desktop}/apps/${app}`, changeOrigin: true },
         },

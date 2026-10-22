@@ -6,6 +6,7 @@
 import { type PointerEvent, useEffect, useRef, useState } from "react"
 import { ViewerApp } from "./core/app.ts"
 import { Store, useStore } from "./core/store.ts"
+import { INITIAL_POLICY_STATE } from "./core/policyControl.ts"
 import { ActionDock } from "./ui/ActionDock.tsx"
 import { ActionBar } from "./ui/ActionBar.tsx"
 import { GlassWindow } from "./ui/GlassToGlass.tsx"
@@ -39,6 +40,8 @@ declare global {
     }
 }
 
+const placeholderPolicy = new Store({ ...INITIAL_POLICY_STATE })
+
 export function App() {
     const host = useRef<HTMLDivElement>(null)
     const [app, setApp] = useState<ViewerApp | null>(null)
@@ -56,7 +59,10 @@ export function App() {
         }
         theme()
         addEventListener("dimos-react-theme", theme)
-        return () => removeEventListener("dimos-react-theme", theme)
+        return () => {
+            removeEventListener("dimos-react-theme", theme)
+            created.policy.dispose()
+        }
     }, [])
 
     const cameras = useStore(cameraLayout)
@@ -64,7 +70,8 @@ export function App() {
     const runs = useStore(app?.runs.state ?? placeholderRuns)
     const manipulation = useStore(app?.manipulation.state ?? placeholderManipulation)
     const arms = app !== null && armsPanelShown(robot.type, runs, manipulation.available)
-    const ids = [...cameras.panels.map((panel) => cameraId(panel.id)), ...FIXED_PANELS, ...(arms ? [ARMS_PANEL] : [])]
+    const policy = useStore(app?.policy.state ?? placeholderPolicy)
+    const ids = [...cameras.panels.map((panel) => cameraId(panel.id)), ...FIXED_PANELS, ...(arms ? [ARMS_PANEL] : []), ...(policy.required ? ["sonic"] : [])]
     const cameraActions = useCameraActions(app)
     const api = useWorkspace(ids, mobile)
     // the profile changes with the robot type: keys follow it

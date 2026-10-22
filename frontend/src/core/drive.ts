@@ -45,6 +45,7 @@ export interface DriveState {
     command: DriveCommand | null
     /** driving is disengaged (link too slow, or lost) until a reconnect; nothing but the stop goes out */
     halt: DriveHalt | null
+    policyBlock: string | null
 }
 
 /** Why driving is disengaged: the link's latency went over Settings' max, or the link dropped. */
@@ -76,7 +77,7 @@ const LEGACY_DRIVE_KEYS: Partial<Record<RobotProfile["type"], string>> = { dog: 
 const zeroAxes = (): Axes => ({ forward: 0, strafe: 0, turn: 0, vertical: 0 })
 
 export class Drive {
-    readonly state = new Store<DriveState>({ armed: true, axes: zeroAxes(), boost: false, twist: { linear: [0, 0, 0], angular: [0, 0, 0] }, topics: [], topic: "", publishing: false, sent: 0, error: null, command: null, halt: null })
+    readonly state = new Store<DriveState>({ armed: true, axes: zeroAxes(), boost: false, twist: { linear: [0, 0, 0], angular: [0, 0, 0] }, topics: [], topic: "", publishing: false, sent: 0, error: null, command: null, halt: null, policyBlock: null })
     settings: Store<DriveSettings>
     readonly controlValues = new Store<Record<string, number>>({})
     /** axis contributions by source (keys, stick, pad), summed and clamped */
@@ -177,7 +178,7 @@ export class Drive {
 
     /** A source (e.g. "keys", "stick") sets its share of the axes; the sum (clamped to ±1) drives. Ignored while halted. */
     setAxes(source: string, axes: Partial<Axes>) {
-        if (this.state.get().halt) {
+        if (this.state.get().halt || this.state.get().policyBlock) {
             return
         }
         this.#sources.set(source, axes)
@@ -224,14 +225,24 @@ export class Drive {
 
     /** Stop: every source released at once (space, the STOP button), and the agent's command too. */
     stop() {
-        this.#sources.clear()
-        this.#recompute()
+        this.clearInput()
         this.#stopListeners.forEach((listener) => listener())
         const command = this.state.get().command
         if (command && !command.dryRun && typeof location !== "undefined") {
             this.state.update({ command: null })
             fetch(new URL("api/drive/stop", location.href), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).catch(() => {})
         }
+    }
+
+    clearInput() {
+        this.#sources.clear()
+        this.#recompute()
+    }
+
+    setPolicyBlock(reason: string | null) {
+        if (reason === this.state.get().policyBlock) return
+        this.clearInput()
+        this.state.update({ policyBlock: reason })
     }
 
     /** `listener` runs on every stop() and halt(); returns the unsubscribe. */

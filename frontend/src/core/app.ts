@@ -14,6 +14,7 @@ import { FrameHighlight } from "./render/frameHighlight.ts"
 import { LayerManager } from "./layers/manager.ts"
 import { VideoSources } from "./video.ts"
 import { Drive } from "./drive.ts"
+import { driveBlock, PolicyControl } from "./policyControl.ts"
 import { JOY_TOPIC, JOY_TYPE, JoyPublisher } from "./joy.ts"
 import { ArmControl } from "./arm.ts"
 import { ArmManipView } from "./armManipView.ts"
@@ -69,6 +70,7 @@ export class ViewerApp {
     /** the robot type in use, whether it was picked or auto, and why */
     readonly robot: Store<{ type: RobotType; auto: boolean; reason: string }>
     readonly drive: Drive
+    readonly policy: PolicyControl
     /** the raw input as Joy on /joystick (core/joy.ts) */
     readonly joy: JoyPublisher
     /** the arm panel's commands (used when the robot type is arm; core/arm.ts) */
@@ -117,6 +119,10 @@ export class ViewerApp {
         this.video = new VideoSources(this.connection)
         this.layers = new LayerManager(this.viewer, this.tf, this.tfHistory, this.connection, this.video, this.profile)
         this.drive = new Drive(this.connection, this.profile)
+        this.policy = new PolicyControl(() => this.drive.clearInput())
+        this.policy.state.subscribe(() => this.drive.setPolicyBlock(driveBlock(this.policy.state.get())))
+        this.drive.onStop(() => { void this.policy.act("stop-motion") })
+        this.policy.start()
         this.joy = new JoyPublisher(this.connection)
         // the lease also keeps the drive topics (and the gamepad's) to this viewer
         const leasePublish = () => this.connection.lease.setPublish([...this.drive.state.get().topics.map((topic) => zenohKey(topic.topic, topic.type)), dimosKey(JOY_TOPIC, JOY_TYPE)])
