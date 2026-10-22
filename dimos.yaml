@@ -171,8 +171,9 @@ provides:
         /api/recorder/stop:
             post:
                 description: >-
-                    Stop the recording and close the file (it shows in Desktop's recordings). Returns the final
-                    status {active, path, messages, bytes, dropped, skipped, seconds}; 409 if not recording.
+                    Stop the recording and close the file (it shows in Desktop's recordings), once the files it
+                    asked for (the robot's meshes, a sim's world) are in it or given up on. Returns the final status
+                    {active, path, messages, bytes, dropped, skipped, seconds}; 409 if not recording.
                 x-when: you want to stop and save the running recording
         /api/recorder/add:
             post:

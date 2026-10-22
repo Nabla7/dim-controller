@@ -17,6 +17,11 @@ const MESH_RETRY: Duration = Duration::from_secs(30);
 const MESH_ATTEMPTS: u32 = 3;
 const SCENE_ASK_EVERY: Duration = Duration::from_secs(2);
 const TICK: Duration = Duration::from_millis(250);
+/// how long a stopping recording waits for what it asked for: as long as a mesh is asked for before it's given up on
+pub const SETTLE_LIMIT: Duration = Duration::from_secs(MESH_RETRY.as_secs() * MESH_ATTEMPTS as u64);
+
+/// an empty /file_request has the robot's UrdfManager send /robot_description now
+const URDF_NOW_KEY: &str = "dimos/file_request/std_msgs.String";
 
 /// `dimos/<ns>/<name>/<type>` → `dimos/<ns>/<sibling>`, for a key whose topic ends in `name`.
 fn sibling(key: &str, name: &str, type_name: &str, sibling: &str) -> Option<String> {
@@ -123,6 +128,7 @@ impl Asks {
         }
         let looping = self.clone();
         tokio::spawn(async move {
+            let _ = session.put(URDF_NOW_KEY, encode_string("")).await;
             while !looping.done.load(Ordering::Relaxed) {
                 for (key, payload) in looping.due(Instant::now()) {
                     let _ = session.put(key, payload).await;
@@ -139,6 +145,19 @@ impl Asks {
 
     pub fn stop(&self) {
         self.done.store(true, Ordering::Relaxed);
+    }
+
+    /// Whether everything asked for has come or been given up on (each mesh after MESH_ATTEMPTS, a scene once one came).
+    pub fn settled(&self, now: Instant) -> bool {
+        let wanted = self.wanted.lock().unwrap();
+        let meshes = &wanted.meshes;
+        let meshes_done = meshes.wanted.iter().all(|uri| {
+            meshes.got.contains(uri)
+                || meshes.asked.get(uri).is_some_and(|(when, times)| {
+                    *times >= MESH_ATTEMPTS && now.duration_since(*when) >= MESH_RETRY
+                })
+        });
+        meshes_done && (wanted.scenes.is_empty() || wanted.scene_answered)
     }
 
     /// A recorded message: an announcement says what to ask for, an answer checks it off.

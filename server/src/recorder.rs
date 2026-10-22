@@ -1,8 +1,9 @@
-//! The recorder and its zenoh side (routes in api.rs). A start names its keys, or leaves them out: then the topics on
-//! the bus now are found here (liveliness tokens and a short listen, as Desktop's /api/topics does) minus rpc topics and
-//! the ones unticked in the recorder panel (the `lv.record.topics` setting), and while it runs, new ones join (unless
-//! `lv.record.options.recordNew` is off) and dimos runs that start later bring their log dirs (Desktop's /dimos-gateway/runs).
-//! While a recording runs this process subscribes to exactly the recorded keys, so an idle recorder costs no bandwidth;
+//! The recorder and its zenoh side (routes in api.rs). A start names its keys, or leaves them out: then it records the
+//! whole bus (`dimos/**`) as it comes, every topic but the ones unticked in the recorder panel (the `lv.record.topics`
+//! setting), so topics that appear later are in too; with `lv.record.options.recordNew` off, only the topics on the bus at
+//! the start (liveliness tokens and a short listen, as Desktop's /api/topics does). Dimos runs that start later bring
+//! their log dirs (Desktop's /dimos-gateway/runs). A stop first waits for the files the recording asked for (asks.rs).
+//! Only while a recording runs does this process subscribe, so an idle recorder costs no bandwidth;
 //! the stream meter (`GET api/recorder/streams`, each key's bytes/s) listens to everything only while someone asks.
 //! The recorder's options (format, compression, folder, logs, per-stream max rates) are the `lv.record.options`
 //! setting (`Options`), so they survive a restart and every page shows the same ones.
@@ -102,6 +103,14 @@ impl Options {
 }
 
 /// The most messages per second `key` is recorded at (None = every message).
+/// Every dimos topic: what a recording takes in unless it's given keys.
+const BUS: &str = "dimos/**";
+
+/// Whether the recorder panel has `key`'s topic unticked (lv.record.topics; default ticked).
+fn unticked(store: &Store, key: &str) -> bool {
+    store.read("lv.record.topics", |topics| topics[key].as_bool() == Some(false))
+}
+
 fn max_rate(store: &Store, key: &str) -> Option<f64> {
     store.read(OPTIONS_KEY, |options| {
         options["rates"][key]
@@ -157,7 +166,10 @@ const METER_IDLE: Duration = Duration::from_secs(15);
 struct Active {
     recorder: Arc<Recorder>,
     subscribers: Vec<zenoh::pubsub::Subscriber<()>>,
+    /// the keys subscribed to (the whole bus is `dimos/**`)
     keys: BTreeSet<String>,
+    /// the keys with a message recorded
+    seen: Arc<Mutex<BTreeSet<String>>>,
     logs: LogTailer,
     /// asks for the meshes and the sim world the recorded announcements name (asks.rs)
     asks: Arc<Asks>,
@@ -199,10 +211,24 @@ pub struct State {
     pub labels: Labels,
 }
 
-/// The keys plus the answer streams their announcements bring (a recorded /robot_description records /file_info too).
+/// The keys plus the answer streams their announcements bring (a recorded /robot_description records /file_info too),
+/// wildcards first.
 fn with_answers(keys: Vec<String>) -> Vec<String> {
     let answers: Vec<String> = keys.iter().flat_map(|key| asks::answer_keys(key)).collect();
-    keys.into_iter().chain(answers).collect()
+    let mut all: Vec<String> = keys.into_iter().chain(answers).collect();
+    // wildcards first, so the exact keys they take in aren't subscribed twice
+    all.sort_by_key(|key| !key.contains('*'));
+    all
+}
+
+/// Whether a subscription already made (a wildcard such as an announcement's) takes in `key`'s messages.
+fn covered(subscribed: &BTreeSet<String>, key: &str) -> bool {
+    let Ok(key) = zenoh::key_expr::keyexpr::new(key) else {
+        return false;
+    };
+    subscribed.iter().any(|each| {
+        each != key.as_str() && zenoh::key_expr::keyexpr::new(each.as_str()).is_ok_and(|each| each.includes(key))
+    })
 }
 
 /// `dimos/<topic>/<pkg.Type>` → ("/<topic>", "pkg.Type"); anything else is not a dimos channel.
@@ -283,51 +309,62 @@ impl State {
         Ok(open)
     }
 
+    /// Records `key`'s messages; a wildcard (the whole bus, an answer stream such as /file_info/**) records each under its
+    /// own key, leaving out the topics unticked in the recorder (lv.record.topics). Rates are per key either way.
     async fn subscribe(
         &self,
         recorder: &Arc<Recorder>,
         asks: &Arc<Asks>,
+        seen: &Arc<Mutex<BTreeSet<String>>>,
         key: &str,
     ) -> anyhow::Result<zenoh::pubsub::Subscriber<()>> {
-        // a wildcard key (an answer stream such as /file_info/**) records each sample under its own key
-        let fixed = if key.contains('*') {
+        let wildcard = key.contains('*');
+        let fixed = if wildcard {
             None
         } else {
             Some(split_key(key).ok_or_else(|| anyhow::anyhow!("not a dimos key: {key}"))?)
         };
-        let (recorder, asks) = (recorder.clone(), asks.clone());
+        let (recorder, asks, seen) = (recorder.clone(), asks.clone(), seen.clone());
         let session = self.session().await?;
-        if Asks::announces(key) {
+        if wildcard || Asks::announces(key) {
             asks.ask_on(session.clone());
         }
-        let (store, throttle, owned_key) =
-            (self.settings.clone(), Throttle::default(), key.to_string());
+        let store = self.settings.clone();
+        let throttles: Mutex<HashMap<String, Arc<Throttle>>> = Mutex::default();
         session
             .declare_subscriber(key.to_string())
             .callback(move |sample| {
-                // the rate is read per message, so a change applies to a running recording
-                if throttle.admit(record::now_nanos(), max_rate(&store, &owned_key)) {
-                    let payload = sample.payload().to_bytes();
-                    let sample_key = sample.key_expr().as_str();
-                    asks.heard(sample_key, &payload);
-                    if let Some((topic, msg_type)) = &fixed {
-                        recorder.offer(topic, Some(msg_type), &payload)
-                    } else if let Some((topic, msg_type)) = split_key(sample_key) {
-                        recorder.offer(&topic, Some(&msg_type), &payload)
-                    } else {
-                        recorder.skip()
-                    }
-                } else {
-                    recorder.skip();
+                let sample_key = sample.key_expr().as_str();
+                let split = if fixed.is_some() { None } else { split_key(sample_key) };
+                let Some((topic, msg_type)) = fixed.as_ref().or(split.as_ref()) else {
+                    return;
+                };
+                if wildcard && unticked(&store, sample_key) {
+                    return;
                 }
+                let throttle = throttles.lock().unwrap().entry(sample_key.to_string()).or_default().clone();
+                // the rate is read per message, so a change applies to a running recording
+                if !throttle.admit(record::now_nanos(), max_rate(&store, sample_key)) {
+                    recorder.skip();
+                    return;
+                }
+                let mut seen_keys = seen.lock().unwrap();
+                if !seen_keys.contains(sample_key) {
+                    seen_keys.insert(sample_key.to_string());
+                }
+                drop(seen_keys);
+                let payload = sample.payload().to_bytes();
+                asks.heard(sample_key, &payload);
+                recorder.offer(topic, Some(msg_type), &payload)
             })
             .await
             .map_err(|error| anyhow::anyhow!("subscribe {key}: {error}"))
     }
 
+    /// Records `keys`, or with none the whole bus but the unticked topics (lv.record.topics).
     pub async fn start(
         &self,
-        keys: Vec<String>,
+        keys: Option<Vec<String>>,
         name: Option<String>,
         logs: LogDirs,
     ) -> anyhow::Result<record::RecordingStatus> {
@@ -354,12 +391,14 @@ impl State {
             recorder: recorder.clone(),
             subscribers: Vec::new(),
             keys: BTreeSet::new(),
+            seen: Arc::default(),
             logs: tailer,
             asks: asks.clone(),
         };
-        for key in with_answers(keys) {
-            if started.keys.insert(key.clone()) {
-                match self.subscribe(&recorder, &asks, &key).await {
+        let keys = keys.map_or_else(|| vec![BUS.to_string()], with_answers);
+        for key in keys {
+            if !covered(&started.keys, &key) && started.keys.insert(key.clone()) {
+                match self.subscribe(&recorder, &asks, &started.seen, &key).await {
                     Ok(subscriber) => started.subscribers.push(subscriber),
                     Err(error) => {
                         asks.stop();
@@ -373,7 +412,7 @@ impl State {
         Ok(status)
     }
 
-    /// Topics that appeared mid-recording join it.
+    /// Keys to record from now on (any the recording already takes in are left as they are).
     pub async fn add(&self, keys: Vec<String>) -> anyhow::Result<usize> {
         let mut active = self.active.lock().await;
         let Some(active) = active.as_mut() else {
@@ -381,10 +420,10 @@ impl State {
         };
         let mut added = 0;
         for key in with_answers(keys) {
-            if active.keys.insert(key.clone()) {
+            if !covered(&active.keys, &key) && active.keys.insert(key.clone()) {
                 active
                     .subscribers
-                    .push(self.subscribe(&active.recorder, &active.asks, &key).await?);
+                    .push(self.subscribe(&active.recorder, &active.asks, &active.seen, &key).await?);
                 added += 1;
             }
         }
@@ -413,6 +452,15 @@ impl State {
     }
 
     pub async fn stop(&self) -> anyhow::Result<record::RecordingStatus> {
+        // what the recording asked for (the robot's meshes, the sim's world) goes in before it closes
+        let asks = match self.active.lock().await.as_ref() {
+            Some(active) => active.asks.clone(),
+            None => anyhow::bail!("not recording"),
+        };
+        let stopping = Instant::now();
+        while !asks.settled(Instant::now()) && stopping.elapsed() < asks::SETTLE_LIMIT {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
         let Some(active) = self.active.lock().await.take() else {
             anyhow::bail!("not recording");
         };
@@ -495,7 +543,7 @@ impl State {
                 .unwrap_or_else(record::idle_status),
             keys: active
                 .as_ref()
-                .map(|active| active.keys.iter().cloned().collect())
+                .map(|active| active.seen.lock().unwrap().iter().cloned().collect())
                 .unwrap_or_default(),
             logs: active
                 .as_ref()
@@ -670,11 +718,12 @@ pub async fn start(
             }
         },
     };
-    let follow = explicit.is_none();
+    // the whole bus as it comes, unless keys are given or new topics shouldn't join (then the ones on the bus now)
     let keys = match explicit {
-        Some(keys) => keys,
+        Some(keys) => Some(keys),
+        None if state.options().record_new => None,
         None => match state.discover().await {
-            Ok(keys) => wanted(&keys, &api.settings.get("lv.record.topics")),
+            Ok(keys) => Some(wanted(&keys, &api.settings.get("lv.record.topics"))),
             Err(problem) => return error(StatusCode::SERVICE_UNAVAILABLE, problem),
         },
     };
@@ -693,36 +742,27 @@ pub async fn start(
     let name = body["name"].as_str().map(str::to_string);
     match state.start(keys, name, logs).await {
         Ok(status) => {
-            follow_recording(api, status.path.clone(), follow, with_logs);
+            follow_recording(api, status.path.clone(), with_logs);
             Json(status).into_response()
         }
         Err(problem) => error(StatusCode::CONFLICT, problem),
     }
 }
 
-/// While this recording runs: dimos runs that start later bring their log dirs; with `topics`, new topics join.
-fn follow_recording(api: crate::api::Api, path: Option<String>, topics: bool, logs: bool) {
+/// While this recording runs, dimos runs that start later bring their log dirs.
+fn follow_recording(api: crate::api::Api, path: Option<String>, logs: bool) {
+    if !logs {
+        return;
+    }
     tokio::spawn(async move {
-        let mut tick = 0u64;
         loop {
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
             if !api.recorder.is_recording(&path).await {
                 return;
             }
-            tick += 1;
-            if topics && api.recorder.options().record_new {
-                if let Ok(keys) = api.recorder.discover().await {
-                    let _ = api
-                        .recorder
-                        .add(wanted(&keys, &api.settings.get("lv.record.topics")))
-                        .await;
-                }
-            }
-            if logs && tick % 2 == 0 {
-                let dirs = crate::desktop::log_dirs(&api.desktop_url, false).await;
-                if !dirs.log_dirs.is_empty() {
-                    let _ = api.recorder.add_logs(dirs).await;
-                }
+            let dirs = crate::desktop::log_dirs(&api.desktop_url, false).await;
+            if !dirs.log_dirs.is_empty() {
+                let _ = api.recorder.add_logs(dirs).await;
             }
         }
     });
@@ -1053,6 +1093,10 @@ mod tests {
                 let mut reader = uri;
                 reader.expect_fingerprint(&crate::msgs::STRING_FINGERPRINT).unwrap();
                 let uri = reader.string().unwrap();
+                // an empty request asks for the URDF, sent below
+                if uri.is_empty() {
+                    return;
+                }
                 let mut mesh = 0f64.to_le_bytes().to_vec();
                 mesh.extend_from_slice(&(uri.len() as u32).to_le_bytes());
                 mesh.extend_from_slice(uri.as_bytes());
@@ -1090,6 +1134,87 @@ mod tests {
             .collect();
         meshes.sort();
         assert_eq!(meshes, vec!["/file_info package://r/a.stl", "/file_info package://r/b.stl", "/file_info/r package://r/c.stl"]);
+        robot.close().await.unwrap();
+    }
+
+    /// A recording of the whole bus: the URDF a robot sends only when asked (an empty /file_request), each of its files
+    /// answered late, all in the file though stop comes as soon as the URDF does; an unticked topic left out.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_whole_bus_recording_holds_the_urdf_and_its_files_but_not_unticked_topics() {
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let mut config = zenoh::Config::default();
+        config.insert_json5("listen/endpoints", &format!(r#"["tcp/127.0.0.1:{port}"]"#)).unwrap();
+        config.insert_json5("scouting/multicast/enabled", "false").unwrap();
+        let robot = zenoh::open(config).await.unwrap();
+        let urdf = r#"<robot name="r"><link name="a"><visual><geometry><mesh filename="package://r/a.stl"/></geometry></visual></link><link name="b"><visual><geometry><mesh filename="package://r/b.stl"/></geometry></visual></link></robot>"#;
+        let answers = robot.clone();
+        let _manager = robot
+            .declare_subscriber("dimos/file_request/std_msgs.String")
+            .callback(move |sample| {
+                let bytes = sample.payload().to_bytes();
+                let mut reader = crate::msgs::Reader::new(&bytes);
+                reader.expect_fingerprint(&crate::msgs::STRING_FINGERPRINT).unwrap();
+                let uri = reader.string().unwrap();
+                let answers = answers.clone();
+                tokio::spawn(async move {
+                    if uri.is_empty() {
+                        answers.put("dimos/robot_description/std_msgs.String", asks::encode_string(urdf)).await.unwrap();
+                        return;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+                    let mut mesh = 0f64.to_le_bytes().to_vec();
+                    mesh.extend_from_slice(&(uri.len() as u32).to_le_bytes());
+                    mesh.extend_from_slice(uri.as_bytes());
+                    mesh.extend_from_slice(b"solid x");
+                    answers.put("dimos/file_info/files.MeshFile", mesh).await.unwrap();
+                });
+            })
+            .await
+            .unwrap();
+        let heard_urdf = Arc::new(AtomicU64::new(0));
+        let heard = heard_urdf.clone();
+        let _watch = robot
+            .declare_subscriber("dimos/robot_description/std_msgs.String")
+            .callback(move |_| {
+                heard.fetch_add(1, Ordering::Relaxed);
+            })
+            .await
+            .unwrap();
+        let dir = temp_dir("whole_bus");
+        let state = Arc::new(State::new(dir.clone(), format!("tcp/127.0.0.1:{port}")));
+        let mut unticked = serde_json::Map::new();
+        unticked.insert("dimos/noise/std_msgs.String".into(), json!(false));
+        state.settings.merge("lv.record.topics", &unticked);
+        let app = crate::api::test_router(state.clone());
+        let (status, body) = call(&app, "POST", "/api/recorder/start", r#"{"name":"bus.mcap"}"#).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        for _ in 0..50 {
+            robot.put("dimos/noise/std_msgs.String", asks::encode_string("x")).await.unwrap();
+            robot.put("dimos/heard/std_msgs.String", asks::encode_string("y")).await.unwrap();
+            if heard_urdf.load(Ordering::Relaxed) > 0 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        assert!(heard_urdf.load(Ordering::Relaxed) > 0, "the recorder never asked for the URDF");
+        robot.put("dimos/heard/std_msgs.String", asks::encode_string("y")).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let (status, body) = call(&app, "POST", "/api/recorder/stop", "").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let bytes = std::fs::read(dir.join("bus.mcap")).unwrap();
+        let mut topics = BTreeSet::new();
+        let mut meshes = Vec::new();
+        for message in mcap::MessageStream::new(&bytes).unwrap() {
+            let message = message.unwrap();
+            topics.insert(message.channel.topic.clone());
+            if message.channel.topic == "/file_info" {
+                meshes.push(asks::mesh_file_uri(&message.data).unwrap());
+            }
+        }
+        meshes.sort();
+        assert_eq!(meshes, vec!["package://r/a.stl", "package://r/b.stl"]);
+        assert!(topics.contains("/robot_description") && topics.contains("/heard"), "{topics:?}");
+        assert!(!topics.contains("/noise"), "{topics:?}");
         robot.close().await.unwrap();
     }
 
