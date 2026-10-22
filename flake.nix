@@ -71,7 +71,7 @@
                         dontFixup = true;
                         outputHashMode = "recursive";
                         outputHashAlgo = "sha256";
-                        outputHash = "sha256-gTnNEJXXTmap77/bOLCN57RieoIUmSKSiTqG++7Nrrg=";
+                        outputHash = "sha256-pd44PMF/Tn/w+Tta3dEbQ56TepJSm2fs4tghd07RvrY=";
                     };
 
                     # the page: React + Vite against those modules and that esm.sh cache, offline
