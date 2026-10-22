@@ -80,7 +80,7 @@ export class ViewerApp {
     readonly agent: AgentLink
     /** right-click location labels (server/src/labels.rs) */
     readonly labels: LocationLabels
-    /** what's running (Desktop's /dimos-gateway/runs, live on its zenoh events): the first-run messages and the drive topic */
+    /** what's running (Desktop's /dimos-gateway/active, live on its zenoh events): the first-run messages and the drive topic */
     readonly runs = new RunWatch()
     /** the fixed frame in use and where the robot is (for the UI) */
     readonly frameInfo = new Store<{ fixedFrame: string; robotFound: boolean; followFound: boolean }>({ fixedFrame: "", robotFound: false, followFound: false })

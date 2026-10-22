@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Result};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-/// Where the running dimos writes its jsonl logs, from Desktop: each run's log dir (`GET /dimos-gateway/runs`), else (with
+/// Where the running dimos writes its jsonl logs, from Desktop: the running blueprint's log dir (`GET /dimos-gateway/active`), else (with
 /// `roots`) the logs roots (`GET /dimos-gateway/info`'s `paths.logsDirs`; the tailer follows run dirs that appear in them).
 /// Empty outside Desktop.
 pub async fn log_dirs(base: &str, roots: bool) -> crate::recorder::LogDirs {
@@ -12,14 +12,10 @@ pub async fn log_dirs(base: &str, roots: bool) -> crate::recorder::LogDirs {
     if base.is_empty() {
         return dirs;
     }
-    if let Ok(runs) = get(base, "/dimos-gateway/runs").await {
-        let listed = runs["runs"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .map(|run| &run["log_dir"])
-            .chain([&runs["launch"]["logDir"]]);
+    if let Ok(active) = get(base, "/dimos-gateway/active").await {
+        let listed = [&active["logDir"], &active["launch"]["logDir"]];
         for dir in listed
+            .into_iter()
             .filter_map(Value::as_str)
             .filter(|dir| !dir.is_empty())
         {

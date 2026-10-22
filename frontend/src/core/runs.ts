@@ -1,4 +1,4 @@
-// What's running, for the first-run messages and the drive topic: Desktop's GET /dimos-gateway/runs (+ each running
+// What's running, for the first-run messages and the drive topic: Desktop's GET /dimos-gateway/active (+ the running
 // blueprint's modules and streams), refreshed live on Desktop's zenoh `runs` and the dimos server's `launch` events, and again
 // after the zenoh-gateway connection comes back (docs/events.md: snapshot + live). GET /dimos-gateway/info says if dimOS is there.
 import { getZenoh } from "dimos-react/dim-app/zenoh.js"
@@ -20,7 +20,7 @@ export interface RunState {
     blueprints: Record<string, Module[] | null>
 }
 
-type Runs = { launch?: { blueprint?: string; phase?: string } | null; runs?: { blueprint: string }[] }
+type Active = { running?: boolean; blueprint?: string | null; launch?: { blueprint?: string; phase?: string } | null }
 type Blueprint = { modules?: Module[] }
 
 const desktopUrl = (path: string) => new URL(`../../${path}`, location.href)
@@ -81,17 +81,20 @@ export class RunWatch {
             // no Desktop here: keep what we knew
         }
         try {
-            const response = await fetch(desktopUrl("dimos-gateway/runs"))
+            const response = await fetch(desktopUrl("dimos-gateway/active"))
             if (!response.ok) {
                 throw new Error(String(response.status))
             }
-            const runs: Runs = await response.json()
-            const phase = runs.launch?.phase
-            const running = new Set<string>((runs.runs ?? []).map((run) => run.blueprint).filter(Boolean))
-            if (phase === "running" && runs.launch?.blueprint) {
-                running.add(runs.launch.blueprint)
+            const active: Active = await response.json()
+            const phase = active.launch?.phase
+            const running = new Set<string>()
+            if (active.running && active.blueprint) {
+                running.add(active.blueprint)
             }
-            const starting = phase === "starting" ? runs.launch?.blueprint ?? null : null
+            if (phase === "running" && active.launch?.blueprint) {
+                running.add(active.launch.blueprint)
+            }
+            const starting = phase === "starting" ? active.launch?.blueprint ?? null : null
             const blueprints: Record<string, Module[] | null> = {}
             for (const name of running) {
                 try {
