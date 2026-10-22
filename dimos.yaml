@@ -1,6 +1,6 @@
 title: Controller
 spec-version: v1.4 # the dimos.yaml spec version this file follows
-version: "0.1.61"
+version: "0.2.0"
 uses:
     "@dimos-gateway":
         # what's running (and its log dir, for recordings), then its Twist inputs, for the drive topic picker
