@@ -12,7 +12,6 @@ const at = (x: number, y: number, z: number) => ({ xyz: [x, y, z] as [number, nu
 
 /** a 3-joint arm: a yaw base, then two pitch joints with 0.4 m links, a tip 0.1 m on, and a two-finger gripper */
 const description: RobotDescription = {
-    format: "dimos.robot_description.v1",
     name: "test_arm",
     base_link: "base",
     base_frame: "world",
@@ -32,7 +31,6 @@ const description: RobotDescription = {
         { name: "drive", type: "prismatic", parent: "tip", child: "finger_a", origin: I, axis: [0, 1, 0], limit: [0, 0.04] },
         { name: "follow", type: "prismatic", parent: "tip", child: "finger_b", origin: I, axis: [0, 1, 0], limit: [-0.04, 0], mimic: { joint: "drive", multiplier: -1, offset: 0 } },
     ],
-    meshes: {},
 }
 
 const tipOf = (kinematics: Kinematics, positions: Record<string, number>) => new THREE.Vector3().setFromMatrixPosition(kinematics.linkPoses(positions).get("tip")!)
