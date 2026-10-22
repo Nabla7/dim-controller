@@ -1,11 +1,11 @@
-// UrdfSource (core/urdfSource.ts): an empty /mesh_request asks for /urdf_info now, on subscribing and on every connect,
+// UrdfSource (core/urdfSource.ts): an empty /file_request asks for /robot_description now, on subscribing and on every connect,
 // re-sent until the URDF comes (the first can beat the subscription), and an empty reply isn't a URDF.
 import { assertEquals } from "jsr:@std/assert@1"
 import { DOMParser } from "https://esm.sh/@xmldom/xmldom@0.8.10"
 import { decode, encode } from "../src/core/lcm/lcm.ts"
 import { Store } from "../src/core/store.ts"
 import type { Connection, ConnectionState } from "../src/core/transport.ts"
-import { fileRanks, MESH_REQUEST, URDF_INFO, UrdfSource } from "../src/core/urdfSource.ts"
+import { fileRanks, FILE_REQUEST, ROBOT_DESCRIPTION, UrdfSource } from "../src/core/urdfSource.ts"
 
 ;(globalThis as { DOMParser?: unknown }).DOMParser = DOMParser
 
@@ -16,7 +16,7 @@ function fakeConnection(state: ConnectionState["state"] = "connected") {
     const handlers = new Map<string, (message: { bytes: Uint8Array }) => void>()
     const client = {
         publisher(key: string) {
-            assertEquals(key, MESH_REQUEST)
+            assertEquals(key, FILE_REQUEST)
             return { put: (bytes: Uint8Array) => requests.push(String(decode("std_msgs.String", bytes).data)), close() {} }
         },
     }
@@ -29,7 +29,7 @@ function fakeConnection(state: ConnectionState["state"] = "connected") {
             return () => handlers.delete(key)
         },
     }
-    const urdf = (xml: string) => handlers.get(URDF_INFO)!({ bytes: encode("std_msgs.String", { data: xml }) })
+    const urdf = (xml: string) => handlers.get(ROBOT_DESCRIPTION)!({ bytes: encode("std_msgs.String", { data: xml }) })
     const connect = (to: ConnectionState["state"]) => {
         connection.client = client
         status.update({ state: to })
@@ -39,7 +39,7 @@ function fakeConnection(state: ConnectionState["state"] = "connected") {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-Deno.test("subscribing asks for /urdf_info at once, again until it comes, then not", async () => {
+Deno.test("subscribing asks for /robot_description at once, again until it comes, then not", async () => {
     const { connection, requests, urdf } = fakeConnection()
     const source = new UrdfSource(connection)
     const release = source.acquire()
@@ -77,7 +77,7 @@ Deno.test("every connect asks again; a link that only dipped (degraded) doesn't"
     await wait(300)
 })
 
-Deno.test("an empty /urdf_info isn't a URDF: what's loaded stays", () => {
+Deno.test("an empty /robot_description isn't a URDF: what's loaded stays", () => {
     const { connection, urdf } = fakeConnection()
     const source = new UrdfSource(connection)
     const release = source.acquire()

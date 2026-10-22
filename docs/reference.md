@@ -40,11 +40,11 @@ to the fixed frame is not drawn; the layer list says why.
 | `tf2_msgs.TFMessage` | frame axes, names and parent links |
 | `sensor_msgs.Image`, `CompressedImage` | camera panels; optionally projected into 3D (frustum + picture, from `CameraInfo`) |
 | `vision_msgs.Detection2DArray`, `Detection2D`, `BoundingBox2DArray` | boxes over a camera panel |
-| `std_msgs.String` on `/urdf_info` | the robot's own model from its URDF (below) |
+| `std_msgs.String` on `/robot_description` | the robot's own model from its URDF (below) |
 
 **Robot model (URDF).** When a blueprint runs dimos's `UrdfManager`, the robot is drawn from its URDF, for any robot:
-`/urdf_info` carries the XML (re-sent every 5 s), each mesh is asked for once by its `package://` name on
-`/mesh_request` and arrives on `/mesh_info` (`shape_msgs.MeshFile`: the file's bytes, matched by name; STL, OBJ, DAE
+`/robot_description` carries the XML (re-sent every 5 s), each mesh is asked for once by its `package://` name on
+`/file_request` and arrives on `/file_info` (`files.MeshFile`: the file's bytes, matched by name; STL, OBJ, DAE
 and PLY), a few at a time, so the model fills in. Each link sits at its TF frame (UrdfManager puts every joint on TF), its
 visuals at their URDF origins. The layer ("Robot model (URDF)") turns on by itself, has opacity and visual / collision /
 both, and replaces the robot type's stand-in model while it's drawn ([layers/robotModel.tsx](../frontend/src/layers/robotModel.tsx),
@@ -368,7 +368,7 @@ manipulation panel, does, in its order:
 
 - **Status**: the planner's state (or its error), the target's (empty, checking, feasible, infeasible) and the plan's
   (none, planning, fresh, stale, failed), whether the joint state is stale, the current joints, the last result.
-- **The arm in 3D** is the robot's URDF from `/urdf_info` when UrdfManager publishes it (joints the joint state doesn't
+- **The arm in 3D** is the robot's URDF from `/robot_description` when UrdfManager publishes it (joints the joint state doesn't
   name are read from TF), else the planner's own model (its URDF meshes, through the hook), posed live from the joint
   state. **Robot display**:
   visual, collision or both (a model with no collision geometry shows its visual meshes in collision colors, with

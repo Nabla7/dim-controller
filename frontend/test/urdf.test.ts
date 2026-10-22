@@ -56,7 +56,7 @@ endloop
 endfacet
 endsolid t`
 
-/** shape_msgs.MeshFile as dimos encodes it */
+/** files.MeshFile as dimos encodes it */
 function meshFile(uri: string, data: Uint8Array): Uint8Array {
     const name = new TextEncoder().encode(uri)
     const bytes = new Uint8Array(12 + name.length + data.length)

@@ -199,7 +199,7 @@ pub struct State {
     pub labels: Labels,
 }
 
-/// The keys plus the answer streams their announcements bring (a recorded /urdf_info records /mesh_info too).
+/// The keys plus the answer streams their announcements bring (a recorded /robot_description records /file_info too).
 fn with_answers(keys: Vec<String>) -> Vec<String> {
     let answers: Vec<String> = keys.iter().flat_map(|key| asks::answer_keys(key)).collect();
     keys.into_iter().chain(answers).collect()
@@ -289,8 +289,12 @@ impl State {
         asks: &Arc<Asks>,
         key: &str,
     ) -> anyhow::Result<zenoh::pubsub::Subscriber<()>> {
-        let (topic, msg_type) =
-            split_key(key).ok_or_else(|| anyhow::anyhow!("not a dimos key: {key}"))?;
+        // a wildcard key (an answer stream such as /file_info/**) records each sample under its own key
+        let fixed = if key.contains('*') {
+            None
+        } else {
+            Some(split_key(key).ok_or_else(|| anyhow::anyhow!("not a dimos key: {key}"))?)
+        };
         let (recorder, asks) = (recorder.clone(), asks.clone());
         let session = self.session().await?;
         if Asks::announces(key) {
@@ -304,8 +308,15 @@ impl State {
                 // the rate is read per message, so a change applies to a running recording
                 if throttle.admit(record::now_nanos(), max_rate(&store, &owned_key)) {
                     let payload = sample.payload().to_bytes();
-                    asks.heard(&owned_key, &payload);
-                    recorder.offer(&topic, Some(&msg_type), &payload)
+                    let sample_key = sample.key_expr().as_str();
+                    asks.heard(sample_key, &payload);
+                    if let Some((topic, msg_type)) = &fixed {
+                        recorder.offer(topic, Some(msg_type), &payload)
+                    } else if let Some((topic, msg_type)) = split_key(sample_key) {
+                        recorder.offer(&topic, Some(&msg_type), &payload)
+                    } else {
+                        recorder.skip()
+                    }
                 } else {
                     recorder.skip();
                 }
@@ -1024,7 +1035,7 @@ mod tests {
         robot.close().await.unwrap();
     }
 
-    /// A recorded /urdf_info asks for its meshes, so the file holds them on /mesh_info though no viewer asked.
+    /// A recorded /robot_description asks for its meshes, so the file holds them on /file_info though no viewer asked.
     #[tokio::test(flavor = "multi_thread")]
     async fn a_recording_asks_for_the_meshes_its_urdf_names() {
         let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
@@ -1032,10 +1043,10 @@ mod tests {
         config.insert_json5("listen/endpoints", &format!(r#"["tcp/127.0.0.1:{port}"]"#)).unwrap();
         config.insert_json5("scouting/multicast/enabled", "false").unwrap();
         let robot = zenoh::open(config).await.unwrap();
-        // the robot's UrdfManager: each name on /mesh_request answered with a MeshFile on /mesh_info
+        // the robot's UrdfManager: each name on /file_request answered with a MeshFile on /file_info
         let answers = robot.clone();
         let _manager = robot
-            .declare_subscriber("dimos/mesh_request/std_msgs.String")
+            .declare_subscriber("dimos/file_request/std_msgs.String")
             .callback(move |sample| {
                 let bytes = sample.payload().to_bytes();
                 let uri = crate::msgs::Reader::new(&bytes);
@@ -1047,7 +1058,9 @@ mod tests {
                 mesh.extend_from_slice(uri.as_bytes());
                 mesh.extend_from_slice(b"solid x");
                 let answers = answers.clone();
-                tokio::spawn(async move { answers.put("dimos/mesh_info/shape_msgs.MeshFile", mesh).await.unwrap() });
+                // c comes on a topic under /file_info, the rest on /file_info itself
+                let key = if uri.ends_with("c.stl") { "dimos/file_info/r/files.MeshFile" } else { "dimos/file_info/files.MeshFile" };
+                tokio::spawn(async move { answers.put(key, mesh).await.unwrap() });
             })
             .await
             .unwrap();
@@ -1058,13 +1071,13 @@ mod tests {
             &app,
             "POST",
             "/api/recorder/start",
-            r#"{"keys":["dimos/urdf_info/std_msgs.String"],"name":"meshes.mcap"}"#,
+            r#"{"keys":["dimos/robot_description/std_msgs.String"],"name":"meshes.mcap"}"#,
         )
         .await;
         assert_eq!(status, StatusCode::OK, "{body}");
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let urdf = r#"<robot name="r"><link name="a"><visual><geometry><mesh filename="package://r/a.stl"/></geometry></visual></link><link name="b"><visual><geometry><mesh filename="package://r/b.stl"/></geometry></visual></link><link name="c"><visual><geometry><mesh filename="package://r/c.stl"/></geometry></visual></link></robot>"#;
-        robot.put("dimos/urdf_info/std_msgs.String", asks::encode_string(urdf)).await.unwrap();
+        robot.put("dimos/robot_description/std_msgs.String", asks::encode_string(urdf)).await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
         let (status, body) = call(&app, "POST", "/api/recorder/stop", "").await;
         assert_eq!(status, StatusCode::OK, "{body}");
@@ -1072,11 +1085,11 @@ mod tests {
         let mut meshes: Vec<String> = mcap::MessageStream::new(&bytes)
             .unwrap()
             .map(|message| message.unwrap())
-            .filter(|message| message.channel.topic == "/mesh_info")
-            .map(|message| asks::mesh_file_uri(&message.data).unwrap())
+            .filter(|message| message.channel.topic.starts_with("/file_info"))
+            .map(|message| format!("{} {}", message.channel.topic, asks::mesh_file_uri(&message.data).unwrap()))
             .collect();
         meshes.sort();
-        assert_eq!(meshes, vec!["package://r/a.stl", "package://r/b.stl", "package://r/c.stl"]);
+        assert_eq!(meshes, vec!["/file_info package://r/a.stl", "/file_info package://r/b.stl", "/file_info/r package://r/c.stl"]);
         robot.close().await.unwrap();
     }
 
