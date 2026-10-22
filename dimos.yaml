@@ -21,24 +21,6 @@ uses:
         - GET /api/steam-deck
         - POST /api/steam-deck/open
     "@zenoh-gateway": ">=0.5 <0.6"
-# spec v1.2: what the page may do on zenoh. It watches and drives whatever dimos topic the user picks (layers, cameras,
-# drive and arm topics, the profile's controls), so all of dimos/**; plus Desktop's, dimos's and its own backend's events
-zenoh:
-    default_permission: deny
-    read:
-        - id: topics
-          messages: [declare_subscriber, put] # subscribe (and list topics), and receive their samples
-          key_exprs: ["dimos/**"]
-          permission: allow
-        - id: events
-          messages: [declare_subscriber, put] # <namespace>/desktop/events/runs, <namespace>/dimos/events/launch, its backend's events
-          key_exprs: ["**/desktop/events/runs", "**/dimos/events/launch", "**/apps/dim-controller/frontend/events"]
-          permission: allow
-    write:
-        - id: commands
-          messages: [put] # drive, joystick, arm, controls, clicked_point, and the file and scene requests
-          key_exprs: ["dimos/**"]
-          permission: allow
 # Desktop's nix builds of this app pull from this cache (CI fills it)
 caches:
     - url: https://dimos-desktop.cachix.org
