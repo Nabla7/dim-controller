@@ -90,14 +90,6 @@ def test_info_lists_groups_and_joint_topology(ask):
     assert set(info["joint_topology"]) >= set(JOINTS)
 
 
-def test_robot_description_has_meshes(ask):
-    description = ask("robot_description")
-    assert description["format"] == "dimos.robot_description.v1"
-    assert description["joint_names"] == JOINTS
-    assert len(description["meshes"]) >= 7
-    assert any(link["visuals"] for link in description["links"])
-
-
 def test_evaluate_joint_target_reports_collision(module, ask):
     free = ask("evaluate", {"groups": ["manipulator"], "joints": dict.fromkeys(JOINTS, 0.1)})
     assert free["success"] and free["collision_free"], free["message"]

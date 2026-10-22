@@ -28,7 +28,7 @@ provides:
     openapi: 3.1.0
     info:
         title: Controller
-        version: 1.2.0
+        version: 2.0.0
         description: >-
             Controller: drive the running robot (keyboard / sticks, velocity commands, stop) while watching its live
             3D view (point clouds, costmap, pose, planned path, TF) and cameras; recording to mcap, location labels,
@@ -678,12 +678,6 @@ provides:
                     last preview; each with a version, left out when ?obstacles=&grasps=&preview= already has it.
                     Without the hook: obstacle poses only (type marker).
                 x-when: you need the arm planning scene's shapes and grasp proposals
-        /api/manipulation/description:
-            get:
-                description: >-
-                    The planner's robot model as dimos.robot_description.v1 (links with visual and collision
-                    geometry, joints, base pose), from the hook.
-                x-when: you need the arm planner's robot model
         /api/manipulation/hook:
             get:
                 description: >-

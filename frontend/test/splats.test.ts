@@ -125,14 +125,7 @@ Deno.test("textures off draws meshes flat grey at their opacity, on puts their o
     assertEquals(late.material, late.userData.textured)
 })
 
-Deno.test("settings from before groups: People becomes the people group, the scene-only Meshes is dropped, the old Splats / Meshes / Both seeds Splats", () => {
-    const parts = (splats: boolean, groups: Record<string, boolean> = {}) => ({ robot: true, groups, meshes: true, splats })
-    assertEquals(modelPartsOf({}), parts(true))
-    assertEquals(modelPartsOf({ splatView: "splats", meshes: false }), parts(true))
-    assertEquals(modelPartsOf({ splatView: "meshes" }), parts(false))
-    assertEquals(modelPartsOf({ splats: false, splatView: "both" }), parts(false))
-    assertEquals(modelPartsOf({ robot: false, people: false }), { ...parts(true, { people: false }), robot: false })
-    assertEquals(modelPartsOf({ people: true }), parts(true, { people: true }))
-    // once groups are saved, they and Meshes are read as they are, and People isn't
-    assertEquals(modelPartsOf({ groups: { scene: false }, meshes: false, people: false }), { robot: true, groups: { scene: false }, meshes: false, splats: true })
+Deno.test("a layer's saved parts: what's unset is shown", () => {
+    assertEquals(modelPartsOf({}), { robot: true, groups: {}, meshes: true, splats: true })
+    assertEquals(modelPartsOf({ groups: { scene: false }, meshes: false }), { robot: true, groups: { scene: false }, meshes: false, splats: true })
 })

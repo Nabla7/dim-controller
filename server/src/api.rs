@@ -25,7 +25,7 @@ use crate::settings::{self, Settings};
 pub const TITLE: &str = "Controller";
 
 /// the endpoints' API version (openapi.json's info.version): major = breaking, minor = added
-pub const API_VERSION: &str = "1.2.0";
+pub const API_VERSION: &str = "2.0.0";
 
 pub const WHEN: &str = "you need to drive a robot, watch it live in 3D, or record it";
 
@@ -161,7 +161,6 @@ pub fn routes() -> Routes<Api> {
         .endpoint("GET", "api/manipulation/obstacles", "you need the arm planner's obstacles", "The planning scene's obstacles: name -> pose.", json!({}), manipulation_obstacles)
         .endpoint("POST", "api/manipulation/evaluate", "you want to check an arm target before planning", "Check a target the way viser's panel does, in the planner's process (needs the hook): collision-aware IK for poses, collision and limits for joints. Body: a target (groups, joints or poses, source). Answers success, collision_free, status (FEASIBLE, COLLISION, NO_SOLUTION, INVALID...), message, joints (the IK's for poses), poses (each group's tip for joints).", json!({ "groups": json!({ "type": "array" }), "joints": json!({ "type": "object" }), "poses": json!({ "type": "object" }), "source": s("joints | cartesian") }), manipulation_evaluate)
         .endpoint("GET", "api/manipulation/scene", "you need the arm planning scene's shapes and grasp proposals", "What viser draws besides the arm (needs the hook): obstacles with their shapes (box, sphere, cylinder, mesh vertices/faces, octree points), grasp proposals (pose, score; best first), the last preview; each with a version, left out when ?obstacles=&grasps=&preview= already has it. Without the hook: obstacle poses only (type marker).", json!({}), manipulation_scene)
-        .endpoint("GET", "api/manipulation/description", "you need the arm planner's robot model", "The planner's robot model as dimos.robot_description.v1 (links with visual and collision geometry, joints, base pose), from the hook.", json!({}), manipulation_description)
         .endpoint("GET", "api/manipulation/hook", "you need to know whether the controller's planner hook is loaded or installed", "dim-controller's hook in the blueprint's process: loaded (its info: pid, python, groups, joint topology) and installed (per running dimos run's venv).", json!({}), manipulation_hook)
         .endpoint("POST", "api/manipulation/hook/install", "you want the controller's planner hook installed into the running blueprint", "Install (uninstall=true: remove) the hook into the venv of every running dimos run, or venv; it loads when the blueprint restarts.", json!({ "venv": s("a venv or its python (default: every running dimos run's)"), "uninstall": b("") }), manipulation_hook_install)
         .endpoint("GET", "api/manipulation/poses", "you need the arm poses saved for a robot", "The arm poses saved for a robot model (robot: its URDF name), from ~/.dimos/app_data/manip_data/<robot>/poses.yaml: poses [{name, color, target}] (target as api/manipulation/target takes it; setting it moves nothing).", json!({ "robot": required(s("the URDF's name, e.g. r1pro")) }), manipulation_poses)
@@ -480,14 +479,6 @@ async fn manipulation_scene(Extract(api): Extract<Api>, Query(query): Query<Hash
             }
             Err(error) => planner_error(error),
         },
-    }
-}
-
-/// The planner's robot model (dimos.robot_description.v1) from the hook, for the 3D arm.
-async fn manipulation_description(Extract(api): Extract<Api>) -> Response {
-    match api.manipulation.hook("robot_description", &Value::Null, std::time::Duration::from_secs(30)).await {
-        Ok(description) => Json(description).into_response(),
-        Err(error) => error_response(StatusCode::SERVICE_UNAVAILABLE, error),
     }
 }
 

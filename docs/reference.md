@@ -368,9 +368,8 @@ manipulation panel, does, in its order:
 
 - **Status**: the planner's state (or its error), the target's (empty, checking, feasible, infeasible) and the plan's
   (none, planning, fresh, stale, failed), whether the joint state is stale, the current joints, the last result.
-- **The arm in 3D** is the robot's URDF from `/robot_description` when UrdfManager publishes it (joints the joint state doesn't
-  name are read from TF), else the planner's own model (its URDF meshes, through the hook), posed live from the joint
-  state. **Robot display**:
+- **The arm in 3D** is the robot's URDF from `/robot_description` (dimos's UrdfManager; joints the joint state doesn't
+  name are read from TF), posed live from the joint state. **Robot display**:
   visual, collision or both (a model with no collision geometry shows its visual meshes in collision colors, with
   viser's warning). **Scene grid** toggles the ground grid.
 - **Planning Groups**: toggle which groups the target covers (two arms, an arm and a gripper...). Each selected group

@@ -24,10 +24,6 @@ export interface RobotModelSettings {
     splats?: boolean
     /** mesh files (not splats) shown (unset: on) */
     meshes?: boolean
-    /** before groups, dim-go2-sim's people shown; read only to migrate */
-    people?: boolean
-    /** before the splats / meshes toggles: "splats", "meshes" or "both"; read only to migrate */
-    splatView?: string
     /** visual meshes in their materials, or plain flat grey */
     textures?: boolean
     /** splats above this height (m) are hidden, so ceilings don't hide the view from above */

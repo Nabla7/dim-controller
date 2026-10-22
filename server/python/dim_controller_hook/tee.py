@@ -71,7 +71,6 @@ class Tee:
         self._lock = threading.Lock()
         self._model: Any = None
         self._groups: tuple[Any, ...] = ()
-        self._description: str | None = None
         self.obstacles_version = 0
         self._grasps: list[Any] = []
         self.grasps_version = 0
@@ -184,7 +183,6 @@ class Tee:
             _session = zenoh.open(config)
         handlers = {
             "info": self.info,
-            "robot_description": self.robot_description,
             "scene": self.scene,
             "evaluate": self.evaluate,
             "plan_cartesian": self.plan_cartesian,
@@ -224,15 +222,6 @@ class Tee:
             }
         except Exception:
             return {}
-
-    def robot_description(self, _request: Any) -> Any:
-        if self._model is None:
-            raise RuntimeError("the planner has no model yet")
-        if self._description is None:
-            from dim_controller_hook.description import build_description
-
-            self._description = json.dumps(build_description(self._model), separators=(",", ":"))
-        return json.loads(self._description)
 
     def scene(self, request: Any) -> dict[str, Any]:
         """Obstacles (with shapes), grasp proposals and the last preview, each with a version to skip unchanged ones."""

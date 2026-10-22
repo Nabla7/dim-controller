@@ -10,7 +10,6 @@ const FILES: &[(&str, &str)] = &[
     ("dim_controller_hook/__init__.py", include_str!("../python/dim_controller_hook/__init__.py")),
     ("dim_controller_hook/boot.py", include_str!("../python/dim_controller_hook/boot.py")),
     ("dim_controller_hook/tee.py", include_str!("../python/dim_controller_hook/tee.py")),
-    ("dim_controller_hook/description.py", include_str!("../python/dim_controller_hook/description.py")),
 ];
 
 fn cache_dir() -> PathBuf {

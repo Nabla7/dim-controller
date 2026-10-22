@@ -1,12 +1,11 @@
-// The three.js model of a robot description (dimos-react's RobotDescription: a URDF from dimos's RobotDescriptionModule
-// or parseUrdf), posed by its Kinematics, with its links' groups, meshes and Gaussian splats shown or hidden. The
+// The three.js model of a robot description (dimos-react's RobotDescription: a URDF read by parseUrdf), posed by its Kinematics, with its links' groups, meshes and Gaussian splats shown or hidden. The
 // description itself, its forward kinematics and IK are dimos-react's (dimos-react/three).
 import * as THREE from "three"
 import type { DescriptionGeometry, JointPositions, Origin, RobotDescription } from "dimos-react/three"
 import { Kinematics } from "dimos-react/three"
 import type { SplatAsset, SplatObject } from "./splats.ts"
 
-export { basePose, Kinematics, meshGeometries, ROBOT_DESCRIPTION_FORMAT, urdfPositions } from "dimos-react/three"
+export { basePose, Kinematics, urdfPositions } from "dimos-react/three"
 export type { DescriptionGeometry, DescriptionJoint, DescriptionLink, JointPositions, Origin, RobotDescription } from "dimos-react/three"
 
 const originMatrix = (origin: Origin) =>
@@ -22,21 +21,9 @@ export interface ModelParts {
     splats: boolean
 }
 
-/** Settings saved before groups: `people` (dim-go2-sim's people), `meshes` (then the scene's alone) and `splatView`
- * ("splats", "meshes" or "both", before the splats / meshes toggles). */
-interface OldParts {
-    people?: boolean
-    splatView?: string
-}
-
-/** The parts a layer's saved settings show. One saved before groups carries its People toggle over to the "people"
- * group; its Meshes toggle (then the scene's meshes alone, now every mesh) is dropped. */
-export function modelPartsOf(saved: Partial<ModelParts> & OldParts): ModelParts {
-    const splats = saved.splats ?? saved.splatView !== "meshes"
-    if (!saved.groups) {
-        return { robot: saved.robot ?? true, groups: saved.people === undefined ? {} : { people: saved.people }, meshes: true, splats }
-    }
-    return { robot: saved.robot ?? true, groups: saved.groups, meshes: saved.meshes ?? true, splats }
+/** The parts a layer's saved settings show (unset: shown). */
+export function modelPartsOf(saved: Partial<ModelParts>): ModelParts {
+    return { robot: saved.robot ?? true, groups: saved.groups ?? {}, meshes: saved.meshes ?? true, splats: saved.splats ?? true }
 }
 
 /** Each link's group: its own `<group>`, else that of the link it's fixed to (the parent of a fixed joint), else none. */

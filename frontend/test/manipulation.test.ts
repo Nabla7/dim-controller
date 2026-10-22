@@ -1,15 +1,14 @@
-// The arm's 3D manipulation: forward kinematics from a dimos.robot_description.v1 (mimic joints, prefixed and gripper
+// The arm's 3D manipulation: forward kinematics from a robot description (mimic joints, prefixed and gripper
 // joint names), IK reaching a pose the arm can reach and saying when it can't, and a plan sampled for the preview.
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
 import * as THREE from "three"
-import { Kinematics, meshGeometries, type RobotDescription, RobotModel, urdfPositions } from "../src/core/robotDescription.ts"
+import { Kinematics, type RobotDescription, RobotModel, urdfPositions } from "../src/core/robotDescription.ts"
 import { solveIk } from "dimos-react/three"
 import { defaultSelection, jointControl, Manipulation, type ManipulationPlan, wholePlan, wrapAngle, canonical } from "../src/core/manipulation.ts"
 import { obstacleObject } from "../src/core/armManipView.ts"
 
 const I = { xyz: [0, 0, 0] as [number, number, number], quat: [0, 0, 0, 1] as [number, number, number, number] }
 const at = (x: number, y: number, z: number) => ({ xyz: [x, y, z] as [number, number, number], quat: [0, 0, 0, 1] as [number, number, number, number] })
-const b64 = (array: Float32Array | Uint32Array) => btoa(String.fromCharCode(...new Uint8Array(array.buffer)))
 
 /** a 3-joint arm: a yaw base, then two pitch joints with 0.4 m links, a tip 0.1 m on, and a two-finger gripper */
 const description: RobotDescription = {
@@ -33,7 +32,7 @@ const description: RobotDescription = {
         { name: "drive", type: "prismatic", parent: "tip", child: "finger_a", origin: I, axis: [0, 1, 0], limit: [0, 0.04] },
         { name: "follow", type: "prismatic", parent: "tip", child: "finger_b", origin: I, axis: [0, 1, 0], limit: [-0.04, 0], mimic: { joint: "drive", multiplier: -1, offset: 0 } },
     ],
-    meshes: { tri: { vertices: b64(new Float32Array([0, 0, 0, 0.1, 0, 0, 0, 0.1, 0])), faces: b64(new Uint32Array([0, 1, 2])) } },
+    meshes: {},
 }
 
 const tipOf = (kinematics: Kinematics, positions: Record<string, number>) => new THREE.Vector3().setFromMatrixPosition(kinematics.linkPoses(positions).get("tip")!)
@@ -94,7 +93,8 @@ Deno.test("IK reaches a pose the arm can reach and says when one is out of reach
 
 Deno.test("the model: a group per link, posed, with visual or collision shown", () => {
     const kinematics = new Kinematics(description)
-    const model = new RobotModel(kinematics, meshGeometries(description))
+    const tri = new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, 0.1, 0, 0, 0, 0.1, 0], 3))
+    const model = new RobotModel(kinematics, new Map([["tri", tri]]))
     model.pose({ j2: Math.PI / 2 })
     const l3 = new THREE.Vector3().setFromMatrixPosition(model.links.get("l3")!.matrix)
     assertAlmostEquals(l3.x, 0.4, 1e-9)
