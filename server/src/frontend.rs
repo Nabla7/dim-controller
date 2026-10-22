@@ -1,7 +1,7 @@
 //! Backend → page (Desktop's docs/events.md): every event for the pages goes out on zenoh, on this app's frontend topic
 //! `events` (`<DIMOS_APP.zenohPrefix>/frontend/events`), where the page's one zenoh-gateway connection hears it. This
 //! server links zenoh, so it publishes there itself (on the recorder's session, opened at start); when that session
-//! can't be opened it sends the same JSON through Desktop's relay (`POST /desktop/frontend/<name>/events`). One task
+//! can't be opened it sends the same JSON through Desktop's relay (`POST /gateways/desktop/ui/apps/<name>/frontend/events`). One task
 //! sends them, in order.
 use serde_json::Value;
 use std::sync::Arc;
@@ -63,7 +63,7 @@ pub fn spawn(
                 None => match &relay {
                     Some((base, name)) => crate::desktop::post(
                         base,
-                        &format!("/desktop/frontend/{name}/{EVENTS_TOPIC}"),
+                        &format!("/gateways/desktop/ui/apps/{name}/frontend/{EVENTS_TOPIC}"),
                         &event,
                     )
                     .await

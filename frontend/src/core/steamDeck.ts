@@ -1,28 +1,26 @@
 // The Steam Deck banner's logic (ui/SteamDeckBanner.tsx). On a Steam Deck (or SteamOS) the Deck's controls only reach
-// the page as a gamepad when dimOS was opened from Steam (Steam Input); Desktop >= 0.2.119 says where it runs
-// (GET /api/steam-deck) and can open itself in Steam (POST /api/steam-deck/open). An older Desktop 404s: no banner.
+// the page as a gamepad when dimOS was opened from Steam (Steam Input); this app's backend says whether its machine (the
+// one Desktop runs on) is a Deck or runs SteamOS (GET api/host), and Desktop opens itself in Steam
+// (POST /gateways/desktop/ui/steam/open). No answer (dev server, an older backend): no banner.
 // The shell marks a launch from Steam in sessionStorage["dimos.launch"] = "steam" (from ?launch=steam).
 
-/** GET /api/steam-deck (Desktop >= 0.2.119); the fields this reads */
+/** GET api/host's Steam fields */
 export interface SteamDeckInfo {
     steamDeck: boolean
     steamOs: boolean
-    steamShortcut?: boolean
-    gameId?: string
-    runGameUrl?: string
 }
 
 export type Fetch = (input: string, init?: RequestInit) => Promise<Response>
 
-/** Desktop's answer, or null: not under Desktop, an older Desktop (404), or anything unreadable. Never throws. */
-export async function fetchSteamDeck(fetcher: Fetch, origin: string): Promise<SteamDeckInfo | null> {
+/** The backend's answer, or null: no backend, an older one, or anything unreadable. Never throws. `page` is the page's URL. */
+export async function fetchSteamDeck(fetcher: Fetch, page: string): Promise<SteamDeckInfo | null> {
     try {
-        const response = await fetcher(new URL("/api/steam-deck", origin).href)
+        const response = await fetcher(new URL("api/host", page).href)
         if (!response.ok) {
             return null
         }
         const body = await response.json()
-        return body && typeof body === "object" ? { ...body, steamDeck: body.steamDeck === true, steamOs: body.steamOs === true } : null
+        return body && typeof body === "object" ? { steamDeck: body.steamDeck === true, steamOs: body.steamOs === true } : null
     } catch {
         return null
     }
@@ -33,10 +31,10 @@ export function shouldShowSteamBanner(state: { info: SteamDeckInfo | null; launc
     return !!state.info && (state.info.steamDeck || state.info.steamOs) && state.launch !== "steam" && !state.gamepadConnected && !state.dismissed
 }
 
-/** POST /api/steam-deck/open: what Desktop did ("started", "launched", "restarted", "needs-restart") and its message. */
-export async function openInSteam(fetcher: Fetch, origin: string): Promise<{ ok: boolean; did: string; message: string }> {
+/** POST /gateways/desktop/ui/steam/open: what Desktop did ("started", "launched", "restarted", "needs-restart") and its message. `page` is the page's URL (/apps/<name>/). */
+export async function openInSteam(fetcher: Fetch, page: string): Promise<{ ok: boolean; did: string; message: string }> {
     try {
-        const response = await fetcher(new URL("/api/steam-deck/open", origin).href, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
+        const response = await fetcher(new URL("../../gateways/desktop/ui/steam/open", page).href, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
         const body = await response.json().catch(() => ({}))
         const message = typeof body?.message === "string" ? body.message : typeof body?.reason === "string" ? body.reason : typeof body?.error === "string" ? body.error : ""
         if (!response.ok) {

@@ -1,6 +1,6 @@
-// What's running, for the first-run messages and the drive topic: Desktop's GET /dimos-gateway/active (+ the running
+// What's running, for the first-run messages and the drive topic: Desktop's GET /gateways/dimos/active (+ the running
 // blueprint's modules and streams), refreshed live on Desktop's zenoh `runs` and the dimos server's `launch` events, and again
-// after the zenoh-gateway connection comes back (docs/events.md: snapshot + live). GET /dimos-gateway/info says if dimOS is there.
+// after the zenoh-gateway connection comes back (docs/events.md: snapshot + live). GET /gateways/dimos/info says if dimOS is there.
 import { getZenoh } from "dimos-react/dim-app/zenoh.js"
 import { Store } from "./store.ts"
 import type { Module } from "./cmdvel.ts"
@@ -16,7 +16,7 @@ export interface RunState {
     running: string[]
     /** a blueprint the Launcher is starting, or null */
     starting: string | null
-    /** each running blueprint's modules and their streams (Desktop's /dimos-gateway/catalog/blueprints/<name>); null = unknown */
+    /** each running blueprint's modules and their streams (Desktop's /gateways/dimos/catalog/blueprints/<name>); null = unknown */
     blueprints: Record<string, Module[] | null>
 }
 
@@ -62,7 +62,7 @@ export class RunWatch {
         if (cached) {
             return cached
         }
-        const response = await fetch(desktopUrl(`dimos-gateway/catalog/blueprints/${encodeURIComponent(name)}?fields=modules`))
+        const response = await fetch(desktopUrl(`gateways/dimos/catalog/blueprints/${encodeURIComponent(name)}?fields=modules`))
         if (!response.ok) {
             throw new Error(String(response.status))
         }
@@ -75,13 +75,13 @@ export class RunWatch {
     async #load() {
         let dimosInstalled = this.state.get().dimosInstalled
         try {
-            const info = await (await fetch(desktopUrl("dimos-gateway/info"))).json()
+            const info = await (await fetch(desktopUrl("gateways/dimos/info"))).json()
             dimosInstalled = !!(info.found && info.installed)
         } catch {
             // no Desktop here: keep what we knew
         }
         try {
-            const response = await fetch(desktopUrl("dimos-gateway/active"))
+            const response = await fetch(desktopUrl("gateways/dimos/active"))
             if (!response.ok) {
                 throw new Error(String(response.status))
             }

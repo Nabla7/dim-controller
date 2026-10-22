@@ -1,5 +1,5 @@
 //! dimos's text logs into the recording. dimos writes structured logs as JSON lines (`main.jsonl`, ...) in each run's
-//! log dir; the page asks Desktop where those are (`GET /dimos-gateway/active`) and hands the dirs over. While a recording runs a
+//! log dir; the page asks Desktop where those are (`GET /gateways/dimos/active`) and hands the dirs over. While a recording runs a
 //! thread here tails every `*.jsonl` in them (new lines only, following new files and truncation/replacement) and
 //! writes each line as a `foxglove.Log` (JSON encoding, so Foxglove's Log panel shows it) on `/dimos/logs/<file stem>`,
 //! stamped with the line's own timestamp. The original record is kept whole in the extra `fields` key.

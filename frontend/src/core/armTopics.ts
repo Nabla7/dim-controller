@@ -1,4 +1,4 @@
-// Which topics the arm panel reads and commands, from the running blueprints (Desktop's /dimos-gateway/catalog/blueprints/<name>) and
+// Which topics the arm panel reads and commands, from the running blueprints (Desktop's /gateways/dimos/catalog/blueprints/<name>) and
 // the bridge. Nothing here is invented: these are dimos's ControlCoordinator ports (dimos/control/coordinator.py) and
 // its arm subclasses (dimos/robot/manipulators/common/coordinators.py, dimos/control/teleop_coordinator.py). A port
 // `foo` is the topic `/foo`, zenoh key `dimos/foo/<type>` (README, "Arm control").

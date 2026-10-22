@@ -24,7 +24,7 @@ export function SteamDeckBanner() {
     const pad = useStore(gamepadStatus)
     useEffect(() => {
         let live = true
-        void fetchSteamDeck(fetch, location.origin).then((answer) => live && setInfo(answer))
+        void fetchSteamDeck(fetch, location.href).then((answer) => live && setInfo(answer))
         return () => {
             live = false
         }
@@ -34,7 +34,7 @@ export function SteamDeckBanner() {
     }
     const open = async () => {
         setBusy(true)
-        setResult(await openInSteam(fetch, location.origin))
+        setResult(await openInSteam(fetch, location.href))
         setBusy(false)
     }
     return (
@@ -45,7 +45,6 @@ export function SteamDeckBanner() {
                 {result && <span className={`steam-result ${result.ok ? "" : "tone-warn"}`}>{result.message}</span>}
             </span>
             <Button size="sm" disabled={busy} onClick={open}>Open dimOS in Steam</Button>
-            {info?.runGameUrl && <a className="steam-link" href={info.runGameUrl}>or run it from Steam</a>}
             <Button className="dr-btn--icon icon-button" aria-label="Dismiss" title="Dismiss" onClick={() => (writeLocal(DISMISS_KEY, true), setDismissed(true))}>
                 <Icon name="close" size={14} />
             </Button>

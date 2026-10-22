@@ -123,8 +123,8 @@ the pad connects (a drifting or held stick never drives), and a disconnect, blur
 rest again. The arm format isn't driven by a pad (LT + RT still stops the arm). The bar shows the pad's state;
 Settings → Drive → Gamepad has its dead zone and invert Y; `?` lists the mapping ([core/gamepad.ts](../frontend/src/core/gamepad.ts)). On a Steam Deck (or SteamOS) opened outside Steam,
 with no gamepad reaching the page, a banner says the controls only work as a gamepad when dimOS is opened from Steam and
-offers **Open dimOS in Steam** (Desktop >= 0.2.119's `GET /api/steam-deck` and `POST /api/steam-deck/open`; an older
-Desktop shows nothing).
+offers **Open dimOS in Steam** (the backend's `GET api/host` says whether its machine is a Deck or runs SteamOS; Desktop's
+`POST /gateways/desktop/ui/steam/open` opens it).
 
 ## Cameras
 
@@ -184,9 +184,9 @@ controls or the [arm panel](#arm-control). Changing it applies at once in every 
 
 Auto ([core/robotType.ts](../frontend/src/core/robotType.ts)), first match wins:
 
-1. a running blueprint that robots.json lists under a robot with a `type` (Desktop's `GET /api/launcher/robots`);
+1. a running blueprint that robots.json lists under a robot with a `type` (the dimos gateway's `GET /gateways/dimos/catalog/robots`);
 2. what's running looks like an arm: a joint state / joint command / gripper stream and nothing takes `cmd_vel`;
-3. the default robot set in Desktop, by its robots.json `type`;
+3. the default robot set in Desktop (`GET /gateways/desktop/settings`' `ui.default_robot`), by its robots.json `type`;
 4. the running blueprint's name (go2 / spot → dog, g1 → humanoid, r1pro / alfred → wheeled, drone, xarm / piper /
    openarm / a1z / coordinator → arm);
 5. dog.
@@ -229,7 +229,7 @@ Settings → Drive's **Topics** is **auto** by default, or a list you type (one 
 `/my_cmd_vel TwistStamped`; saved like the other settings). Auto ([core/cmdvel.ts](../frontend/src/core/cmdvel.ts)):
 
 - A **velocity input** is a module input whose name contains `cmd_vel` (`cmd_vel`, `tele_cmd_vel`, `cmd_vel_in`, …) and
-  whose type is Twist or TwistStamped. The running blueprints' modules come from Desktop's `/dimos-gateway/catalog/blueprints/<name>`.
+  whose type is Twist or TwistStamped. The running blueprints' modules come from Desktop's `/gateways/dimos/catalog/blueprints/<name>`.
 - Every module with velocity inputs gets **one** topic, its entry point, so two topics never feed the same module:
   - an input that a velocity-consuming module of the same blueprint outputs is internal and skipped (a teleop mux such
     as MovementManager outputs `cmd_vel` to the robot; publishing there too would bypass it);
@@ -279,7 +279,7 @@ are saved in the backend (`lv.record.options`, `lv.record.topics`; `PUT api/reco
 written as ROS 2 CDR so Foxglove opens the file; anything else is kept as raw LCM bytes with its type name.
 
 The running dimos's own logs go into the same file. When recording starts the backend asks Desktop where they are
-(`GET /dimos-gateway/active`: the running blueprint's `logDir`; else `GET /dimos-gateway/info`'s `paths.logsDirs`) and the backend tails
+(`GET /gateways/dimos/active`: the running blueprint's `logDir`; else `GET /gateways/dimos/info`'s `paths.logsDirs`) and the backend tails
 every `*.jsonl` there, new lines only (plus new files, runs that start mid-recording, truncation). Each line becomes a
 `foxglove.Log` (JSON) on `/dimos/logs/<file stem>` (e.g. `/dimos/logs/main`), stamped with the line's own time, so
 Foxglove's Log panel shows it; the original record is kept whole in its `fields` key (and the file in `source`).

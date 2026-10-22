@@ -3,7 +3,7 @@
 // The rule (README, "Driving: which topics"):
 // - A velocity input is a module input stream whose name contains `cmd_vel` (cmd_vel, tele_cmd_vel, cmd_vel_in, …)
 //   and whose type is a Twist or TwistStamped.
-// - With the running blueprints' metadata (Desktop's GET /dimos-gateway/catalog/blueprints/<name>): every module that has velocity
+// - With the running blueprints' metadata (Desktop's GET /gateways/dimos/catalog/blueprints/<name>): every module that has velocity
 //   inputs gets ONE topic, its entry point:
 //     - an input that a velocity-consuming module of the same blueprint outputs (a teleop mux like MovementManager
 //       outputs cmd_vel to the robot) is internal: publishing there would bypass the mux, so it's skipped;

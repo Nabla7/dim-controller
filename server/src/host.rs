@@ -1,5 +1,6 @@
 //! The machine the backend runs on (the robot's computer): its CPU load, sampled every SAMPLE_SECS in the background
 //! (Linux: one small file read; macOS: one kernel call), so serving it costs nothing. The page's CPU chip polls it.
+//! It also says whether that machine is a Steam Deck or runs SteamOS (the page's Steam Deck banner).
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -78,11 +79,44 @@ fn cpu_times() -> Option<(u64, u64)> {
     None
 }
 
+/// (steamDeck, steamOs) under `root`: Valve's Jupiter (LCD) or Galileo (OLED) board; /etc/os-release's ID=steamos
+fn steam_in(root: &std::path::Path) -> (bool, bool) {
+    let read = |path: &str| std::fs::read_to_string(root.join(path)).unwrap_or_default().trim().to_string();
+    let valve = ["sys/class/dmi/id/sys_vendor", "sys/class/dmi/id/board_vendor"].iter().any(|file| read(file) == "Valve");
+    let deck = valve && matches!(read("sys/class/dmi/id/product_name").as_str(), "Jupiter" | "Galileo");
+    let steam_os = read("etc/os-release").lines().any(|line| matches!(line.trim(), "ID=steamos" | "ID=\"steamos\""));
+    (deck, steam_os)
+}
+
 pub async fn get() -> Response {
+    static STEAM: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
+    let (steam_deck, steam_os) = *STEAM.get_or_init(|| steam_in(std::path::Path::new("/")));
     let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
     let sample = *CPU.lock().unwrap();
     Json(json!({
         "cpu": sample.map(|s| json!({ "busyPercent": (s.busy_percent * 10.0).round() / 10.0, "cores": cores, "sampledAt": s.at, "everySecs": SAMPLE_SECS })),
+        "steamDeck": steam_deck,
+        "steamOs": steam_os,
     }))
     .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::steam_in;
+
+    #[test]
+    fn steam_deck_and_steamos() {
+        let root = std::env::temp_dir().join(format!("controller-steam-{}", std::process::id()));
+        let dmi = root.join("sys/class/dmi/id");
+        std::fs::create_dir_all(&dmi).unwrap();
+        std::fs::create_dir_all(root.join("etc")).unwrap();
+        assert_eq!(steam_in(&root), (false, false));
+        std::fs::write(dmi.join("product_name"), "Galileo\n").unwrap();
+        assert_eq!(steam_in(&root), (false, false), "a Galileo not made by Valve isn't a Deck");
+        std::fs::write(dmi.join("board_vendor"), "Valve\n").unwrap();
+        std::fs::write(root.join("etc/os-release"), "NAME=\"SteamOS\"\nID=steamos\n").unwrap();
+        assert_eq!(steam_in(&root), (true, true));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 }

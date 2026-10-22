@@ -4,15 +4,15 @@ use anyhow::{bail, Context, Result};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-/// Where the running dimos writes its jsonl logs, from Desktop: the running blueprint's log dir (`GET /dimos-gateway/active`), else (with
-/// `roots`) the logs roots (`GET /dimos-gateway/info`'s `paths.logsDirs`; the tailer follows run dirs that appear in them).
+/// Where the running dimos writes its jsonl logs, from Desktop: the running blueprint's log dir (`GET /gateways/dimos/active`), else (with
+/// `roots`) the logs roots (`GET /gateways/dimos/info`'s `paths.logsDirs`; the tailer follows run dirs that appear in them).
 /// Empty outside Desktop.
 pub async fn log_dirs(base: &str, roots: bool) -> crate::recorder::LogDirs {
     let mut dirs = crate::recorder::LogDirs::default();
     if base.is_empty() {
         return dirs;
     }
-    if let Ok(active) = get(base, "/dimos-gateway/active").await {
+    if let Ok(active) = get(base, "/gateways/dimos/active").await {
         let listed = [&active["logDir"], &active["launch"]["logDir"]];
         for dir in listed
             .into_iter()
@@ -25,7 +25,7 @@ pub async fn log_dirs(base: &str, roots: bool) -> crate::recorder::LogDirs {
         }
     }
     if dirs.log_dirs.is_empty() && roots {
-        if let Ok(info) = get(base, "/dimos-gateway/info").await {
+        if let Ok(info) = get(base, "/gateways/dimos/info").await {
             dirs.log_roots = info["paths"]["logsDirs"]
                 .as_array()
                 .into_iter()
@@ -153,7 +153,7 @@ mod tests {
         let error = request(
             &format!("http://{address}"),
             "POST",
-            "/dimos-gateway/cloud/uploads",
+            "/gateways/dimos/cloud/uploads",
             Some(&serde_json::json!({ "path": "x" })),
         )
         .await

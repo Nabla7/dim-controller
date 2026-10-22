@@ -1,7 +1,7 @@
 // Auto robot type (core/robotType.ts): robots.json's type for a running blueprint, joint topics without cmd_vel → arm,
 // Desktop's default robot, the blueprint's name, else dog.
 import { assertEquals } from "jsr:@std/assert@1"
-import { chosenType, resolveType, typeFromName } from "../src/core/robotType.ts"
+import { chosenType, resolveType, robotsAnswer, typeFromName } from "../src/core/robotType.ts"
 import go2 from "./fixtures/blueprint_unitree-go2.json" with { type: "json" }
 
 const go2Modules = (go2 as { modules: never[] }).modules
@@ -54,4 +54,13 @@ Deno.test("else the blueprint's name, else dog", () => {
     assertEquals(typeFromName("spot-replay"), "dog")
     assertEquals(resolveType({ robots: null, blueprints: { "alfred-keyboard-teleop": null }, topics: [] }).type, "wheeled")
     assertEquals(resolveType({ robots: null, blueprints: {}, topics: [] }), { type: "dog", reason: "nothing says otherwise" })
+})
+
+Deno.test("the dimos gateway's catalog/robots and Desktop's settings make the answer; missing ones make none", () => {
+    const catalog = { types: { dog: { label: "Dog" } }, robots: { go2: { name: "Go2", type: "dog", blueprints: ["unitree-go2"] }, spot: { type: null, blueprints: ["spot"] } } }
+    const answer = robotsAnswer(catalog, { ui: { default_robot: "go2" } })
+    assertEquals(answer, { defaultRobot: "go2", robots: [{ id: "go2", type: "dog", blueprints: ["unitree-go2"] }, { id: "spot", type: null, blueprints: ["spot"] }] })
+    assertEquals(resolveType({ robots: answer, blueprints: { "unitree-go2": null }, topics: [] }).reason, "unitree-go2 is a go2 blueprint (robots.json: dog)")
+    assertEquals(robotsAnswer(catalog, null)?.defaultRobot, null)
+    assertEquals(robotsAnswer(null, { ui: { default_robot: "go2" } }), null)
 })

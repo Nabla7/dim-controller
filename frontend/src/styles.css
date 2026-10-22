@@ -801,7 +801,6 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .steam-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .steam-result { color: var(--muted-fg); }
 .steam-result.tone-warn { color: var(--warn); }
-.steam-link { white-space: nowrap; color: var(--primary); font-size: 11.5px; }
 .mobile .steam-banner { flex-wrap: wrap; }
 
 /* a short screen (a Steam Deck's 800 px, less in its browser, under Desktop's bar and dock): a slimmer bar, so the

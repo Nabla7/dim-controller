@@ -52,13 +52,13 @@ export function createRightClickTip({ show, storage = localStore() }: { show: ()
     }
 }
 
-/** Shows `text` as Desktop's narration (POST /api/desktop/narration); false when not under Desktop or it failed. */
+/** Shows `text` as Desktop's narration (POST /gateways/desktop/ui/narration); false when not under Desktop or it failed. */
 export async function narrate(text: string): Promise<boolean> {
     if (!underDesktop()) {
         return false
     }
     try {
-        const response = await fetch("/api/desktop/narration", {
+        const response = await fetch(new URL("../../gateways/desktop/ui/narration", location.href), {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ text }),

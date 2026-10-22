@@ -23,13 +23,13 @@
         "typescript": "npm:typescript@~5.9.2",
         "vite": "npm:vite@^7.1.0",
         "@std/assert": "jsr:@std/assert@1",
-        "dimos-react": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.2.6/src/index.ts",
-        "dimos-react/three": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.2.6/src/three.ts",
-        "dimos-react/dim-app/desktop.js": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.2.6/src/vendor/dim-app/desktop.js",
-        "dimos-react/dim-app/events.js": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.2.6/src/vendor/dim-app/events.js",
-        "dimos-react/dim-app/notify.js": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.2.6/src/vendor/dim-app/notify.js",
-        "dimos-react/dim-app/topic.js": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.2.6/src/vendor/dim-app/topic.js",
-        "dimos-react/dim-app/zenoh.js": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.2.6/src/vendor/dim-app/zenoh.js"
+        "dimos-react": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.3.1/src/index.ts",
+        "dimos-react/three": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.3.1/src/three.ts",
+        "dimos-react/dim-app/desktop.js": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.3.1/src/vendor/dim-app/desktop.js",
+        "dimos-react/dim-app/events.js": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.3.1/src/vendor/dim-app/events.js",
+        "dimos-react/dim-app/notify.js": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.3.1/src/vendor/dim-app/notify.js",
+        "dimos-react/dim-app/topic.js": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.3.1/src/vendor/dim-app/topic.js",
+        "dimos-react/dim-app/zenoh.js": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.3.1/src/vendor/dim-app/zenoh.js"
     },
     "compilerOptions": {
         "jsx": "react-jsx",

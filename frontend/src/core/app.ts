@@ -29,7 +29,7 @@ import { persistentStore, Store } from "./store.ts"
 import { profileFor } from "../profile/index.ts"
 import type { RobotProfile, RobotType } from "../profile/types.ts"
 import { checkLink, DEFAULT_MAX_LATENCY_MS, LINK_CHECK_MS, maxLatencyOf } from "./linkWatch.ts"
-import { chosenType, type ResolvedType, resolveType, type RobotsAnswer } from "./robotType.ts"
+import { chosenType, type ResolvedType, resolveType, type RobotsAnswer, robotsAnswer } from "./robotType.ts"
 
 export interface ViewSettings {
     /** the robot type picked in Settings (a RobotType), "" = auto (core/robotType.ts) */
@@ -80,7 +80,7 @@ export class ViewerApp {
     readonly agent: AgentLink
     /** right-click location labels (server/src/labels.rs) */
     readonly labels: LocationLabels
-    /** what's running (Desktop's /dimos-gateway/active, live on its zenoh events): the first-run messages and the drive topic */
+    /** what's running (Desktop's /gateways/dimos/active, live on its zenoh events): the first-run messages and the drive topic */
     readonly runs = new RunWatch()
     /** the fixed frame in use and where the robot is (for the UI) */
     readonly frameInfo = new Store<{ fixedFrame: string; robotFound: boolean; followFound: boolean }>({ fixedFrame: "", robotFound: false, followFound: false })
@@ -224,10 +224,11 @@ export class ViewerApp {
         }
     }
 
-    /** Desktop's robots.json types and default robot (GET /api/launcher/robots), again whenever what runs changes. */
+    /** robots.json's types (the dimos gateway's catalog/robots) and Desktop's default robot (its settings), again whenever what runs changes. */
     #loadRobots() {
-        fetch(new URL("../../api/launcher/robots", location.href))
-            .then((response) => (response.ok ? response.json() : null))
+        const json = (path: string) => fetch(new URL(`../../${path}`, location.href)).then((response) => (response.ok ? response.json() : null)).catch(() => null)
+        Promise.all([json("gateways/dimos/catalog/robots"), json("gateways/desktop/settings")])
+            .then(([catalog, settings]) => robotsAnswer(catalog, settings))
             .then((answer: RobotsAnswer | null) => {
                 if (answer && JSON.stringify(answer) !== JSON.stringify(this.#robots)) {
                     this.#robots = answer

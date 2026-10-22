@@ -43,7 +43,7 @@ export interface RecordingFile {
     path: string
     bytes: number
     seconds_old: number
-    /** Desktop's id for it in the shared recordings folder (GET /recordings); absent when listed by this backend */
+    /** Desktop's id for it in the shared recordings folder (GET /gateways/desktop/recordings); absent when listed by this backend */
     id?: string
 }
 
@@ -67,7 +67,7 @@ export interface RecorderStatus {
 
 const base = () => new URL("api/recorder", location.href).href
 // Desktop's shared recordings folder API (docs/api.md in dimos-desktop); the page lives at /apps/<name>/
-const desktopRecordings = () => new URL("../../recordings", location.href).href
+const desktopRecordings = () => new URL("../../gateways/desktop/recordings", location.href).href
 
 interface DesktopRecording {
     id: string

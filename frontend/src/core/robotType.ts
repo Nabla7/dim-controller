@@ -1,19 +1,32 @@
 // Which kind of robot the Controller is for (dog, humanoid, wheeled, arm, drone), when Settings → Robot is "auto".
 //
 // The rule (README, "Robot type"), first match wins:
-// 1. a running blueprint that robots.json lists under a typed robot (Desktop's GET /api/launcher/robots);
+// 1. a running blueprint that robots.json lists under a typed robot (the dimos gateway's GET catalog/robots);
 // 2. what's running looks like an arm: joint states / joint commands and no velocity input (cmd_vel) anywhere;
-// 3. the robot set as the default in Desktop (its robots.json type);
+// 3. the robot set as the default in Desktop (GET /gateways/desktop/settings' ui.default_robot; its robots.json type);
 // 4. a running blueprint's name (go2/spot → dog, g1 → humanoid, r1pro/alfred → wheeled, drone, xarm/piper/... → arm);
 // 5. dog.
 import type { RobotType } from "../profile/types.ts"
 import { ROBOT_TYPES } from "../profile/types.ts"
 import { type Module, takesVelocity } from "./cmdvel.ts"
 
-/** Desktop's GET /api/launcher/robots: robots.json in the Launcher's words, `type` null when it doesn't say. */
+/** robots.json as a list, with Desktop's default robot: what resolveType reads. */
 export interface RobotsAnswer {
     defaultRobot?: string | null
     robots?: { id: string; type?: string | null; blueprints?: unknown }[]
+}
+
+/** The dimos gateway's GET catalog/robots (`{robots: {id: {type, blueprints}}}`) and Desktop's settings → a RobotsAnswer. */
+export function robotsAnswer(catalog: unknown, settings: unknown): RobotsAnswer | null {
+    const robots = (catalog as { robots?: unknown } | null)?.robots
+    if (!robots || typeof robots !== "object") {
+        return null
+    }
+    const defaultRobot = (settings as { ui?: { default_robot?: unknown } } | null)?.ui?.default_robot
+    return {
+        defaultRobot: typeof defaultRobot === "string" && defaultRobot ? defaultRobot : null,
+        robots: Object.entries(robots as Record<string, { type?: string | null; blueprints?: unknown }>).map(([id, robot]) => ({ id, type: robot?.type ?? null, blueprints: robot?.blueprints })),
+    }
 }
 
 export interface TypeEvidence {

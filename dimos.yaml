@@ -1,5 +1,5 @@
 title: Controller
-spec-version: v1.3 # the dimos.yaml spec version this file follows
+spec-version: v1.4 # the dimos.yaml spec version this file follows
 version: "0.1.61"
 uses:
     "@dimos-gateway":
@@ -7,19 +7,28 @@ uses:
         - GET /active
         - GET /catalog/blueprints/{name}
         - GET /info
+        # robots.json's robot types, for the auto robot type
+        - GET /catalog/robots
     "@desktop-gateway":
         # recordings go to Desktop's shared folder; the recorder panel lists, downloads and deletes them there
         - GET /recordings
         - GET /recordings/{id}/file
         - DELETE /recordings/{id}
-        - GET /api/launcher/robots
-        - GET /api/apps
-        - POST /api/notifications
+        # Desktop's default robot (ui.default_robot), for the auto robot type
+        - GET /settings
+        # dim-app's appInstalled (listApps): whether the Launcher / Recordings are there to point at
+        - GET /info/apps
+        # dim-app's notify (battery low), with the app's icon
+        - POST /ui/notifications
+        - GET /info/apps/{pkg}/icon
+        # dim-app's getZenoh: where the zenoh-gateway and this app's namespace are
+        - GET /management/gateways/zenoh
+        # the backend's page events when it can't open its own zenoh session (Desktop's relay)
+        - POST /ui/apps/{pkg}/frontend/{topic}
         # the 3D view's one-time "Try right-click" tip
-        - POST /api/desktop/narration
-        # on a Steam Deck opened outside Steam: the banner offering to open dimOS in Steam (Desktop >= 0.2.119; older 404s)
-        - GET /api/steam-deck
-        - POST /api/steam-deck/open
+        - POST /ui/narration
+        # on a Steam Deck opened outside Steam (the backend's api/host says so): the banner offering to open dimOS in Steam
+        - POST /ui/steam/open
     "@zenoh-gateway": ">=0.5 <0.6"
 # Desktop's nix builds of this app pull from this cache (CI fills it)
 caches:
@@ -780,7 +789,8 @@ provides:
                 description: >-
                     The machine this runs on (the robot's computer): its CPU load, sampled every few seconds in the
                     background. Returns {cpu: {busyPercent (all cores, over the last sample; Linux and macOS),
-                    cores, sampledAt (unix ms), everySecs} or null before the first sample}.
+                    cores, sampledAt (unix ms), everySecs} or null before the first sample, steamDeck (Valve's
+                    Jupiter or Galileo board), steamOs (/etc/os-release says SteamOS)}.
                 x-when: you need to know whether the robot's computer is overloaded
         /api/action_buttons:
             get:
