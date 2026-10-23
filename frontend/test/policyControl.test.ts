@@ -105,6 +105,35 @@ async function withBackend(test: (control: PolicyControl, server: {
 
 const mutations = (calls: Call[]) => calls.filter((call) => !["status", "timing", "list_locomotion_modes", "list_motion_clips"].includes(call.method))
 
+Deno.test("hardware damping bypasses navigation, stale telemetry and pending activation", async () => {
+    await withBackend(async (control, server) => {
+        control.state.set({ ...ready, stale: true, pending: "activate" })
+        await control.act("damping-stop")
+        assertEquals(mutations(server.calls), [{
+            module: "g1wholebodyconnection", method: "set_estop", body: { run_id: "r1", kwargs: { estopped: true } },
+        }])
+    })
+})
+
+Deno.test("a rejected damping stop is reported and never silently retried", async () => {
+    await withBackend(async (control, server) => {
+        await control.refresh()
+        server.intercept = ({ method }) => method === "halt_robot" ? Response.json({ error: "run changed" }, { status: 409 }) : undefined
+        await control.act("damping-stop")
+        assert(control.state.get().error?.includes("run changed"))
+        assertEquals(mutations(server.calls).map((call) => call.method), ["halt_robot"])
+    })
+})
+
+Deno.test("an undiscovered or ambiguous SONIC endpoint cannot silently acknowledge damping", async () => {
+    await withBackend(async (control, server) => {
+        control.state.update({ required: true, target: null })
+        await control.act("damping-stop")
+        assert(control.state.get().error?.includes("Damping stop not sent"))
+        assertEquals(mutations(server.calls), [])
+    })
+})
+
 Deno.test("simulator diagnostics are run-bound and failures erase old readings", async () => {
     await withBackend(async (control, server) => {
         await control.refresh()

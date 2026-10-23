@@ -17,7 +17,6 @@ export function PolicyPanel({ app }: { app: ViewerApp }) {
             <Button disabled={!actionAllowed(state, "deactivate")} onClick={() => {
                 if (confirm("Stop balancing and hold the measured pose? The G1 must be supported.")) void app.policy.act("deactivate")
             }} title="Stops balancing; support the robot first"><Icon name="pause" />Deactivate</Button>
-            <Button className="sonic-damping" disabled={!actionAllowed(state, "damping-stop")} onClick={() => app.policy.act("damping-stop")} title="Latched software damping; not a power disconnect"><Icon name="stop" />Damping stop</Button>
         </div>
         {status && <dl className="sonic-status">
             <dt>Current gait</dt><dd>{modeName(state, status.mode)}</dd>

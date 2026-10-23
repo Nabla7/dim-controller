@@ -42,7 +42,7 @@ export function useGamepad(app: ViewerApp | null) {
             setBoost: (boost) => app.drive.setBoost(boost),
             stop: () => {
                 releaseAllThumbSticks()
-                app.profile.type === "arm" ? app.arm.stop() : app.drive.stop()
+                app.profile.type === "arm" ? app.arm.stop() : app.drive.stop("emergency")
             },
             halted: () => !!app.drive.state.get().halt,
             reconnect: () => void app.reconnect(),

@@ -25,10 +25,11 @@ import { Button, Card, Kbd } from "dimos-react"
 
 export function ActionDock({ app, api, onboarding }: { app: ViewerApp; api: WorkspaceApi; onboarding: Onboarding }) {
     useStore(app.robot)
+    const sonic = useStore(app.policy.state).required
     const actions = dockActionsFor(useStore(dockActions), api.arrangement.stage)
     const arm = app.profile.type === "arm"
     const focused = api.view.hide.length === 2
-    const stop = () => (arm ? app.arm.stop() : app.drive.stop())
+    const stop = () => (arm ? app.arm.stop() : app.drive.stop("emergency"))
     return (
         <footer className="action-dock" data-testid="action-dock">
             <div className="dock-group dock-drive-slot">
@@ -50,8 +51,11 @@ export function ActionDock({ app, api, onboarding }: { app: ViewerApp; api: Work
                 <Button className="dr-btn--icon dock-help" title="Keyboard and gamepad shortcuts (?)" aria-label="Shortcuts" onClick={() => openOverlay("help")}>
                     <Icon name="keyboard" size={16} />
                 </Button>
-                <Button className="dock-stop" data-testid="stop-button" title="Stop now (Space, always)" onPointerDown={stop} onClick={stop}>
-                    <span>STOP</span>
+                <Button className="dock-stop" data-testid="stop-button"
+                    title={sonic ? "SONIC damping stop (Space). Stops balancing; latched until restart. Not a power disconnect." : "Stop now (Space, always)"}
+                    onPointerDown={(event) => { if (event.button === 0) stop() }}
+                    onClick={(event) => { if (event.detail === 0) stop() }}>
+                    <span>{sonic && <>DAMPING<br /></>}STOP</span>
                     <Kbd className="lv-kbd">Space</Kbd>
                 </Button>
             </div>

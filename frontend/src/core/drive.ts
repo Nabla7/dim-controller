@@ -13,6 +13,8 @@ import { type Axes, type Axis, defaultTwist, type RobotProfile, type Twist } fro
 
 const zeroOf = (type: string) => encode(type, {})
 
+export type StopKind = "motion" | "emergency"
+
 export interface DriveSettings {
     linear: number
     angular: number
@@ -91,7 +93,7 @@ export class Drive {
     #controlPublishers = new Map<string, Publisher>()
     #unsubscribeSettings = () => {}
     /** called on every stop and halt (the joint jog stops with driving) */
-    #stopListeners = new Set<() => void>()
+    #stopListeners = new Set<(kind: StopKind) => void>()
     /** the running blueprints' modules (null = unknown), from Desktop's /dimos/ API */
     #blueprints: Record<string, Module[] | null> = {}
     /** Twist topics seen on the bridge (someone publishes them; maybe nobody reads them) */
@@ -194,7 +196,7 @@ export class Drive {
         this.state.update({ halt: { ...halt, reconnecting: current?.reconnecting ?? false } })
         this.#sources.clear()
         this.#recompute()
-        this.#stopListeners.forEach((listener) => listener())
+        this.#stopListeners.forEach((listener) => listener("motion"))
     }
 
     /** The reconnect is under way (the HUD says so). */
@@ -223,10 +225,10 @@ export class Drive {
         }
     }
 
-    /** Stop: every source released at once (space, the STOP button), and the agent's command too. */
-    stop() {
+    /** Explicit STOP/Space uses emergency; focus loss and reconnect only stop motion. */
+    stop(kind: StopKind = "motion") {
         this.clearInput()
-        this.#stopListeners.forEach((listener) => listener())
+        this.#stopListeners.forEach((listener) => listener(kind))
         const command = this.state.get().command
         if (command && !command.dryRun && typeof location !== "undefined") {
             this.state.update({ command: null })
@@ -246,7 +248,7 @@ export class Drive {
     }
 
     /** `listener` runs on every stop() and halt(); returns the unsubscribe. */
-    onStop(listener: () => void): () => void {
+    onStop(listener: (kind: StopKind) => void): () => void {
         this.#stopListeners.add(listener)
         return () => this.#stopListeners.delete(listener)
     }

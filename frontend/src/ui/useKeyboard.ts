@@ -72,7 +72,7 @@ export function useKeyboard(drive: Drive | null, profile: RobotProfile | null, p
                     held.clear()
                     joyKeys.space ||= event.code === "Space"
                     apply()
-                    drive?.stop()
+                    if (!event.repeat) drive?.stop("emergency")
                     return
                 case "close":
                     held.clear()

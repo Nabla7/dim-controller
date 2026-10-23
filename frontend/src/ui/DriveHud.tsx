@@ -51,6 +51,7 @@ function DisengagedPill({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
 export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     const drive = app.drive
     const state = useStore(drive.state)
+    const sonic = useStore(app.policy.state).required
     const { strafe: usesStrafe, vertical: usesVertical } = profileAxes(app.profile)
     const command = state.command
     const velocity = (linear: number[], angular: number[]) => velocityText(linear, angular, usesStrafe, usesVertical)
@@ -86,17 +87,19 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
                     <Button
                         className="stop-button"
                         data-testid="stop-button"
+                        title={sonic ? "Latched damping stop. Stops balancing; restart required. Not a power disconnect." : "Stop driving"}
                         onPointerDown={() => {
                             // on touch, not on the click after it: no 300 ms, and it works while a thumb holds a stick
                             releaseAllThumbSticks()
-                            drive.stop()
+                            drive.stop("emergency")
                         }}
-                        onClick={() => {
+                        onClick={(event) => {
+                            if (event.detail !== 0) return
                             releaseAllThumbSticks()
-                            drive.stop()
+                            drive.stop("emergency")
                         }}
                     >
-                        STOP
+                        <span>{sonic && <>DAMPING<br /></>}STOP</span>
                     </Button>
                     <Button className="boost-button" pressed={state.boost} onClick={() => drive.setBoost(!state.boost)}>{state.boost ? "FAST ON" : "FAST"}</Button>
                 </div>

@@ -148,6 +148,7 @@ Deno.test("a disconnect or a blur zeroes it, and it waits for rest again", () =>
     // blur / hidden tab
     driver.release()
     assert(!moving())
+    assertEquals(log.stops, 0, "focus loss is not an emergency-stop gesture")
     assertEquals(log.boost, [true, false], "boost lets go too")
     driver.poll([pad({ ly: -1 })])
     assert(!moving())
@@ -157,6 +158,7 @@ Deno.test("a disconnect or a blur zeroes it, and it waits for rest again", () =>
     // unplugged: zeros, and the strip shows no pad
     driver.poll([null])
     assert(!moving())
+    assertEquals(log.stops, 0, "disconnect is not an emergency-stop gesture")
     assertEquals(driver.status.get().connected, false)
     // plugged back in with the stick pushed: still nothing
     driver.poll([pad({ ly: -1 })])

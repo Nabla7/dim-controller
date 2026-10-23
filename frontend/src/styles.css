@@ -222,7 +222,7 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 .dock-more-menu .dock-more-item { justify-content: flex-start; width: 100%; }
 /* the two sides share what the actions leave equally (never narrower than what's in them), so the actions sit centred */
 .dock-drive-slot, .dock-stop-slot { flex: 1 1 0; min-width: max-content; }
-.dock-drive-slot { gap: 12px; }
+.dock-drive-slot { gap: 12px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .dock-stop-slot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .dock-drive { display: flex; align-items: center; gap: 10px; padding: 4px 10px 4px 6px; border: 1px solid transparent; border-radius: var(--radius); }
 .dock-drive.moving { border-color: var(--primary); box-shadow: var(--glow-accent); }
@@ -233,8 +233,8 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 .dock-actions::-webkit-scrollbar { display: none; }
 .dock-action { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .dock-action[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
-@media (max-width: 1100px) { .dock-action span { display: none; } }
-.app .action-dock .dr-btn.dock-stop { display: inline-flex; align-items: center; gap: 10px; height: 46px; padding: 0 18px; flex: none; font: 800 16px var(--sans); letter-spacing: 0.1em;
+@media (max-width: 1100px) { .dock-action span, .dock-drive .hud-readout { display: none; } }
+.app .action-dock .dr-btn.dock-stop { display: inline-flex; align-items: center; gap: 10px; height: 46px; padding: 0 18px; flex: none; font: 800 16px/18px var(--sans); letter-spacing: 0;
     color: var(--primary-fg); background: var(--lv-stop); border: 1px solid var(--lv-stop); box-shadow: 0 0 12px color-mix(in srgb, var(--lv-stop) 40%, transparent); }
 .app .action-dock .dr-btn.dock-stop:hover { background: var(--lv-stop-hover); }
 .dock-stop .lv-kbd { color: var(--primary-fg); background: color-mix(in srgb, var(--bg) 25%, transparent); border-color: color-mix(in srgb, var(--primary-fg) 40%, transparent); }
@@ -532,7 +532,7 @@ h3.dr-h3.first { margin-top: 4px; }
 /* the live velocity: above the sticks on a portrait phone (the center column is narrow), under FAST in landscape */
 .hud-note { font: 10px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .drive-hud.mobile .hud-note { position: static; max-width: 100%; white-space: normal; text-align: center; background: none; border: 0; color: var(--muted-fg); }
-.app .drive-hud.mobile .stop-button { width: 100%; height: 52px; padding: 0; font: 800 17px var(--sans); letter-spacing: 0.08em;
+.app .drive-hud.mobile .stop-button { width: 100%; height: 52px; padding: 0; font: 800 17px/20px var(--sans); letter-spacing: 0;
     color: var(--primary-fg); background: var(--lv-stop); border: 2px solid color-mix(in srgb, var(--fg) 85%, transparent); box-shadow: 0 0 14px color-mix(in srgb, var(--lv-stop) 55%, transparent); touch-action: manipulation; }
 .app .drive-hud.mobile .stop-button:active, .app .drive-hud.mobile .stop-button:hover { background: var(--lv-stop-hover); box-shadow: 0 0 20px var(--lv-over-video); }
 .app .drive-hud.mobile .boost-button { width: 100%; height: 40px; padding: 0; font-weight: 700; touch-action: manipulation; background: color-mix(in srgb, var(--card) 80%, transparent); }
@@ -951,9 +951,8 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .g2g-warning { font-size: 12px; color: var(--warn); max-width: 40ch; }
 /* SONIC uses the existing workspace panel; controls wrap on narrow rails. */
 .sonic-controls { display: flex; flex-direction: column; gap: 10px; overflow-wrap: anywhere; }
-.sonic-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.sonic-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: 6px; }
 .sonic-actions button { white-space: normal; min-width: 0; }
-.sonic-damping { color: var(--danger, #c23f4e); }
 .sonic-status { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0; font-size: 12px; }
 .sonic-status dt { opacity: 0.65; }
 .sonic-status dd { margin: 0; }

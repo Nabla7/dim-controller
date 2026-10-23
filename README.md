@@ -80,8 +80,10 @@ the gateway's optional `run_id` request guard.
 
 Activate requests the measured-pose ramp into balancing. Stop motion cancels
 navigation and operator references without stopping balance. Deactivate holds
-the measured pose and requires a supported robot. Damping stop is latched
-software damping, not power isolation. The UI does not automatically retry
+the measured pose and requires a supported robot. The large red DAMPING STOP
+button, Space and gamepad LT+RT request latched software damping, not power
+isolation. Balancing stops; restart is required. Focus loss and Escape still
+stop motion without dropping balance. The UI does not automatically retry
 activation, and keyboard/stick driving is blocked on stale or inactive policy
 state. Other robot profiles retain their existing driving behavior.
 

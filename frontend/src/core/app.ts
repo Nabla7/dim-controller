@@ -121,7 +121,7 @@ export class ViewerApp {
         this.drive = new Drive(this.connection, this.profile)
         this.policy = new PolicyControl(() => this.drive.clearInput())
         this.policy.state.subscribe(() => this.drive.setPolicyBlock(driveBlock(this.policy.state.get())))
-        this.drive.onStop(() => { void this.policy.act("stop-motion") })
+        this.drive.onStop((kind) => { void this.policy.act(kind === "emergency" ? "damping-stop" : "stop-motion") })
         this.policy.start()
         this.joy = new JoyPublisher(this.connection)
         // the lease also keeps the drive topics (and the gamepad's) to this viewer

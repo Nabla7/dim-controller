@@ -248,7 +248,14 @@ export class PolicyControl {
     async act(command: PolicyCommand) {
         const action = typeof command === "string" ? command : command.action
         const before = this.state.get()
-        if (this.#closed || !actionAllowed(before, action)) return
+        if (this.#closed) return
+        if (!actionAllowed(before, action)) {
+            if (action === "damping-stop" && before.required && !before.target) {
+                this.clearInput()
+                this.state.update({ error: "Damping stop not sent: no unambiguous SONIC control endpoint" })
+            }
+            return
+        }
         let method = action === "activate" ? "activate" : action === "deactivate" ? "disarm" : "stop_motion"
         let kwargs: Record<string, unknown> = {}
         let notice: string | null = null

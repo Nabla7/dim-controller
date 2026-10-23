@@ -23,6 +23,7 @@ export interface CameraActions {
 
 export function useCommands(app: ViewerApp, api: WorkspaceApi, cameras: CameraActions): Command[] {
     const drive = useStore(app.drive.state)
+    const sonic = useStore(app.policy.state).required
     const recording = useStore(recorder.status)
     const view = useStore(app.settings)
     const connection = useStore(app.connection.status)
@@ -32,12 +33,12 @@ export function useCommands(app: ViewerApp, api: WorkspaceApi, cameras: CameraAc
     const commands: Command[] = [
         {
             id: "drive.stop",
-            label: "STOP: stop driving now",
+            label: sonic ? "STOP: latch SONIC damping" : "STOP: stop driving now",
             group: "Drive",
             keys: ["Space"],
             danger: true,
             words: "estop e-stop halt brake",
-            run: () => (arm ? app.arm.stop() : app.drive.stop()),
+            run: () => (arm ? app.arm.stop() : app.drive.stop("emergency")),
         },
         {
             id: "drive.reconnect",

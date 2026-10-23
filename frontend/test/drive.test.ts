@@ -1,6 +1,6 @@
 // The drive loop against a fake bridge client: what gets published, when, and with which speeds.
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
-import { Drive, fastTurnScale } from "../src/core/drive.ts"
+import { Drive, fastTurnScale, type StopKind } from "../src/core/drive.ts"
 import { decode } from "../src/core/lcm/lcm.ts"
 import go2 from "../src/profile/dog.ts"
 import drone from "../src/profile/drone.ts"
@@ -29,6 +29,27 @@ function fakeBridge() {
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+Deno.test("explicit emergency stop releases inputs; ordinary stop and link loss remain motion stops", () => {
+    const { connection } = fakeBridge()
+    const drive = new Drive(connection, go2)
+    const stops: StopKind[] = []
+    const unsubscribe = drive.onStop((kind) => stops.push(kind))
+    try {
+        drive.setAxes("keys", { forward: 1 })
+        drive.stop("emergency")
+        assertEquals(drive.state.get().twist.linear, [0, 0, 0])
+        drive.stop()
+        drive.halt({ reason: "lost", latencyMs: null, maxMs: 200 })
+        assertEquals(stops, ["emergency", "motion", "motion"])
+        unsubscribe()
+        drive.stop("emergency")
+        assertEquals(stops.length, 3)
+    } finally {
+        unsubscribe()
+        drive.dispose()
+    }
+})
 
 Deno.test("policy blocking drops held input and cannot resume it after activation", () => {
     const { connection } = fakeBridge()
