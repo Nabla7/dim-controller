@@ -27,6 +27,23 @@ export interface PolicyStatus {
     stream_frame?: number
     stream_frames?: number
     webxr?: { mode: string; reason: string | null; body_age_ms: number | null }
+    policy_timing?: {
+        target_hz: number
+        last_step_age_ms: number | null
+        step_ms: TimingSummary
+        start_interval_ms: TimingSummary
+    }
+}
+export interface TimingSummary { samples: number; mean: number; p99: number; max: number }
+export interface SimulationTiming {
+    target_hz: number; actual_hz: number | null; real_time_factor: number | null
+    physics_age_ms: number | null; interval_p99_ms: number | null; interval_max_ms: number | null
+    work_overruns: number; samples: number
+    sensor_age_ms: number | null; sensor_work_ms: number | null; sensor_error: string | null
+}
+export interface HardwareTiming {
+    configured_rate_hz: number; frames_sent: number; latest_command_age_ms: number | null
+    feedback_age_ms: number | null; fault_reason: string | null
 }
 export interface PolicyOptions { modes: Record<string, number>; clips: string[]; height: boolean }
 interface Instance { id: string; class: string; namespace: string | null; rpcs: { name: string }[] }
@@ -41,8 +58,44 @@ export interface PolicyState {
     options: PolicyOptions | null
     optionsError: string | null
     notice: string | null
+    simulationTiming: SimulationTiming | null
+    hardwareTiming: HardwareTiming | null
+    diagnosticsError: string | null
 }
-export const INITIAL_POLICY_STATE: PolicyState = { required: false, target: null, status: null, stale: true, error: null, pending: null, options: null, optionsError: null, notice: null }
+export const INITIAL_POLICY_STATE: PolicyState = { required: false, target: null, status: null, stale: true, error: null, pending: null, options: null, optionsError: null, notice: null, simulationTiming: null, hardwareTiming: null, diagnosticsError: null }
+
+const finite = (value: number | null | undefined): value is number => typeof value === "number" && Number.isFinite(value)
+const freshFeedback = (status: PolicyStatus) => [status.feedback_age_ms, status.imu_age_ms]
+    .every((age) => finite(age) && age >= 0 && age < status.feedback_timeout_ms)
+
+export function timingWarnings(state: PolicyState): string[] {
+    if (state.stale || !state.status) return ["Control status is stale or unavailable"]
+    const warnings: string[] = []
+    const status = state.status
+    const timing = status.policy_timing
+    if (status.fault_reason) warnings.push(status.fault_reason)
+    if (!status.simulation && !freshFeedback(status)) warnings.push("Motor or IMU feedback is stale or unavailable")
+    if (!finite(timing?.target_hz) || !timing?.step_ms.samples) warnings.push("Policy timing unavailable")
+    else if (status.control_state === "control") {
+        const period = 1000 / timing.target_hz
+        if (timing.step_ms.max > period) warnings.push("Policy computation exceeded its tick budget in the recent window")
+        if (timing.start_interval_ms.max > period * 1.5) warnings.push("Control tick gap exceeded 1.5 periods in the recent window")
+        if (!finite(timing.last_step_age_ms) || timing.last_step_age_ms > period * 2) warnings.push("Policy updates are late")
+    }
+    const sim = state.simulationTiming
+    if (status.simulation) {
+        if (!sim || !finite(sim.real_time_factor)) warnings.push("Simulation timing unavailable")
+        else {
+            if (sim.real_time_factor < 0.9 || sim.real_time_factor > 1.1) warnings.push("Physics and controller clocks differ by more than 10%")
+            if (!finite(sim.physics_age_ms) || sim.physics_age_ms >= status.feedback_timeout_ms) warnings.push("Physics feedback is stale or unavailable")
+            if (finite(sim.interval_max_ms) && sim.interval_max_ms > 1000 / sim.target_hz * 3) warnings.push("Physics tick gap exceeded 3 periods in the recent window")
+            if (sim.sensor_error) warnings.push(`Sensor failure: ${sim.sensor_error}`)
+        }
+    }
+    if (state.hardwareTiming?.fault_reason) warnings.push(state.hardwareTiming.fault_reason)
+    if (state.diagnosticsError) warnings.push(state.diagnosticsError)
+    return warnings
+}
 
 export function modeLabel(name: string): string {
     return name.replace(/^IDEL_/, "").toLowerCase().split("_").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ")
@@ -58,6 +111,7 @@ export function driveBlock(state: PolicyState): string | null {
     if (state.stale || !state.status) return "Waiting for fresh SONIC state"
     if (state.pending) return "SONIC action in progress"
     if (state.status.fault_reason) return state.status.fault_reason
+    if (!state.status.simulation && !freshFeedback(state.status)) return "Motor or IMU feedback is stale or unavailable"
     if (state.status.reference_source !== "planner") return "SONIC is following a motion reference"
     return state.status.active && state.status.control_state === "control" && !state.status.dry_run ? null : "Activate SONIC to drive"
 }
@@ -68,11 +122,12 @@ export function actionAllowed(state: PolicyState, action: PolicyAction): boolean
     if (state.stale || !state.status || state.pending || state.status.fault_reason || !state.status.active) return false
     const status = state.status
     if (action === "activate") {
-        const fresh = status.simulation || [status.feedback_age_ms, status.imu_age_ms].every((age) => age !== null && age >= 0 && age < status.feedback_timeout_ms)
+        const fresh = status.simulation || freshFeedback(status)
         return status.control_state === "unarmed" && !status.arm_pending && status.feedback_received && fresh
     }
     if (action === "deactivate") return status.arm_pending || ["initializing", "control"].includes(status.control_state)
     if (["mode", "height", "clip"].includes(action)) {
+        if (!status.simulation && !freshFeedback(status)) return false
         if (status.control_state !== "control" || status.dry_run || status.arm_pending || !state.options) return false
         if (status.reference_source !== "planner") return false
         return action === "mode" ? Object.keys(state.options.modes).length > 0
@@ -138,7 +193,7 @@ export class PolicyControl {
             this.state.update({ required: true })
             if (policies.length !== 1) {
                 this.clearInput()
-                this.state.update({ target: null, status: null, options: null, notice: null })
+                this.state.update({ target: null, status: null, options: null, notice: null, simulationTiming: null, hardwareTiming: null })
                 throw new Error("Select a run with one SONIC controller")
             }
             const policy = policies[0]
@@ -154,7 +209,22 @@ export class PolicyControl {
             const changed = this.state.get().target?.run !== target.run || this.state.get().target?.policy !== target.policy
             if (changed) this.clearInput()
             this.#lastSuccess = Date.now()
-            this.state.update({ target, status, stale: false, error: null, ...(changed ? { options: null, optionsError: null, notice: null } : {}) })
+            this.state.update({ target, status, stale: false, error: null, ...(changed ? { options: null, optionsError: null, notice: null, simulationTiming: null, hardwareTiming: null, diagnosticsError: null } : {}) })
+            try {
+                let simulationTiming: SimulationTiming | null = null
+                let hardwareTiming: HardwareTiming | null = null
+                if (status.simulation) {
+                    const sims = modules.filter((module) => module.class === "MujocoSimModule" && module.rpcs.some((rpc) => rpc.name === "timing"))
+                    if (sims.length !== 1) throw new Error("Simulation timing unavailable")
+                    simulationTiming = await this.#rpc(target, sims[0].id, "timing")
+                } else if (target.hardware) {
+                    hardwareTiming = await this.#rpc(target, target.hardware, "command_stream_status")
+                }
+                if (this.#sequence !== sequence || this.#closed) return
+                this.state.update({ simulationTiming, hardwareTiming, diagnosticsError: null })
+            } catch (error) {
+                if (this.#sequence === sequence && !this.#closed) this.state.update({ simulationTiming: null, hardwareTiming: null, diagnosticsError: String(error) })
+            }
             if (!this.state.get().options) {
                 try {
                     const has = (method: string) => policy.rpcs.some((rpc) => rpc.name === method)

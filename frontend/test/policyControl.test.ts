@@ -1,5 +1,5 @@
 import { assertEquals, assert } from "jsr:@std/assert@1"
-import { actionAllowed, driveBlock, HEIGHT_RANGE, INITIAL_POLICY_STATE, modeName, PolicyControl, type PolicyState, type PolicyStatus } from "../src/core/policyControl.ts"
+import { actionAllowed, driveBlock, HEIGHT_RANGE, INITIAL_POLICY_STATE, modeName, PolicyControl, timingWarnings, type PolicyState, type PolicyStatus, type SimulationTiming } from "../src/core/policyControl.ts"
 
 const status: PolicyStatus = { active: true, control_state: "unarmed", arm_pending: false, dry_run: true, fault_reason: null, feedback_received: true, simulation: false, feedback_age_ms: 3, imu_age_ms: 4, feedback_timeout_ms: 200, reference_source: "planner" }
 const ready: PolicyState = { ...INITIAL_POLICY_STATE, required: true, stale: false, status, target: { run: "r1", policy: "g1sonicpolicymodule", movement: "movementmanager", hardware: "g1wholebodyconnection" } }
@@ -16,6 +16,28 @@ Deno.test("activation needs fresh feedback; damping remains available with stale
 
 const live: PolicyStatus = { ...status, simulation: true, control_state: "control", dry_run: false, mode: 0, mode_override: 1, mode_queue: [] }
 const options = { modes: { IDLE: 0, SLOW_WALK: 1, IDEL_KNEEL: 6 }, clips: ["wave"], height: true }
+const simulationTiming: SimulationTiming = { target_hz: 200, actual_hz: 200, real_time_factor: 1, physics_age_ms: 2, interval_p99_ms: 6, interval_max_ms: 8, work_overruns: 0, samples: 1000, sensor_age_ms: 30, sensor_work_ms: 40, sensor_error: null }
+const policyTiming = { target_hz: 50, last_step_age_ms: 3, step_ms: { samples: 500, mean: 2, p99: 3, max: 4 }, start_interval_ms: { samples: 500, mean: 20, p99: 22, max: 24 } }
+
+Deno.test("timing warnings distinguish fast inference from slow physics and never call missing data healthy", () => {
+    const state = { ...ready, status: { ...live, policy_timing: policyTiming }, simulationTiming }
+    assertEquals(timingWarnings(state), [])
+    assert(timingWarnings({ ...state, simulationTiming: { ...simulationTiming, actual_hz: 97, real_time_factor: 0.485, interval_max_ms: 54 } }).some((warning) => warning.includes("clocks differ")))
+    assert(timingWarnings({ ...state, simulationTiming: null }).includes("Simulation timing unavailable"))
+    assert(timingWarnings({ ...state, status: { ...live } }).includes("Policy timing unavailable"))
+    assertEquals(timingWarnings({ ...state, stale: true }), ["Control status is stale or unavailable"])
+    assert(timingWarnings({ ...state, simulationTiming: { ...simulationTiming, sensor_error: "renderer stopped" } }).some((warning) => warning.includes("renderer stopped")))
+    assert(timingWarnings({ ...state, status: { ...state.status, policy_timing: { ...policyTiming, step_ms: { ...policyTiming.step_ms, max: 40 } } } }).some((warning) => warning.includes("tick budget")))
+})
+
+Deno.test("stale hardware feedback blocks drive and motion changes without disabling stop", () => {
+    const state = { ...ready, options, status: { ...live, simulation: false, feedback_age_ms: 300, policy_timing: policyTiming } }
+    assert(driveBlock(state)?.includes("feedback"))
+    for (const action of ["mode", "height", "clip"] as const) assert(!actionAllowed(state, action))
+    assert(actionAllowed(state, "stop-motion"))
+    assert(actionAllowed(state, "damping-stop"))
+    assert(timingWarnings(state).some((warning) => warning.includes("feedback")))
+})
 
 Deno.test("policy settings require live planner control and advertised capabilities", () => {
     const state: PolicyState = { ...ready, status: live, options }
@@ -57,6 +79,7 @@ async function withBackend(test: (control: PolicyControl, server: {
         if (path.endsWith("/modules")) return Response.json({ modules: [
             { id: "policy", class: "G1SonicPolicyModule", namespace: null, rpcs: methods.map((name) => ({ name })) },
             { id: "movement", class: "MovementManager", namespace: null, rpcs: [] },
+            { id: "sim", class: "MujocoSimModule", namespace: null, rpcs: [{ name: "timing" }] },
         ] })
         const [, module, method] = path.match(/\/modules\/([^/]+)\/rpcs\/(.+)$/)!
         const call = { module, method, body: JSON.parse(String(init?.body)) }
@@ -65,6 +88,7 @@ async function withBackend(test: (control: PolicyControl, server: {
         if (intercepted) return await intercepted
         if (call.body.run_id !== server.run) return Response.json({ error: "run changed" }, { status: 409 })
         const result = method === "status" ? server.feedback
+            : method === "timing" ? simulationTiming
             : method === "list_locomotion_modes" ? options.modes
             : method === "list_motion_clips" ? options.clips : true
         return Response.json({ ok: true, result })
@@ -79,7 +103,21 @@ async function withBackend(test: (control: PolicyControl, server: {
     }
 }
 
-const mutations = (calls: Call[]) => calls.filter((call) => !["status", "list_locomotion_modes", "list_motion_clips"].includes(call.method))
+const mutations = (calls: Call[]) => calls.filter((call) => !["status", "timing", "list_locomotion_modes", "list_motion_clips"].includes(call.method))
+
+Deno.test("simulator diagnostics are run-bound and failures erase old readings", async () => {
+    await withBackend(async (control, server) => {
+        await control.refresh()
+        assertEquals(control.state.get().simulationTiming, simulationTiming)
+        assertEquals(server.calls.find((call) => call.method === "timing")?.body.run_id, "r1")
+        server.intercept = ({ method }) => method === "timing" ? Response.json({ ok: false, error: "sim offline" }) : undefined
+        await control.refresh()
+        assertEquals(control.state.get().simulationTiming, null)
+        assert(control.state.get().diagnosticsError?.includes("sim offline"))
+        assert(actionAllowed(control.state.get(), "stop-motion"))
+        assertEquals(mutations(server.calls), [])
+    })
+})
 
 Deno.test("gait, height and clips use installed options and run-bound RPCs after cancelling navigation", async () => {
     await withBackend(async (control, server) => {

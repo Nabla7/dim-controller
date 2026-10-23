@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Button, Field, Select, Slider, Toggle } from "dimos-react"
 import type { ViewerApp } from "../core/app.ts"
-import { actionAllowed, driveBlock, HEIGHT_RANGE, modeLabel, modeName, type PolicyCommand, type PolicyState } from "../core/policyControl.ts"
+import { actionAllowed, driveBlock, HEIGHT_RANGE, modeLabel, modeName, timingWarnings, type PolicyCommand, type PolicyState } from "../core/policyControl.ts"
 import { useStore } from "../core/store.ts"
 import { Icon } from "./icons.tsx"
 
@@ -26,6 +26,7 @@ export function PolicyPanel({ app }: { app: ViewerApp }) {
             {status.stream_active && <><dt>Clip frame</dt><dd>{status.stream_frame ?? 0} / {status.stream_frames ?? 0}</dd></>}
             {status.webxr && <><dt>WebXR</dt><dd>{status.webxr.mode}{status.webxr.reason ? `: ${status.webxr.reason}` : ""}</dd></>}
         </dl>}
+        <ControlTiming state={state} />
         <PolicySettings key={`${state.target?.run}/${state.target?.policy}`} app={app} state={state} />
         {state.pending && <span role="status">{state.pending} pending</span>}
         {state.notice && <span role="status">{state.notice}</span>}
@@ -33,6 +34,40 @@ export function PolicyPanel({ app }: { app: ViewerApp }) {
         {state.optionsError && <span className="problem" role="alert">Policy options unavailable: {state.optionsError}</span>}
         {state.error && <span className="problem" role="alert">{state.error}</span>}
     </div>
+}
+
+function ControlTiming({ state }: { state: PolicyState }) {
+    const status = state.status
+    const policy = status?.policy_timing
+    const sim = state.simulationTiming
+    const hardware = state.hardwareTiming
+    const value = (n: number | null | undefined, unit: string, digits = 1) => !state.stale && typeof n === "number" && Number.isFinite(n) ? `${n.toFixed(digits)} ${unit}` : "Unavailable"
+    const warnings = timingWarnings(state)
+    return <section className="sonic-settings" aria-label="Control timing">
+        <strong>Control timing</strong>
+        {warnings.length > 0 && <div className="problem" role="alert">{warnings.map((warning) => <div key={warning}>{warning}</div>)}</div>}
+        <dl className="sonic-status">
+            <dt>Policy rate</dt><dd>{value(policy?.start_interval_ms.mean ? 1000 / policy.start_interval_ms.mean : null, "Hz")} / {value(policy?.target_hz, "Hz")}</dd>
+            <dt>Compute p99 / max</dt><dd>{value(policy?.step_ms.samples ? policy.step_ms.p99 : null, "ms")} / {value(policy?.step_ms.samples ? policy.step_ms.max : null, "ms")}</dd>
+            <dt>Tick gap p99 / max</dt><dd>{value(policy?.start_interval_ms.samples ? policy.start_interval_ms.p99 : null, "ms")} / {value(policy?.start_interval_ms.samples ? policy.start_interval_ms.max : null, "ms")}</dd>
+            <dt>Last policy tick</dt><dd>{value(policy?.last_step_age_ms, "ms ago")}</dd>
+            {!status?.simulation && <><dt>Motor feedback age</dt><dd>{value(status?.feedback_age_ms, "ms")}</dd></>}
+            <dt>IMU arrival age</dt><dd>{value(status?.imu_age_ms, "ms")}</dd>
+            <dt>Feedback timeout</dt><dd>{value(status?.feedback_timeout_ms, "ms")}</dd>
+            {status?.simulation && <>
+                <dt>Physics rate</dt><dd>{value(sim?.actual_hz, "Hz")} / {value(sim?.target_hz, "Hz")}</dd>
+                <dt>Sim / wall time</dt><dd>{value(sim?.real_time_factor, "x", 2)}</dd>
+                <dt>Physics feedback age</dt><dd>{value(sim?.physics_age_ms, "ms")}</dd>
+                <dt>Physics gap p99 / max</dt><dd>{value(sim?.interval_p99_ms, "ms")} / {value(sim?.interval_max_ms, "ms")}</dd>
+                <dt>Last sensor work</dt><dd>{value(sim?.sensor_work_ms, "ms")}</dd>
+            </>}
+            {hardware && <>
+                <dt>Motor command age</dt><dd>{value(hardware.latest_command_age_ms, "ms")}</dd>
+                <dt>DDS target rate</dt><dd>{value(hardware.configured_rate_hz, "Hz")}</dd>
+                <dt>DDS feedback age</dt><dd>{value(hardware.feedback_age_ms, "ms")}</dd>
+            </>}
+        </dl>
+    </section>
 }
 
 function PolicySettings({ app, state }: { app: ViewerApp; state: PolicyState }) {

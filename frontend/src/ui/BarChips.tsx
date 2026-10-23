@@ -16,6 +16,7 @@ import type { WorkspaceApi } from "./Workspace.tsx"
 import { batteryChip, batteryReadings } from "../core/batteryFeed.ts"
 import { slowestVideo, type VideoLatency } from "../core/videoLatency.ts"
 import { maxLatencyOf } from "../core/linkWatch.ts"
+import { timingWarnings } from "../core/policyControl.ts"
 
 /** The robot's battery (every BatteryState topic; core/batteryFeed.ts), Go2-app style: the outline filled to the charge, a bolt while charging. */
 function BatteryChip() {
@@ -111,8 +112,15 @@ export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
     const average = useSmoothedLink(app)
     const link = linkChip({ ...connection, throughputBytesPerSec: average.rate }, average.latency, average.video, maxLatencyOf(useStore(app.settings).maxLatencyMs))
     const lease = leaseChip(useStore(app.connection.lease.state), api.mobile)
+    const policy = useStore(app.policy.state)
+    const controlWarnings = policy.required ? timingWarnings(policy) : []
     return (
         <>
+            {policy.required && <button type="button" className={`bar-chip bar-button tone-${policy.stale || policy.status?.fault_reason ? "bad" : controlWarnings.length ? "warn" : "ok"}`}
+                title={controlWarnings.length ? controlWarnings.join("\n") : "Control timing measurements"} data-testid="bar-control-timing" onClick={() => api.act("sonic", "show")}>
+                <Icon name={controlWarnings.length ? "warn" : "humanoid"} size={13} />
+                <span className="bar-value">{policy.stale ? "Control stale" : controlWarnings.length ? "Control timing" : "Control"}</span>
+            </button>}
             {lease && (
                 <button type="button" className={`bar-chip tone-${lease.tone} bar-button bar-lease`} title={lease.detail} data-testid="bar-lease" onClick={() => void app.connection.takeBack()}>
                     <Icon name="warn" size={13} />
