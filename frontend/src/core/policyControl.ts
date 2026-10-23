@@ -1,6 +1,13 @@
 import { Store } from "./store.ts"
 
-export type PolicyAction = "activate" | "deactivate" | "stop-motion" | "damping-stop"
+export type PolicyAction = "activate" | "deactivate" | "stop-motion" | "damping-stop" | "mode" | "height" | "clip"
+export type PolicyCommand = Exclude<PolicyAction, "mode" | "height" | "clip">
+    | { action: "mode"; mode: string }
+    | { action: "height"; height: number | null }
+    | { action: "clip"; name: string }
+// NVIDIA's gamepad_manager.hpp clamps its height adjustment to this range.
+// These are planner input limits, not a claim of hardware-safe postures.
+export const HEIGHT_RANGE = { min: 0.2, max: 0.8, step: 0.02 }
 export interface PolicyStatus {
     active: boolean
     control_state: string
@@ -13,7 +20,15 @@ export interface PolicyStatus {
     imu_age_ms: number | null
     feedback_timeout_ms: number
     reference_source: string
+    mode?: number
+    mode_override?: number
+    mode_queue?: number[]
+    stream_active?: boolean
+    stream_frame?: number
+    stream_frames?: number
+    webxr?: { mode: string; reason: string | null; body_age_ms: number | null }
 }
+export interface PolicyOptions { modes: Record<string, number>; clips: string[]; height: boolean }
 interface Instance { id: string; class: string; namespace: string | null; rpcs: { name: string }[] }
 export interface PolicyTarget { run: string; policy: string; movement: string | null; hardware: string | null }
 export interface PolicyState {
@@ -23,8 +38,20 @@ export interface PolicyState {
     stale: boolean
     error: string | null
     pending: PolicyAction | null
+    options: PolicyOptions | null
+    optionsError: string | null
+    notice: string | null
 }
-export const INITIAL_POLICY_STATE: PolicyState = { required: false, target: null, status: null, stale: true, error: null, pending: null }
+export const INITIAL_POLICY_STATE: PolicyState = { required: false, target: null, status: null, stale: true, error: null, pending: null, options: null, optionsError: null, notice: null }
+
+export function modeLabel(name: string): string {
+    return name.replace(/^IDEL_/, "").toLowerCase().split("_").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ")
+}
+
+export function modeName(state: PolicyState, id: number | undefined): string {
+    const entry = Object.entries(state.options?.modes ?? {}).find(([, value]) => value === id)
+    return entry ? modeLabel(entry[0]) : id === undefined ? "Unknown" : `Mode ${id}`
+}
 
 export function driveBlock(state: PolicyState): string | null {
     if (!state.required) return null
@@ -45,6 +72,12 @@ export function actionAllowed(state: PolicyState, action: PolicyAction): boolean
         return status.control_state === "unarmed" && !status.arm_pending && status.feedback_received && fresh
     }
     if (action === "deactivate") return status.arm_pending || ["initializing", "control"].includes(status.control_state)
+    if (["mode", "height", "clip"].includes(action)) {
+        if (status.control_state !== "control" || status.dry_run || status.arm_pending || !state.options) return false
+        if (status.reference_source !== "planner") return false
+        return action === "mode" ? Object.keys(state.options.modes).length > 0
+            : action === "clip" ? state.options.clips.length > 0 : state.options.height
+    }
     return true
 }
 
@@ -56,6 +89,7 @@ export class PolicyControl {
     #lastSuccess = 0
     #sequence = 0
     #closed = false
+    #refreshing = false
     constructor(private clearInput: () => void) {}
 
     start() {
@@ -88,7 +122,8 @@ export class PolicyControl {
     }
 
     async refresh() {
-        if (this.state.get().pending || this.#closed) return
+        if (this.state.get().pending || this.#closed || this.#refreshing) return
+        this.#refreshing = true
         const sequence = this.#sequence
         try {
             const active = await this.#request("active")
@@ -103,7 +138,7 @@ export class PolicyControl {
             this.state.update({ required: true })
             if (policies.length !== 1) {
                 this.clearInput()
-                this.state.update({ target: null, status: null })
+                this.state.update({ target: null, status: null, options: null, notice: null })
                 throw new Error("Select a run with one SONIC controller")
             }
             const policy = policies[0]
@@ -116,32 +151,71 @@ export class PolicyControl {
             if (!target.run) throw new Error("No active run ID")
             const status: PolicyStatus = await this.#rpc(target, target.policy, "status")
             if (this.#sequence !== sequence || this.#closed) return
-            if (this.state.get().target?.run !== target.run || this.state.get().target?.policy !== target.policy) this.clearInput()
+            const changed = this.state.get().target?.run !== target.run || this.state.get().target?.policy !== target.policy
+            if (changed) this.clearInput()
             this.#lastSuccess = Date.now()
-            this.state.update({ target, status, stale: false, error: null })
+            this.state.update({ target, status, stale: false, error: null, ...(changed ? { options: null, optionsError: null, notice: null } : {}) })
+            if (!this.state.get().options) {
+                try {
+                    const has = (method: string) => policy.rpcs.some((rpc) => rpc.name === method)
+                    const modes = has("list_locomotion_modes") && has("set_locomotion_mode")
+                        ? await this.#rpc(target, target.policy, "list_locomotion_modes") : {}
+                    const clips = has("list_motion_clips") && has("play_motion_clip")
+                        ? await this.#rpc(target, target.policy, "list_motion_clips") : []
+                    if (this.#sequence !== sequence || this.#closed) return
+                    this.state.update({ options: { modes, clips, height: has("set_base_height") }, optionsError: null })
+                } catch (error) {
+                    if (this.#sequence === sequence && !this.#closed) this.state.update({ optionsError: String(error) })
+                }
+            }
         } catch (error) {
             if (this.#sequence === sequence && !this.#closed) this.state.update({ stale: true, error: String(error) })
+        } finally {
+            this.#refreshing = false
         }
     }
 
-    async act(action: PolicyAction) {
+    async act(command: PolicyCommand) {
+        const action = typeof command === "string" ? command : command.action
         const before = this.state.get()
-        if (!actionAllowed(before, action)) return
+        if (this.#closed || !actionAllowed(before, action)) return
+        let method = action === "activate" ? "activate" : action === "deactivate" ? "disarm" : "stop_motion"
+        let kwargs: Record<string, unknown> = {}
+        let notice: string | null = null
+        if (typeof command !== "string") {
+            if (command.action === "mode") {
+                if (!Object.hasOwn(before.options!.modes, command.mode)) return
+                method = "set_locomotion_mode"
+                kwargs = { mode: command.mode }
+                notice = `Requested ${modeLabel(command.mode)}`
+            } else if (command.action === "height") {
+                const height = command.height
+                if (height !== null && (!Number.isFinite(height) || height < HEIGHT_RANGE.min || height > HEIGHT_RANGE.max)) return
+                method = "set_base_height"
+                kwargs = { height: height ?? -1 }
+                notice = height === null ? "Requested mode-default height" : `Requested pelvis height ${height.toFixed(2)} m`
+            } else {
+                if (!before.options!.clips.includes(command.name)) return
+                method = "play_motion_clip"
+                kwargs = { name: command.name }
+                notice = `Started ${command.name}`
+            }
+        }
         const target = before.target!
         const sequence = ++this.#sequence
         this.clearInput()
-        this.state.update({ pending: action, error: null })
+        this.state.update({ pending: action, error: null, notice: null })
         try {
             if (action === "damping-stop") {
                 if (target.hardware) await this.#rpc(target, target.hardware, "set_estop", { estopped: true })
                 else await this.#rpc(target, target.policy, "halt_robot")
             } else {
                 if (target.movement) await this.#rpc(target, target.movement, "stop_motion")
-                if (this.#sequence !== sequence) return
-                await this.#rpc(target, target.policy, action === "activate" ? "activate" : action === "deactivate" ? "disarm" : "stop_motion")
+                if (this.#sequence !== sequence || this.#closed) return
+                await this.#rpc(target, target.policy, method, kwargs)
             }
             if (sequence === this.#sequence && !this.#closed) {
-                this.state.update({ pending: null, stale: true })
+                this.state.update({ pending: null, stale: true, notice })
                 await this.refresh()
             }
         } catch (error) {

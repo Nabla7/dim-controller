@@ -50,7 +50,7 @@ const MIN_BODY = 72
 
 /** Where each panel lives until it's moved, and its share of a rail. */
 const HOMES: Record<string, { side: Side; collapsed?: boolean; weight: number; float: { width: number; height: number } }> = {
-    sonic: { side: "right", weight: 1.2, float: { width: 340, height: 320 } },
+    sonic: { side: "right", weight: 1.2, float: { width: 360, height: 620 } },
     map: { side: "left", weight: 1, float: { width: 340, height: 340 } },
     scene: { side: "left", weight: 1.15, float: { width: 420, height: 320 } },
     status: { side: "right", weight: 0.75, float: { width: 320, height: 300 } },

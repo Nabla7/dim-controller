@@ -954,3 +954,10 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .sonic-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .sonic-actions button { white-space: normal; min-width: 0; }
 .sonic-damping { color: var(--danger, #c23f4e); }
+.sonic-status { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0; font-size: 12px; }
+.sonic-status dt { opacity: 0.65; }
+.sonic-status dd { margin: 0; }
+.sonic-settings { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
+.sonic-setting-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.sonic-setting-row > :first-child { flex: 1 1 140px; min-width: 0; max-width: 100%; }
+.sonic-setting-row button { flex: 0 0 auto; }

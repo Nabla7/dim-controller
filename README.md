@@ -85,6 +85,17 @@ software damping, not power isolation. The UI does not automatically retry
 activation, and keyboard/stick driving is blocked on stale or inactive policy
 state. Other robot profiles retain their existing driving behavior.
 
+The same panel lists SONIC's available gaits/postures and installed motion clips.
+Select a gait and Apply, or a clip and Play. Pelvis height is an explicit planner
+request (0.2-0.8 m, matching NVIDIA's gamepad bounds), with a Mode default option;
+it is not measured robot height. Editing the controls does not send commands
+until Apply/Play. Each action stops navigation first and is tied to the inspected
+run ID. Gait, height and clip requests require live planner control; while a clip
+or WebXR owns the reference, Return to locomotion clears it without disarming.
+The panel shows the current gait, staged transitions and clip progress from
+policy feedback. Posture/clip changes on hardware require confirmation; the
+available mode list and height bounds are not hardware validation.
+
 Start with `dimos --simulation mujoco --transport zenoh --viewer none run
 unitree-g1-sonic-wbc`. Do not use the robot's stock locomotion controls while
 SONIC owns the motors.
