@@ -49,6 +49,7 @@ provides:
             GET api/view what the user sees.
         x-when: 'you need to drive a robot, watch it live in 3D, or record it'
     x-private:
+        - api/operator-view/*
         - api/pages/*
         - api/captures/*
         - api/drive/*

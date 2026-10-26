@@ -44,6 +44,7 @@ pub struct Api {
     pub manipulation: Arc<Manipulation>,
     /// Desktop's own HTTP API (DIMOS_APP's `desktopUrl`): the running dimos's log dirs
     pub desktop_url: Arc<String>,
+    pub view_client: reqwest::Client,
 }
 
 impl FromRef<Api> for Arc<Annotations> {
@@ -113,6 +114,8 @@ pub fn routes() -> Routes<Api> {
         "note": s("a second line under the label, e.g. \"1.76 m tall\""),
     });
     Routes::new()
+        .plumbing("GET", "api/operator-view/{run}/{session}/{module}/{*path}", crate::view_proxy::serve)
+        .plumbing("POST", "api/operator-view/{run}/{session}/{module}/{*path}", crate::view_proxy::serve)
         .endpoint("GET", "api/status", "you want an overview: recording, driving, view, labels, boxes", "The overview: whether it's recording (seconds, size, path, topics, log lines), the view settings (robot type, fixed frame, follow), layers turned on or off, driving (the command being sent, speeds and topic), annotations and location labels, and how many pages are open. Returns {recording, recordingKeys, view, layersEnabled, rendering, drive, armed (always true), driving (the command being sent, or null), annotations, labels, pages}.", json!({}), status)
         .role("context")
         .endpoint("GET", "api/view", "you need to see what the user sees, or where the robot is", "What the user sees: the rendered 3D view (with annotation labels) as an image, the 3D camera's pose and intrinsics, the latest robot camera image (with a pixel grid) and its CameraInfo and pose, the robot's pose, the annotations, and the fixed frame. 503 if no page is open to render it.", json!({}), annotations::view)
@@ -582,6 +585,7 @@ impl Api {
             drive: Arc::default(),
             manipulation: Arc::new(Manipulation::new(String::new())),
             desktop_url: Arc::new(String::new()),
+            view_client: crate::view_proxy::client().unwrap(),
         }
     }
 }

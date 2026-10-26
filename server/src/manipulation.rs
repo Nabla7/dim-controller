@@ -22,6 +22,7 @@ pub struct Binding {
 #[derive(Default)]
 struct PlannerSession {
     binding: Option<Binding>,
+    views: Vec<Value>,
     target: Option<Value>,
     plan: Option<Value>,
     revision: u64,
@@ -106,6 +107,7 @@ impl Manipulation {
             if held.binding.as_ref() != Some(&binding) {
                 *held = PlannerSession { binding: Some(binding.clone()), revision: held.revision + 1, ..Default::default() };
             }
+            held.views = views.clone();
             Ok::<_, anyhow::Error>(json!({ "available": true, "binding": binding, "state": state,
                 "groups": groups, "operator": { "joint_topology": {} },
                 "target": held.target, "plan": held.plan, "views": views }))
@@ -126,6 +128,17 @@ impl Manipulation {
         if state.target != target { state.revision += 1; state.plan = None; }
         state.target = target;
         Ok(())
+    }
+
+    /// Only views advertised by the currently bound local blueprint can be embedded.
+    pub fn web_view(&self, run: &str, session: &str, module: &str) -> Result<Value> {
+        let state = self.state.lock().unwrap();
+        let binding = state.binding.as_ref().ok_or_else(|| anyhow!("No blueprint view is connected"))?;
+        if binding.run_id != run || binding.session != session {
+            bail!("This blueprint session ended; reopen the current view");
+        }
+        state.views.iter().find(|view| view["module"] == module).cloned()
+            .ok_or_else(|| anyhow!("This module does not advertise an embedded view"))
     }
 
     pub fn target(&self, binding: &Binding) -> Result<Option<Value>> {
@@ -326,6 +339,58 @@ mod tests {
         *client.state.lock().unwrap() = PlannerSession { binding: Some(binding.clone()), plan: Some(json!({"id": "p"})), ..Default::default() };
         client.set_target(&binding, Some(json!({"joints": {"left1": 0.2}}))).unwrap();
         assert!(client.plan(&binding, &json!("p")).is_err());
+    }
+
+    #[tokio::test]
+    async fn embedded_view_preserves_binary_and_actions_but_rejects_old_sessions() {
+        use axum::{body::{to_bytes, Body}, http::{Request, StatusCode}, routing::{get, post}, Json, Router};
+        use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+        use tower::ServiceExt;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        let upstream = Router::new()
+            .route("/spatial/camera/left", get(move |request: Request<Body>| async move {
+                counted.fetch_add(1, Ordering::SeqCst);
+                assert_eq!(request.uri().query(), Some("after=123"));
+                ([ ("content-type", "image/jpeg"), ("x-frame-timestamp", "123.5") ], vec![0xff, 0xd8, 0, 0xff, 0xd9])
+            }))
+            .route("/spatial/control", post(|Json(body): Json<Value>| async move {
+                assert_eq!(body, json!({"action":"hold", "session":"view-session"}));
+                (StatusCode::CONFLICT, Json(json!({"detail":"Control session changed"})))
+            }))
+            .route("/redirect", get(|| async { axum::response::Redirect::temporary("https://example.com/") }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+        let api = crate::api::Api::for_tests(Arc::default());
+        *api.manipulation.state.lock().unwrap() = PlannerSession {
+            binding: Some(Binding {run_id:"run".into(), module:"planner".into(), session:"session".into()}),
+            views: vec![json!({"module":"view", "scheme":"http", "port":port})],
+            ..Default::default()
+        };
+        let router = crate::api::routes().router.with_state(api.clone());
+        let path = "/api/operator-view/run/session/view/spatial/camera/left?after=123";
+        let reply = router.clone().oneshot(Request::builder().uri(path).body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(reply.status(), StatusCode::OK);
+        assert_eq!(reply.headers()["x-frame-timestamp"], "123.5");
+        assert_eq!(to_bytes(reply.into_body(), 1024).await.unwrap().as_ref(), &[0xff, 0xd8, 0, 0xff, 0xd9]);
+        let reply = router.clone().oneshot(Request::builder().method("POST")
+            .uri("/api/operator-view/run/session/view/spatial/control").header("content-type", "application/json")
+            .body(Body::from(json!({"action":"hold", "session":"view-session"}).to_string())).unwrap()).await.unwrap();
+        assert_eq!(reply.status(), StatusCode::CONFLICT);
+        assert_eq!(serde_json::from_slice::<Value>(&to_bytes(reply.into_body(), 1024).await.unwrap()).unwrap()["detail"], "Control session changed");
+        let reply = router.clone().oneshot(Request::builder().uri("/api/operator-view/run/session/view/redirect")
+            .body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(reply.status(), StatusCode::BAD_GATEWAY);
+        for stale in [path.replace("/run/", "/old-run/"), path.replace("/session/", "/old-session/"), path.replace("/view/", "/unadvertised/")] {
+            let reply = router.clone().oneshot(Request::builder().uri(stale).body(Body::empty()).unwrap()).await.unwrap();
+            assert_eq!(reply.status(), StatusCode::GONE);
+        }
+        api.manipulation.state.lock().unwrap().binding = None;
+        let reply = router.oneshot(Request::builder().uri(path).body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(reply.status(), StatusCode::GONE);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        server.abort();
     }
 
     #[test]

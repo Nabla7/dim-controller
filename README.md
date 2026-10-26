@@ -130,6 +130,18 @@ physical acceptance and headset regression checks remain. Dual-arm ACT training 
 The Desktop gateway also needs the remote-proxy fix that uses deployed RPC names even when its importable
 local module class comes from an older checkout. Otherwise discovery succeeds but new method calls fail.
 
+Embedded views use Controller's same-origin `api/operator-view/*` route, declared private in the app
+manifest. Its backend only connects to the current session's advertised loopback port, accepts that local
+server's self-signed certificate and refuses redirects. The browser keeps certificate validation enabled;
+the separate XR link opens the original HTTPS view with XR enabled. This path serves local Desktop
+blueprints; it does not add a remote-host proxy or a second robot connection.
+
+Certificate regression check, 2026-10-26: the installed Desktop rendered the scene and all three cameras
+with normal browser certificate validation, zero page errors and rejection of an old-run URL. Backend
+tests also check binary camera data, action bodies/statuses, unadvertised views, redirects and stale
+bindings (84 Rust tests passed). Type checking, manifest validation and the Nix build passed. The earlier
+browser check below ignored HTTPS errors and therefore did not establish certificate compatibility.
+
 Integration check on 2026-10-26: Controller `095b7e0`, engine `3336924e0f`, and gateway compatibility
 patch `333008be0f` ran through the installed Desktop. A headless browser used the shared target API and
 UI Preview/Execute, verified left-arm motion with the right holding, saved/discarded raw episodes,

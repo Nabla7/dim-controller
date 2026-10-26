@@ -25,6 +25,7 @@ mod record;
 mod recorder;
 mod routes;
 mod settings;
+mod view_proxy;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -165,6 +166,7 @@ async fn main() -> Result<()> {
         drive: Arc::default(),
         manipulation: Arc::new(manipulation::Manipulation::new(dimos_app::field(|app| app.desktop_url.as_ref()).unwrap_or_default())),
         desktop_url: Arc::new(dimos_app::field(|app| app.desktop_url.as_ref()).unwrap_or_default()),
+        view_client: view_proxy::client()?,
     };
     let app = api::routes()
         .router
