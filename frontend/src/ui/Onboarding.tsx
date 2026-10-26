@@ -96,6 +96,7 @@ export type Onboarding = { message: EmptyStateOptions | null; blocksDriving: boo
 export function useOnboarding(app: ViewerApp): Onboarding {
     const runs = useStore(app.runs.state)
     const connection = useStore(app.connection.status)
+    const planner = useStore(app.manipulation.state)
     const [dismissed, setDismissed] = useState<string | null>(null)
     const runningKey = runs.running.join(",")
     const isArm = useStore(app.robot).type === "arm"
@@ -225,7 +226,7 @@ export function useOnboarding(app: ViewerApp): Onboarding {
             },
         }
     }
-    if (connection.topics.length === 0) {
+    if (connection.topics.length === 0 && !(planner.available && planner.binding)) {
         return {
             blocksDriving: false,
             message: {
