@@ -1,233 +1,214 @@
-//! viser's manipulation workflow for the arm mode's 3D view: target, Plan, Preview, Execute, Cancel, Clear, through
-//! dimos's ManipulationModule. Its RPCs are zenoh queries on `dimos/rpc/ManipulationModule/<method>` whose payload is
-//! a pickled `(args, kwargs)` and whose reply is pickled too (pickle.rs). The plan last made is kept here so Execute
-//! runs exactly that plan, and Preview / a new plan / a new target reach every open page as events.
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+//! Controller's planner adapter. Discovery and calls use Desktop's existing gateway.
+//! Every request carries the inspected run, module and receiver-issued session.
+use std::sync::Mutex;
 
 use anyhow::{anyhow, bail, Result};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use zenoh::query::QueryTarget;
+use crate::desktop;
+#[cfg(test)]
+use crate::pickle;
 
-use crate::pickle::{self, Out};
-use crate::recorder;
-
-/// The module whose RPCs these are; its instance name in the blueprint.
-pub const MODULE: &str = "ManipulationModule";
-/// dim-controller's hook in the blueprint's own process (server/python/dim_controller_hook): what the RPCs don't give
-/// (the robot model, obstacle shapes, grasp proposals, viser's target check and Cartesian plan), when it is installed.
-pub const HOOK: &str = "dim_controller/hook";
-const HOOK_TIMEOUT: Duration = Duration::from_secs(2);
-/// Planning can take the module's planning_timeout (10 s by default) plus TOPP-RA.
-const PLAN_TIMEOUT: Duration = Duration::from_secs(20);
-const CALL_TIMEOUT: Duration = Duration::from_secs(5);
-/// The trajectory sent to pages: at most this many points (a plan has a few hundred).
 const PREVIEW_POINTS: usize = 120;
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Binding {
+    pub run_id: String,
+    pub module: String,
+    pub session: String,
+}
+
+#[derive(Default)]
+struct PlannerSession {
+    binding: Option<Binding>,
+    target: Option<Value>,
+    plan: Option<Value>,
+    revision: u64,
+}
+
 pub struct Manipulation {
-    recorder: Arc<recorder::State>,
-    /// the last plan: its id (what Execute runs) and the trajectory the pages preview
-    plan: Mutex<Option<Value>>,
-    /// the target the pages show as the ghost arm: {group, mode, joints?, pose?}
-    target: Mutex<Option<Value>>,
-}
-
-fn now() -> f64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|time| time.as_secs_f64()).unwrap_or_default()
-}
-
-/// The error a dimos RPC replied with: its serialized exception (a dict with the type and message).
-fn rpc_error(value: &Value) -> String {
-    let text = |key: &str| value[key].as_str().map(str::to_string);
-    let kind = text("type_name").or_else(|| text("type")).unwrap_or_else(|| "error".into());
-    let message = text("message").or_else(|| text("args").or_else(|| value["args"][0].as_str().map(str::to_string))).unwrap_or_else(|| value.to_string());
-    format!("{kind}: {message}")
+    desktop_url: String,
+    state: Mutex<PlannerSession>,
 }
 
 impl Manipulation {
-    pub fn new(recorder: Arc<recorder::State>) -> Self {
-        Manipulation { recorder, plan: Mutex::new(None), target: Mutex::new(None) }
+    pub fn new(desktop_url: String) -> Self {
+        Self { desktop_url, state: Mutex::new(PlannerSession::default()) }
     }
 
-    /// Call `ManipulationModule.<method>(*args, **kwargs)` and decode the reply.
-    pub async fn call(&self, method: &str, args: Vec<Out>, kwargs: Vec<(&str, Out)>, timeout: Duration) -> Result<Value> {
-        let session = self.recorder.session().await?;
-        let replies = session
-            .get(format!("dimos/rpc/{MODULE}/{method}"))
-            .payload(pickle::rpc_request(args, kwargs))
-            .target(QueryTarget::All)
-            .timeout(timeout)
-            .await
-            .map_err(|error| anyhow!("zenoh: {error}"))?;
-        match first_answer(&replies).await {
-            Some(Ok(bytes)) => Ok(pickle::to_json(&pickle::loads(&bytes)?)),
-            Some(Err(bytes)) => {
-                let detail = pickle::loads(&bytes).map(|value| rpc_error(&pickle::to_json(&value)));
-                bail!("{MODULE}.{method} failed: {}", detail.unwrap_or_else(|_| "an error it couldn't describe".into()))
+    async fn discover(&self) -> Result<(Binding, Vec<Value>)> {
+        if self.desktop_url.is_empty() { bail!("Open Controller through DimOS Desktop to select a run"); }
+        let active = desktop::get(&self.desktop_url, "/gateways/dimos/active").await?;
+        let run_id = active["runId"].as_str().filter(|_| active["running"] == true)
+            .ok_or_else(|| anyhow!("No running blueprint selected in Desktop"))?;
+        let modules = desktop::get(&self.desktop_url, "/gateways/dimos/active/modules").await?;
+        let planners: Vec<_> = modules["modules"].as_array().into_iter().flatten().filter(|module| {
+            ["describe_operator", "operator_request"].iter().all(|name|
+                module["rpcs"].as_array().into_iter().flatten().any(|rpc| rpc["name"] == *name))
+        }).collect();
+        if planners.len() != 1 {
+            bail!("Selected run exposes {} bound planners; select a run with one operator planner (older engines need the operator API)", planners.len());
+        }
+        let module = planners[0]["id"].as_str().ok_or_else(|| anyhow!("Planner has no instance ID"))?;
+        let info = self.rpc(run_id, module, "describe_operator", json!({})).await?;
+        if info["run_id"] != run_id || info["ready"] != true { bail!("Planner does not confirm the selected run or is not ready"); }
+        let session = info["session"].as_str().filter(|v| !v.is_empty()).ok_or_else(|| anyhow!("Planner has no session"))?;
+        let mut views = Vec::new();
+        for provider in modules["modules"].as_array().into_iter().flatten() {
+            if provider["rpcs"].as_array().into_iter().flatten().any(|rpc| rpc["name"] == "get_web_views") {
+                let id = provider["id"].as_str().ok_or_else(|| anyhow!("View has no module ID"))?;
+                let advertised = self.rpc(run_id, id, "get_web_views", json!({})).await?;
+                for view in advertised.as_array().into_iter().flatten().filter(|view| view["embed"] == true) {
+                    views.push(json!({ "module": id, "title": view["title"], "scheme": view["scheme"], "port": view["port"], "path": view["path"] }));
+                }
             }
-            None => bail!("no {MODULE} answered {method} (is a manipulation blueprint running?)"),
         }
+        Ok((Binding { run_id: run_id.into(), module: module.into(), session: session.into() }, views))
     }
 
-    /// Ask the hook `name` (JSON in, JSON out). Err when no hook answers (not installed, or dimos changed under it).
-    pub async fn hook(&self, name: &str, request: &Value, timeout: Duration) -> Result<Value> {
-        let session = self.recorder.session().await?;
-        let mut query = session.get(format!("{HOOK}/{name}")).timeout(timeout);
-        if !request.is_null() {
-            query = query.payload(serde_json::to_vec(request)?);
+    async fn rpc(&self, run: &str, module: &str, method: &str, kwargs: Value) -> Result<Value> {
+        if !module.chars().all(|c| c.is_ascii_alphanumeric() || "_-.:".contains(c)) {
+            bail!("Invalid module instance ID");
         }
-        let replies = query.target(QueryTarget::All).await.map_err(|error| anyhow!("zenoh: {error}"))?;
-        let answer: Value = match first_answer(&replies).await {
-            Some(Ok(bytes)) => serde_json::from_slice(&bytes)?,
-            Some(Err(bytes)) => bail!("hook {name}: {}", String::from_utf8_lossy(&bytes)),
-            None => bail!("no dim-controller hook in the blueprint's process (install it: api/manipulation/hook/install, then restart the blueprint)"),
-        };
-        if answer["ok"] == true {
-            Ok(answer["result"].clone())
-        } else {
-            bail!("hook {name}: {}", answer["error"].as_str().unwrap_or("failed"))
-        }
+        let reply = desktop::post(&self.desktop_url,
+            &format!("/gateways/dimos/active/modules/{module}/rpcs/{method}"),
+            &json!({ "run_id": run, "kwargs": kwargs })).await?;
+        if reply["ok"] != true { bail!("{}", reply["error"].as_str().unwrap_or("Planner request failed")); }
+        Ok(reply["result"].clone())
     }
 
-    /// The planner's state (ManipulationSnapshot as JSON), its planning groups, the hook's info (null without one),
-    /// the current target and plan.
+    pub async fn call(&self, binding: &Binding, method: &str, payload: Value) -> Result<Value> {
+        self.rpc(&binding.run_id, &binding.module, "operator_request",
+            json!({ "session": binding.session, "method": method, "payload": payload })).await
+    }
+
+    pub fn binding(&self, body: &Value) -> Result<Binding> {
+        let binding: Binding = serde_json::from_value(body["binding"].clone())
+            .map_err(|_| anyhow!("Include binding from GET api/manipulation; refresh before acting"))?;
+        self.check(&self.state.lock().unwrap(), &binding)?;
+        Ok(binding)
+    }
+
+    fn check(&self, state: &PlannerSession, binding: &Binding) -> Result<()> {
+        if state.binding.as_ref() != Some(binding) { bail!("Selected planner changed; refresh before acting"); }
+        Ok(())
+    }
+
     pub async fn status(&self) -> Value {
-        let (state, groups, hook) = tokio::join!(
-            self.call("get_state", vec![], vec![], CALL_TIMEOUT),
-            self.call("list_planning_groups", vec![], vec![], CALL_TIMEOUT),
-            self.hook("info", &Value::Null, HOOK_TIMEOUT)
-        );
-        match state {
-            Ok(state) => json!({
-                "available": true,
-                "state": state,
-                "groups": groups.unwrap_or(json!([])),
-                "hook": hook.ok(),
-                "target": self.target.lock().unwrap().clone(),
-                "plan": self.plan.lock().unwrap().clone(),
-            }),
-            Err(error) => json!({ "available": false, "error": error.to_string() }),
+        let result = async {
+            let (binding, views) = self.discover().await?;
+            let (state, groups) = tokio::try_join!(
+                self.call(&binding, "get_state", json!({})),
+                self.call(&binding, "list_planning_groups", json!({}))
+            )?;
+            let mut held = self.state.lock().unwrap();
+            if held.binding.as_ref() != Some(&binding) {
+                *held = PlannerSession { binding: Some(binding.clone()), revision: held.revision + 1, ..Default::default() };
+            }
+            Ok::<_, anyhow::Error>(json!({ "available": true, "binding": binding, "state": state,
+                "groups": groups, "operator": { "joint_topology": {} },
+                "target": held.target, "plan": held.plan, "views": views }))
+        }.await;
+        match result {
+            Ok(status) => status,
+            Err(error) => {
+                let mut held = self.state.lock().unwrap();
+                *held = PlannerSession { revision: held.revision + 1, ..Default::default() };
+                json!({ "available": false, "binding": null, "error": error.to_string() })
+            }
         }
     }
 
-    pub fn set_target(&self, target: Option<Value>) {
-        *self.target.lock().unwrap() = target;
+    pub fn set_target(&self, binding: &Binding, target: Option<Value>) -> Result<()> {
+        let mut state = self.state.lock().unwrap();
+        self.check(&state, binding)?;
+        if state.target != target { state.revision += 1; state.plan = None; }
+        state.target = target;
+        Ok(())
     }
 
-    pub fn target(&self) -> Option<Value> {
-        self.target.lock().unwrap().clone()
+    pub fn target(&self, binding: &Binding) -> Result<Option<Value>> {
+        let state = self.state.lock().unwrap();
+        self.check(&state, binding)?;
+        Ok(state.target.clone())
     }
 
-    pub fn plan(&self) -> Option<Value> {
-        self.plan.lock().unwrap().clone()
+    pub fn plan(&self, binding: &Binding, plan_id: &Value) -> Result<Value> {
+        let state = self.state.lock().unwrap();
+        self.check(&state, binding)?;
+        let plan = state.plan.clone().ok_or_else(|| anyhow!("No plan: Plan first"))?;
+        if !plan_id.is_string() || plan["id"] != *plan_id { bail!("Plan changed; inspect the current plan before acting"); }
+        Ok(plan)
     }
 
-    /// Plan from where the arm is to `target` (`normalize_target`'s shape), the way viser's panel does: `mode` joint
-    /// plans to the selected groups' joints (plan_to_joints; with only poses, plan_to_poses solves them); `mode`
-    /// cartesian plans a straight TCP path to the poses (the hook's plan_cartesian, else plan_to_poses, which isn't
-    /// straight). A successful plan is kept (with a thinned trajectory) for Preview and Execute; a failed one clears
-    /// it, as the module does.
-    pub async fn plan_to(&self, target: &Value, mode: &str, speed: Option<f64>) -> Result<Value> {
-        let groups: Vec<String> = serde_json::from_value(target["groups"].clone()).map_err(|_| anyhow!("a target names its groups"))?;
-        let speed = speed.map(|speed| speed.clamp(0.05, 1.0));
-        let poses = target["poses"].as_object().filter(|poses| !poses.is_empty());
-        let joints = target["joints"].as_object().filter(|joints| !joints.is_empty());
+    pub async fn plan_to(&self, binding: &Binding, target: &Value, mode: &str, speed: Option<f64>) -> Result<Value> {
+        self.set_target(binding, Some(target.clone()))?;
+        let revision = {
+            let mut state = self.state.lock().unwrap();
+            state.revision += 1;
+            state.plan = None;
+            state.revision
+        };
+        let groups: Vec<String> = serde_json::from_value(target["groups"].clone())?;
+        let poses = target["poses"].as_object().filter(|v| !v.is_empty());
+        let joints = target["joints"].as_object().filter(|v| !v.is_empty());
         let result = match (mode, joints, poses) {
             ("joint", Some(joints), _) => {
-                let ts = now();
-                let mut goals = vec![];
+                let definitions = self.call(binding, "list_planning_groups", json!({})).await?;
+                let mut targets = serde_json::Map::new();
                 for group in &groups {
-                    let names = self.group_joints(group).await?;
-                    let positions = names
-                        .iter()
-                        .map(|name| joints.get(name).and_then(Value::as_f64).ok_or_else(|| anyhow!("no target for {group}'s {name}")))
-                        .collect::<Result<Vec<_>>>()?;
-                    goals.push((group.clone(), pickle::joint_state(&names, &positions, ts)));
+                    let definition = definitions.as_array().into_iter().flatten().find(|g| g["id"] == *group)
+                        .ok_or_else(|| anyhow!("Unknown planning group {group}"))?;
+                    let names: Vec<String> = serde_json::from_value(definition["joint_names"].clone())?;
+                    let mut values = serde_json::Map::new();
+                    for name in names {
+                        let value = joints.get(&name).and_then(Value::as_f64).ok_or_else(|| anyhow!("Missing joint {name}"))?;
+                        values.insert(name, json!(value));
+                    }
+                    targets.insert(group.clone(), Value::Object(values));
                 }
-                self.call("plan_to_joints", vec![Out::Dict(goals)], speed_kwargs(speed), PLAN_TIMEOUT).await?
+                self.call(binding, "plan_to_joints", json!({ "targets": targets, "speed": speed })).await?
             }
-            ("cartesian", _, Some(poses)) => match self.hook("plan_cartesian", &json!({ "poses": poses, "auxiliary": groups.iter().filter(|group| !poses.contains_key(*group)).collect::<Vec<_>>(), "speed": speed }), PLAN_TIMEOUT).await {
-                Ok(result) => result,
-                Err(_) => self.plan_to_poses(poses, speed).await?,
-            },
-            (_, _, Some(poses)) => self.plan_to_poses(poses, speed).await?,
-            _ => bail!("{mode} mode needs {}", if mode == "cartesian" { "a pose (drag the gizmo)" } else { "joints" }),
+            ("cartesian", _, Some(poses)) => self.call(binding, "plan_cartesian", json!({ "poses": poses,
+                "auxiliary": groups.iter().filter(|g| !poses.contains_key(*g)).collect::<Vec<_>>(), "speed": speed })).await?,
+            (_, _, Some(poses)) => self.call(binding, "plan_to_poses", json!({ "targets": poses, "speed": speed })).await?,
+            _ => bail!("{mode} mode needs a joint or pose target"),
         };
         let succeeded = result["status"]["name"] == "SUCCEEDED";
         let plan = succeeded.then(|| summarize(&result, &groups, mode, target));
-        *self.plan.lock().unwrap() = plan.clone();
-        Ok(json!({
-            "ok": succeeded,
-            "status": result["status"]["name"],
-            "message": result["message"],
-            "plan": plan,
-        }))
+        let mut state = self.state.lock().unwrap();
+        self.check(&state, binding)?;
+        if state.revision != revision { bail!("Target or plan changed while planning; request a new plan"); }
+        state.plan = plan.clone();
+        Ok(json!({ "ok": succeeded, "status": result["status"]["name"], "message": result["message"], "plan": plan, "binding": binding }))
     }
 
-    async fn plan_to_poses(&self, poses: &serde_json::Map<String, Value>, speed: Option<f64>) -> Result<Value> {
-        let ts = now();
-        let goals = poses
-            .iter()
-            .map(|(group, pose)| {
-                let position: [f64; 3] = serde_json::from_value(pose["position"].clone()).map_err(|_| anyhow!("{group}'s pose.position is [x, y, z]"))?;
-                let orientation: [f64; 4] = serde_json::from_value(pose["orientation"].clone()).map_err(|_| anyhow!("{group}'s pose.orientation is [x, y, z, w]"))?;
-                Ok((group.clone(), pickle::pose_stamped(pose["frame"].as_str().unwrap_or("world"), position, orientation, ts)))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        self.call("plan_to_poses", vec![Out::Dict(goals)], speed_kwargs(speed), PLAN_TIMEOUT).await
-    }
-
-    /// A planning group's joints, in the planner's order.
-    async fn group_joints(&self, group: &str) -> Result<Vec<String>> {
-        let groups = self.call("list_planning_groups", vec![], vec![], CALL_TIMEOUT).await?;
-        let found = groups.as_array().into_iter().flatten().find(|entry| entry["id"] == group).ok_or_else(|| anyhow!("no planning group {group}"))?;
-        Ok(serde_json::from_value(found["joint_names"].clone())?)
-    }
-
-    /// Run the kept plan (by its id, so a plan made elsewhere since isn't run instead).
-    pub async fn execute(&self) -> Result<Value> {
-        let plan_id = self.plan.lock().unwrap().as_ref().and_then(|plan| plan["id"].as_str().map(str::to_string));
-        let Some(plan_id) = plan_id else {
-            bail!("no plan to execute: Plan first");
-        };
-        let result = self.call("execute", vec![], vec![("blocking", Out::Bool(false)), ("plan_id", Out::Str(plan_id))], CALL_TIMEOUT).await?;
+    pub async fn execute(&self, binding: &Binding, plan_id: &Value) -> Result<Value> {
+        let plan = self.plan(binding, plan_id)?;
+        let result = self.call(binding, "execute", json!({ "plan_id": plan["id"] })).await?;
         Ok(json!({ "ok": matches!(result["status"]["name"].as_str(), Some("ACCEPTED" | "EXECUTING" | "COMPLETED")), "status": result["status"]["name"], "message": result["message"] }))
     }
 
-    pub async fn cancel(&self) -> Result<Value> {
-        let result = self.call("cancel", vec![], vec![], CALL_TIMEOUT).await?;
-        Ok(json!({ "ok": true, "status": result["status"]["name"], "message": result["message"] }))
+    pub async fn cancel(&self, binding: &Binding) -> Result<Value> {
+        self.invalidate_plan(binding)?;
+        let result = self.call(binding, "cancel", json!({})).await?;
+        Ok(json!({ "ok": !matches!(result["status"]["name"].as_str(), Some("UNCERTAIN" | "FAULT")), "status": result["status"]["name"], "message": result["message"] }))
     }
 
-    pub async fn clear(&self) -> Result<Value> {
-        *self.plan.lock().unwrap() = None;
-        let result = self.call("clear_planned_path", vec![], vec![], CALL_TIMEOUT).await?;
+    fn invalidate_plan(&self, binding: &Binding) -> Result<()> {
+        let mut state = self.state.lock().unwrap();
+        self.check(&state, binding)?;
+        state.revision += 1;
+        state.plan = None;
+        Ok(())
+    }
+
+    pub async fn clear(&self, binding: &Binding) -> Result<Value> {
+        self.invalidate_plan(binding)?;
+        let result = self.call(binding, "clear_planned_path", json!({})).await?;
         Ok(json!({ "ok": result["status"]["name"] == "SUCCEEDED", "message": result["message"] }))
     }
-
-    /// The planning scene's obstacles: name -> pose (PoseStamped as JSON).
-    pub async fn obstacles(&self) -> Result<Value> {
-        self.call("get_obstacles", vec![], vec![], CALL_TIMEOUT).await
-    }
-}
-
-/// The first reply with data among every queryable's (Ok: a sample's payload, Err: an error's), None when all were
-/// empty. Queries go to every matching queryable (QueryTarget::All): a zenoh peer that routes (another Desktop app's)
-/// can keep advertising a restarted blueprint's queryables and answer a query routed to it alone with nothing.
-async fn first_answer(replies: &zenoh::handlers::FifoChannelHandler<zenoh::query::Reply>) -> Option<std::result::Result<Vec<u8>, Vec<u8>>> {
-    let mut error = None;
-    while let Ok(reply) = replies.recv_async().await {
-        match reply.result() {
-            Ok(sample) => return Some(Ok(sample.payload().to_bytes().to_vec())),
-            Err(failure) => error = Some(Err(failure.payload().to_bytes().to_vec())),
-        }
-    }
-    error
-}
-
-fn speed_kwargs(speed: Option<f64>) -> Vec<(&'static str, Out)> {
-    speed.map(|speed| vec![("speed_scale", Out::Float(speed))]).unwrap_or_default()
 }
 
 /// A target as the server keeps it, viser's panel state: `{groups: [id], joints?: {name: rad}, poses?: {group:
@@ -288,6 +269,64 @@ fn summarize(result: &Value, groups: &[String], mode: &str, target: &Value) -> V
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn discovered_binding_guards_gateway_calls_and_cached_plans() {
+        use axum::{extract::{Path, State}, routing::{get, post}, Json, Router};
+        use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+        let changed = Arc::new(AtomicBool::new(false));
+        let app = Router::new()
+            .route("/gateways/dimos/active", get(|State(changed): State<Arc<AtomicBool>>| async move {
+                Json(json!({ "running": true, "runId": if changed.load(Ordering::SeqCst) { "new-run" } else { "run" } }))
+            }))
+            .route("/gateways/dimos/active/modules", get(|| async { Json(json!({ "modules": [{
+                "id": "planner:left", "rpcs": [{"name": "describe_operator"}, {"name": "operator_request"}]
+            }] })) }))
+            .route("/gateways/dimos/active/modules/{module}/rpcs/{method}", post(|State(changed): State<Arc<AtomicBool>>, Path((module, method)): Path<(String, String)>, Json(body): Json<Value>| async move {
+                assert_eq!(module, "planner:left");
+                let run = if changed.load(Ordering::SeqCst) { "new-run" } else { "run" };
+                if body["run_id"] != run { return Json(json!({ "ok": false, "error": "Run changed" })); }
+                let result = if method == "describe_operator" {
+                    json!({ "run_id": run, "session": format!("{run}-session"), "ready": true })
+                } else {
+                    assert_eq!(body["kwargs"]["session"], format!("{run}-session"));
+                    match body["kwargs"]["method"].as_str().unwrap() {
+                        "list_planning_groups" => json!([]),
+                        "get_state" => json!({}),
+                        "execute" => json!({ "status": {"name": "ACCEPTED"}, "message": "" }),
+                        method => panic!("unexpected method {method}"),
+                    }
+                };
+                Json(json!({ "ok": true, "result": result }))
+            })).with_state(changed.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = Manipulation::new(format!("http://{address}"));
+        let status = client.status().await;
+        assert_eq!(status["available"], true, "{status}");
+        let binding = client.binding(&status).unwrap();
+        client.state.lock().unwrap().plan = Some(json!({ "id": "inspected-plan" }));
+        assert!(client.execute(&binding, &json!("other-plan")).await.is_err());
+        assert_eq!(client.execute(&binding, &json!("inspected-plan")).await.unwrap()["ok"], true);
+        changed.store(true, Ordering::SeqCst);
+        assert!(client.execute(&binding, &json!("inspected-plan")).await.unwrap_err().to_string().contains("Run changed"));
+        let next = client.status().await;
+        assert_eq!(next["binding"]["run_id"], "new-run");
+        assert_eq!(next["plan"], Value::Null);
+        assert!(client.binding(&status).is_err());
+        assert!(client.plan(&binding, &json!("inspected-plan")).is_err());
+        server.abort();
+    }
+
+    #[test]
+    fn target_changes_invalidate_inspected_plan() {
+        let client = Manipulation::new(String::new());
+        let binding = Binding { run_id: "run".into(), module: "arm".into(), session: "session".into() };
+        *client.state.lock().unwrap() = PlannerSession { binding: Some(binding.clone()), plan: Some(json!({"id": "p"})), ..Default::default() };
+        client.set_target(&binding, Some(json!({"joints": {"left1": 0.2}}))).unwrap();
+        assert!(client.plan(&binding, &json!("p")).is_err());
+    }
 
     #[test]
     fn normalizes_old_and_multi_group_targets() {

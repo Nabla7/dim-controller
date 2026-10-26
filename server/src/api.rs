@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 use crate::annotations::{self, Annotations};
 use crate::drive::{self, Drive};
 use crate::labels;
-use crate::manipulation::Manipulation;
+use crate::manipulation::{Binding, Manipulation};
 use crate::recorder;
 use crate::routes::Routes;
 use crate::settings::{self, Settings};
@@ -25,7 +25,7 @@ use crate::settings::{self, Settings};
 pub const TITLE: &str = "Controller";
 
 /// the endpoints' API version (openapi.json's info.version): major = breaking, minor = added
-pub const API_VERSION: &str = "2.0.0";
+pub const API_VERSION: &str = "3.0.0";
 
 pub const WHEN: &str = "you need to drive a robot, watch it live in 3D, or record it";
 
@@ -40,7 +40,7 @@ pub struct Api {
     pub annotations: Arc<Annotations>,
     pub settings: Arc<Settings>,
     pub drive: Arc<Drive>,
-    /// the arm's planner (dimos's ManipulationModule, over its pickled zenoh RPCs)
+    /// the selected planner, through the existing Desktop gateway
     pub manipulation: Arc<Manipulation>,
     /// Desktop's own HTTP API (DIMOS_APP's `desktopUrl`): the running dimos's log dirs
     pub desktop_url: Arc<String>,
@@ -150,19 +150,20 @@ pub fn routes() -> Routes<Api> {
         .endpoint("POST", "api/drive/arm", "an older script arms driving first (never needed now)", "No-op, kept for older callers: driving needs no arming (always armed). Use api/drive/stop to stop. Returns {armed: true, note}.", json!({ "armed": b("ignored"), "source": s("ignored") }), arm)
         .endpoint("POST", "api/drive", "you need to drive or turn the robot", "Drive the robot: publish a Twist (linear [x, y, z] m/s, angular [x, y, z] rad/s, each within ±5) at 10 Hz for seconds (default 1, at most 10), then a second of zeros. No arming needed. topic: default the drive panel's, else the cmd_vel on the bus. dryRun=true only says what it would send. A new command or a stop replaces a running one; every open page shows it. Returns {key, linear, angular, seconds, hz, messages (how many it sends), dryRun, source}; 400 for a speed, duration or topic out of range.", json!({ "linear": vec3("m/s, robot frame (x forward, y left)"), "angular": vec3("rad/s (z = turn left)"), "seconds": n("default 1, at most 10"), "topic": s("e.g. /cmd_vel"), "dryRun": b("send nothing, say what would be sent"), "source": s("who is driving, shown on the page (default agent)") }), drive_robot)
         .endpoint("POST", "api/drive/stop", "you need the robot to stop moving", "Stop driving: cancels a running drive command and sends a second of zeros. Returns what it sends, as api/drive does (a zero Twist); 400 for a bad topic.", json!({ "topic": s("default as for api/drive"), "dryRun": b("send nothing, say what would be sent") }), stop_robot)
+        .endpoint("GET", "api/manipulation/model", "you need the selected planner's robot model", "Loaded robot description from the inspected planner. Pass binding as JSON in the query string.", json!({ "binding": required(s("JSON binding from GET api/manipulation")) }), manipulation_model)
         // the arm's planner: viser's workflow through dimos's ManipulationModule
-        .endpoint("GET", "api/manipulation", "you need the arm planner's state, target, groups or last plan", "The arm's planner (dimos's ManipulationModule): available (false with error when none answers), state (operation_status, execution_status, has_pending_plan, groups: {<group>: {joints {name, position}, end_effector_pose (world), gripper_position, joint_presets {home, init}}}), planning groups (id, joint_names, base_frame, tip_frame, has_gripper), the target shown as the ghost arm, and the plan last made (id, duration, jointNames, times, positions).", json!({}), manipulation_status)
-        .endpoint("POST", "api/manipulation/target", "you want to set or clear where the arm should go (moves nothing)", "Set the target every open page shows as the ghost arm (it moves nothing): groups (the planning groups selected, default [manipulator]) with joints {name: radians} and/or poses {group: {position [x, y, z], orientation [x, y, z, w], frame (default world)}} (or one pose for the first group), source joints | cartesian (which was edited); or preset current | init | home (that preset's joints for the groups). clear=true removes the target.", json!({ "groups": json!({ "type": "array", "description": "planning group ids" }), "joints": json!({ "type": "object", "description": "joint name -> radians" }), "poses": json!({ "type": "object", "description": "group -> {position, orientation, frame}" }), "pose": json!({ "type": "object", "description": "the first group's pose" }), "source": s("joints | cartesian"), "preset": s("current | init | home"), "clear": b("remove the target") }), manipulation_target)
-        .endpoint("POST", "api/manipulation/plan", "you want a collision-checked plan to the arm target", "Plan from where the arm is to the target (the body's, else the current one), collision-checked by the ManipulationModule: mode joint (default lv.manip.mode) plans to the groups' joints, mode cartesian a straight TCP path to the poses (with the hook; without it plan_to_poses). On success the plan is kept for Preview and Execute and every page draws its path. speed: the plan's speed scale 0.05-1 (default lv.manip.speed).", json!({ "mode": s("joint | cartesian"), "groups": json!({ "type": "array" }), "joints": json!({ "type": "object" }), "poses": json!({ "type": "object" }), "speed": n("0.05-1") }), manipulation_plan)
-        .endpoint("POST", "api/manipulation/preview", "you want to show the planned arm motion without moving the arm", "Play the kept plan on the ghost arm in every open page (the real arm doesn't move).", json!({}), manipulation_preview)
-        .endpoint("POST", "api/manipulation/execute", "you want the arm to run the kept plan", "Run the kept plan on the arm.", json!({}), manipulation_execute)
-        .endpoint("POST", "api/manipulation/cancel", "you need the arm's planning or motion stopped", "Stop planning or the running trajectory.", json!({}), manipulation_cancel)
-        .endpoint("POST", "api/manipulation/clear", "you want the kept arm plan discarded", "Discard the kept plan.", json!({}), manipulation_clear)
-        .endpoint("GET", "api/manipulation/obstacles", "you need the arm planner's obstacles", "The planning scene's obstacles: name -> pose.", json!({}), manipulation_obstacles)
-        .endpoint("POST", "api/manipulation/evaluate", "you want to check an arm target before planning", "Check a target the way viser's panel does, in the planner's process (needs the hook): collision-aware IK for poses, collision and limits for joints. Body: a target (groups, joints or poses, source). Answers success, collision_free, status (FEASIBLE, COLLISION, NO_SOLUTION, INVALID...), message, joints (the IK's for poses), poses (each group's tip for joints).", json!({ "groups": json!({ "type": "array" }), "joints": json!({ "type": "object" }), "poses": json!({ "type": "object" }), "source": s("joints | cartesian") }), manipulation_evaluate)
-        .endpoint("GET", "api/manipulation/scene", "you need the arm planning scene's shapes and grasp proposals", "What viser draws besides the arm (needs the hook): obstacles with their shapes (box, sphere, cylinder, mesh vertices/faces, octree points), grasp proposals (pose, score; best first), the last preview; each with a version, left out when ?obstacles=&grasps=&preview= already has it. Without the hook: obstacle poses only (type marker).", json!({}), manipulation_scene)
-        .endpoint("GET", "api/manipulation/hook", "you need to know whether the controller's planner hook is loaded or installed", "dim-controller's hook in the blueprint's process: loaded (its info: pid, python, groups, joint topology) and installed (per running dimos run's venv).", json!({}), manipulation_hook)
-        .endpoint("POST", "api/manipulation/hook/install", "you want the controller's planner hook installed into the running blueprint", "Install (uninstall=true: remove) the hook into the venv of every running dimos run, or venv; it loads when the blueprint restarts.", json!({ "venv": s("a venv or its python (default: every running dimos run's)"), "uninstall": b("") }), manipulation_hook_install)
+        .endpoint("GET", "api/manipulation", "you need the arm planner's state, target, groups or last plan", "Discover the selected Desktop run and its planner instance. Returns binding {run_id, module, session}, state, planning groups, target, plan and advertised spatial views. Include this exact binding in every planning action; a changed session invalidates targets and plans.", json!({}), manipulation_status)
+        .endpoint("POST", "api/manipulation/target", "you want to set or clear where the arm should go (moves nothing)", "Set the target every open page shows as the ghost arm (it moves nothing): groups (the planning groups selected, default [manipulator]) with joints {name: radians} and/or poses {group: {position [x, y, z], orientation [x, y, z, w], frame (default world)}} (or one pose for the first group), source joints | cartesian (which was edited); or preset current | init | home (that preset's joints for the groups). clear=true removes the target.", json!({ "binding": required(json!({ "type": "object", "description": "Exact binding from GET api/manipulation" })), "groups": json!({ "type": "array", "description": "planning group ids" }), "joints": json!({ "type": "object", "description": "joint name -> radians" }), "poses": json!({ "type": "object", "description": "group -> {position, orientation, frame}" }), "pose": json!({ "type": "object", "description": "the first group's pose" }), "source": s("joints | cartesian"), "preset": s("current | init | home"), "clear": b("remove the target") }), manipulation_target)
+        .endpoint("POST", "api/manipulation/plan", "you want a collision-checked plan to the arm target", "Plan in the inspected planner. Joint mode follows the supplied joints or pose targets; Cartesian mode requests a straight TCP path. Geometry and collision coverage are those supplied by the robot model. A successful plan is kept for Preview and Execute; both require its plan_id. speed: 0.05-1.", json!({ "binding": required(json!({ "type": "object", "description": "Exact binding from GET api/manipulation" })), "mode": s("joint | cartesian"), "groups": json!({ "type": "array" }), "joints": json!({ "type": "object" }), "poses": json!({ "type": "object" }), "speed": n("0.05-1") }), manipulation_plan)
+        .endpoint("POST", "api/manipulation/preview", "you want to show the planned arm motion without moving the arm", "Play the kept plan on the ghost arm in every open page (the real arm doesn't move).", json!({ "plan_id": required(s("ID of the plan inspected by this caller")), "binding": required(json!({ "type": "object", "description": "Exact binding from GET api/manipulation" })),}), manipulation_preview)
+        .endpoint("POST", "api/manipulation/execute", "you want the arm to run the kept plan", "Run the kept plan on the arm.", json!({ "plan_id": required(s("ID of the plan inspected by this caller")), "binding": required(json!({ "type": "object", "description": "Exact binding from GET api/manipulation" })),}), manipulation_execute)
+        .endpoint("POST", "api/manipulation/cancel", "you need the arm's planning or motion stopped", "Stop planning or the running trajectory.", json!({ "binding": required(json!({ "type": "object", "description": "Exact binding from GET api/manipulation" })),}), manipulation_cancel)
+        .endpoint("POST", "api/manipulation/clear", "you want the kept arm plan discarded", "Discard the kept plan.", json!({ "binding": required(json!({ "type": "object", "description": "Exact binding from GET api/manipulation" })),}), manipulation_clear)
+        .endpoint("GET", "api/manipulation/obstacles", "you need the arm planner's obstacles", "Obstacle name to pose mapping from the selected planner. Requires binding as JSON in the query string.", json!({ "binding": required(s("JSON binding from GET api/manipulation")) }), manipulation_obstacles)
+        .endpoint("POST", "api/manipulation/evaluate", "you want to check an arm target before planning", "Check the target through the selected planner operator: limits and configured collision geometry, and IK for pose targets. Returns success, collision_free, status, message, joints and poses. A model without collision geometry cannot establish collision safety.", json!({ "binding": required(json!({ "type": "object", "description": "Exact binding from GET api/manipulation" })), "groups": json!({ "type": "array" }), "joints": json!({ "type": "object" }), "poses": json!({ "type": "object" }), "source": s("joints | cartesian") }), manipulation_evaluate)
+        .endpoint("GET", "api/manipulation/scene", "you need the arm planning scene's shapes and grasp proposals", "Obstacle poses from the selected planner, represented as markers. Requires binding as JSON in the query string. This adapter does not provide grasp proposals or obstacle mesh geometry.", json!({ "binding": required(s("JSON binding from GET api/manipulation")) }), manipulation_scene)
+        .endpoint("GET", "api/manipulation/hook", "you need to know whether the controller's planner hook is loaded or installed", "Legacy compatibility status. This Controller uses the engine operator RPCs instead of installing a process hook.", json!({}), manipulation_hook)
+        .endpoint("POST", "api/manipulation/hook/install", "you want the controller's planner hook installed into the running blueprint", "Retired endpoint. Returns 410: use an engine with operator RPCs; no environment or running process is modified.", json!({ "venv": s("a venv or its python (default: every running dimos run's)"), "uninstall": b("") }), manipulation_hook_install)
         .endpoint("GET", "api/manipulation/poses", "you need the arm poses saved for a robot", "The arm poses saved for a robot model (robot: its URDF name), from ~/.dimos/app_data/manip_data/<robot>/poses.yaml: poses [{name, color, target}] (target as api/manipulation/target takes it; setting it moves nothing).", json!({ "robot": required(s("the URDF's name, e.g. r1pro")) }), manipulation_poses)
         .endpoint("PUT", "api/manipulation/poses", "you want to change the arm poses saved for a robot", "Replace the arm poses saved for a robot model (the whole list, in order); every open page shows them.", json!({ "robot": required(s("the URDF's name")), "poses": required(json!({ "type": "array", "description": "[{name, color (CSS, optional), target {groups, joints, poses, source}}]" })) }), save_manipulation_poses)
         .endpoint("PATCH", "api/manipulation/options", "you want to change the arm view's planner options", "The arm 3D view's planner options (lv.manip), applied in every open page: mode (joint | cartesian: what the gizmo and sliders set), speed (next plan's speed scale 0.05-1), display (visual | collision | both: the arm's geometry), obstacles (draw the planning scene's obstacles), grasps (draw the grasp proposals), grid (the ground grid), interact (the 3D arm and gizmo are shown).", json!({ "mode": s("joint | cartesian"), "speed": n("0.05-1"), "display": s("visual | collision | both"), "obstacles": b(""), "grasps": b(""), "grid": b(""), "interact": b("") }), manipulation_options)
@@ -348,13 +349,13 @@ fn planner_error(error: anyhow::Error) -> Response {
 
 /// A target from a body (manipulation::normalize_target's shape), or a preset's joints from the planner's state for
 /// the body's groups: current, init or home, as viser's Preset menu.
-async fn target_from(api: &Api, body: &Value) -> Result<Value, Response> {
+async fn target_from(api: &Api, binding: &Binding, body: &Value) -> Result<Value, Response> {
     if let Some(preset) = body["preset"].as_str() {
         let groups: Vec<String> = match &body["groups"] {
             Value::Array(groups) if !groups.is_empty() => groups.iter().filter_map(|group| group.as_str().map(str::to_string)).collect(),
             _ => vec![body["group"].as_str().unwrap_or("manipulator").to_string()],
         };
-        let state = api.manipulation.call("get_state", vec![], vec![], std::time::Duration::from_secs(5)).await.map_err(planner_error)?;
+        let state = api.manipulation.call(binding, "get_state", json!({})).await.map_err(planner_error)?;
         let mut joints = serde_json::Map::new();
         for group in &groups {
             let group_state = &state["groups"][group];
@@ -374,75 +375,80 @@ async fn target_from(api: &Api, body: &Value) -> Result<Value, Response> {
 }
 
 async fn manipulation_target(Extract(api): Extract<Api>, Body(body): Body) -> Response {
+    let binding = match api.manipulation.binding(&body) { Ok(b) => b, Err(e) => return error_response(StatusCode::CONFLICT, e) };
     if body["clear"] == true {
-        api.manipulation.set_target(None);
-        api.annotations.broadcast(json!({ "type": "manipulation", "target": null, "from": body["from"] }));
+        if let Err(e) = api.manipulation.set_target(&binding, None) { return error_response(StatusCode::CONFLICT, e); }
+        api.annotations.broadcast(json!({ "type": "manipulation", "binding": binding, "target": null, "from": body["from"] }));
         return Json(json!({ "ok": true, "target": null })).into_response();
     }
-    let target = match target_from(&api, &body).await {
+    let target = match target_from(&api, &binding, &body).await {
         Ok(target) => target,
         Err(response) => return response,
     };
-    api.manipulation.set_target(Some(target.clone()));
-    api.annotations.broadcast(json!({ "type": "manipulation", "target": target, "from": body["from"] }));
+    if let Err(e) = api.manipulation.set_target(&binding, Some(target.clone())) { return error_response(StatusCode::CONFLICT, e); }
+    api.annotations.broadcast(json!({ "type": "manipulation", "binding": binding, "target": target, "from": body["from"] }));
     Json(json!({ "ok": true, "target": target })).into_response()
 }
 
 async fn manipulation_plan(Extract(api): Extract<Api>, Body(body): Body) -> Response {
+    let binding = match api.manipulation.binding(&body) { Ok(b) => b, Err(e) => return error_response(StatusCode::CONFLICT, e) };
     let target = if body["joints"].is_object() || body["poses"].is_object() || body["pose"].is_object() || body["preset"].is_string() {
-        match target_from(&api, &body).await {
+        match target_from(&api, &binding, &body).await {
             Ok(target) => target,
             Err(response) => return response,
         }
     } else {
-        match api.manipulation.target() {
-            Some(target) => target,
-            None => return error_response(StatusCode::BAD_REQUEST, "no target: set one (api/manipulation/target) or pass it"),
+        match api.manipulation.target(&binding) {
+            Ok(Some(target)) => target,
+            Err(e) => return error_response(StatusCode::CONFLICT, e),
+            Ok(None) => return error_response(StatusCode::BAD_REQUEST, "no target: set one (api/manipulation/target) or pass it"),
         }
     };
     let options = api.settings.get("lv.manip");
     let speed = body["speed"].as_f64().or_else(|| options["speed"].as_f64());
     let mode = body["mode"].as_str().or_else(|| options["mode"].as_str()).unwrap_or("joint").to_string();
-    match api.manipulation.plan_to(&target, &mode, speed).await {
+    match api.manipulation.plan_to(&binding, &target, &mode, speed).await {
         Ok(result) => {
-            api.manipulation.set_target(Some(target.clone()));
-            api.annotations.broadcast(json!({ "type": "manipulation", "target": target, "plan": result["plan"], "planned": result, "from": body["from"] }));
+            if let Err(e) = api.manipulation.set_target(&binding, Some(target.clone())) { return error_response(StatusCode::CONFLICT, e); }
+            api.annotations.broadcast(json!({ "type": "manipulation", "binding": binding, "target": target, "plan": result["plan"], "planned": result, "from": body["from"] }));
             Json(result).into_response()
         }
         Err(error) => planner_error(error),
     }
 }
 
-async fn manipulation_preview(Extract(api): Extract<Api>) -> Response {
-    let Some(plan) = api.manipulation.plan() else {
-        return error_response(StatusCode::CONFLICT, "no plan to preview: Plan first");
-    };
+async fn manipulation_preview(Extract(api): Extract<Api>, Body(body): Body) -> Response {
+    let binding = match api.manipulation.binding(&body) { Ok(b) => b, Err(e) => return error_response(StatusCode::CONFLICT, e) };
+    let plan = match api.manipulation.plan(&binding, &body["plan_id"]) { Ok(p) => p, Err(e) => return error_response(StatusCode::CONFLICT, e) };
     let pages = api.annotations.page_count();
-    api.annotations.broadcast(json!({ "type": "manipulation", "preview": plan["id"] }));
+    api.annotations.broadcast(json!({ "type": "manipulation", "binding": binding, "preview": plan["id"] }));
     Json(json!({ "ok": true, "pages": pages, "duration": plan["duration"] })).into_response()
 }
 
-async fn manipulation_execute(Extract(api): Extract<Api>) -> Response {
-    match api.manipulation.execute().await {
+async fn manipulation_execute(Extract(api): Extract<Api>, Body(body): Body) -> Response {
+    let binding = match api.manipulation.binding(&body) { Ok(b) => b, Err(e) => return error_response(StatusCode::CONFLICT, e) };
+    match api.manipulation.execute(&binding, &body["plan_id"]).await {
         Ok(result) => {
-            api.annotations.broadcast(json!({ "type": "manipulation", "executed": result }));
+            api.annotations.broadcast(json!({ "type": "manipulation", "binding": binding, "executed": result }));
             Json(result).into_response()
         }
         Err(error) => error_response(StatusCode::CONFLICT, error),
     }
 }
 
-async fn manipulation_cancel(Extract(api): Extract<Api>) -> Response {
-    api.annotations.broadcast(json!({ "type": "manipulation", "cancel": true }));
-    match api.manipulation.cancel().await {
+async fn manipulation_cancel(Extract(api): Extract<Api>, Body(body): Body) -> Response {
+    let binding = match api.manipulation.binding(&body) { Ok(b) => b, Err(e) => return error_response(StatusCode::CONFLICT, e) };
+    api.annotations.broadcast(json!({ "type": "manipulation", "binding": binding, "cancel": true }));
+    match api.manipulation.cancel(&binding).await {
         Ok(result) => Json(result).into_response(),
         Err(error) => planner_error(error),
     }
 }
 
-async fn manipulation_clear(Extract(api): Extract<Api>) -> Response {
-    let result = api.manipulation.clear().await;
-    api.annotations.broadcast(json!({ "type": "manipulation", "plan": null }));
+async fn manipulation_clear(Extract(api): Extract<Api>, Body(body): Body) -> Response {
+    let binding = match api.manipulation.binding(&body) { Ok(b) => b, Err(e) => return error_response(StatusCode::CONFLICT, e) };
+    let result = api.manipulation.clear(&binding).await;
+    api.annotations.broadcast(json!({ "type": "manipulation", "binding": binding, "plan": null }));
     match result {
         Ok(result) => Json(result).into_response(),
         Err(error) => planner_error(error),
@@ -451,6 +457,7 @@ async fn manipulation_clear(Extract(api): Extract<Api>) -> Response {
 
 /// viser's target check through the hook: collision-aware IK for poses, state validity for joints.
 async fn manipulation_evaluate(Extract(api): Extract<Api>, Body(body): Body) -> Response {
+    let binding = match api.manipulation.binding(&body) { Ok(b) => b, Err(e) => return error_response(StatusCode::CONFLICT, e) };
     let Some(target) = crate::manipulation::normalize_target(&body) else {
         return error_response(StatusCode::BAD_REQUEST, "a target to check: joints or poses, and groups");
     };
@@ -459,54 +466,52 @@ async fn manipulation_evaluate(Extract(api): Extract<Api>, Body(body): Body) -> 
     } else {
         json!({ "groups": target["groups"], "joints": target["joints"] })
     };
-    match api.manipulation.hook("evaluate", &request, std::time::Duration::from_secs(5)).await {
+    match api.manipulation.call(&binding, "evaluate", request).await {
         Ok(result) => Json(result).into_response(),
         Err(error) => error_response(StatusCode::SERVICE_UNAVAILABLE, error),
     }
 }
 
-/// The hook's scene: obstacles with their shapes, grasp proposals, the last preview; each with a version, and left out
-/// when the query's version (?obstacles=&grasps=&preview=) is already current. Without the hook: the RPC's obstacle
-/// poses as markers.
+fn query_binding(api: &Api, query: &HashMap<String, String>) -> Result<Binding, Response> {
+    let binding = query.get("binding").and_then(|value| serde_json::from_str::<Value>(value).ok());
+    api.manipulation.binding(&json!({ "binding": binding }))
+        .map_err(|error| error_response(StatusCode::CONFLICT, error))
+}
+
 async fn manipulation_scene(Extract(api): Extract<Api>, Query(query): Query<HashMap<String, String>>) -> Response {
-    let known: serde_json::Map<String, Value> = query.iter().filter_map(|(key, value)| Some((key.clone(), json!(value.parse::<i64>().ok()?)))).collect();
-    match api.manipulation.hook("scene", &Value::Object(known), std::time::Duration::from_secs(5)).await {
-        Ok(scene) => Json(json!({ "hook": true, "scene": scene })).into_response(),
-        Err(hook_error) => match api.manipulation.obstacles().await {
-            Ok(poses) => {
-                let obstacles: Vec<Value> = poses.as_object().into_iter().flatten().map(|(name, pose)| json!({ "name": name, "type": "marker", "pose": { "position": [pose["position"]["x"], pose["position"]["y"], pose["position"]["z"]], "orientation": [pose["orientation"]["x"], pose["orientation"]["y"], pose["orientation"]["z"], pose["orientation"]["w"]] } })).collect();
-                Json(json!({ "hook": false, "problem": hook_error.to_string(), "scene": { "versions": {}, "obstacles": obstacles } })).into_response()
-            }
-            Err(error) => planner_error(error),
+    let binding = match query_binding(&api, &query) { Ok(b) => b, Err(e) => return e };
+    match api.manipulation.call(&binding, "get_obstacles", json!({})).await {
+        Ok(obstacles) => {
+            let objects: Vec<Value> = obstacles.as_object().into_iter().flatten().map(|(name, pose)| json!({
+                "name": name, "type": "marker", "pose": { "position": [pose["position"]["x"], pose["position"]["y"], pose["position"]["z"]],
+                "orientation": [pose["orientation"]["x"], pose["orientation"]["y"], pose["orientation"]["z"], pose["orientation"]["w"]] }
+            })).collect();
+            Json(json!({ "hook": false, "scene": { "obstacles": objects, "grasps": [] } })).into_response()
         },
+        Err(error) => planner_error(error),
     }
 }
 
-/// Where the hook is: loaded (its info), and for each running `dimos run`, whether its venv has it installed.
-async fn manipulation_hook(Extract(api): Extract<Api>) -> Response {
-    let loaded = api.manipulation.hook("info", &Value::Null, std::time::Duration::from_secs(2)).await.ok();
-    let installed = crate::hook_install::run(&["--status"]).await;
-    Json(json!({ "loaded": loaded, "installed": installed.unwrap_or_else(|error| error.to_string()) })).into_response()
-}
-
-/// Install the hook into the venv of every running `dimos run` (or `venv`); it loads when the blueprint restarts.
-async fn manipulation_hook_install(Body(body): Body) -> Response {
-    let mut args = vec![];
-    if let Some(venv) = body["venv"].as_str() {
-        args.extend(["--venv", venv]);
-    }
-    if body["uninstall"] == true {
-        args.push("--uninstall");
-    }
-    match crate::hook_install::run(&args).await {
-        Ok(output) => Json(json!({ "ok": true, "output": output })).into_response(),
-        Err(error) => error_response(StatusCode::INTERNAL_SERVER_ERROR, error),
+async fn manipulation_model(Extract(api): Extract<Api>, Query(query): Query<HashMap<String, String>>) -> Response {
+    let binding = match query_binding(&api, &query) { Ok(b) => b, Err(e) => return e };
+    match api.manipulation.call(&binding, "model", json!({})).await {
+        Ok(model) => Json(json!({ "binding": binding, "model": model })).into_response(),
+        Err(error) => planner_error(error),
     }
 }
 
-async fn manipulation_obstacles(Extract(api): Extract<Api>) -> Response {
-    match api.manipulation.obstacles().await {
-        Ok(obstacles) => Json(obstacles).into_response(),
+async fn manipulation_hook() -> Response {
+    Json(json!({ "loaded": null, "installed": [], "message": "Planner operator RPCs replace the global process hook" })).into_response()
+}
+
+async fn manipulation_hook_install() -> Response {
+    error_response(StatusCode::GONE, "The bound operator API replaces hook installation. Update the engine and restart its blueprint.")
+}
+
+async fn manipulation_obstacles(Extract(api): Extract<Api>, Query(query): Query<HashMap<String, String>>) -> Response {
+    let binding = match query_binding(&api, &query) { Ok(b) => b, Err(e) => return e };
+    match api.manipulation.call(&binding, "get_obstacles", json!({})).await {
+        Ok(result) => Json(result).into_response(),
         Err(error) => planner_error(error),
     }
 }
@@ -575,10 +580,7 @@ impl Api {
             annotations,
             settings: Arc::new(Settings::load(None)),
             drive: Arc::default(),
-            manipulation: Arc::new(Manipulation::new(Arc::new(recorder::State::new(
-                std::env::temp_dir().join("lv_api_test"),
-                "tcp/127.0.0.1:9".into(),
-            )))),
+            manipulation: Arc::new(Manipulation::new(String::new())),
             desktop_url: Arc::new(String::new()),
         }
     }

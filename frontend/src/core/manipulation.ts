@@ -1,9 +1,12 @@
 // viser's manipulation panel for the arm mode, the page's side (server/src/manipulation.rs does the planner calls):
 // the selected planning groups, the target (joints per group and a TCP pose per pose-capable group, as viser's
-// sliders and gizmos), its feasibility (checked by the planner through dim-controller's hook, as viser does), Plan /
+// sliders and gizmos), its feasibility (checked by the planner through dim-controller's operator, as viser does), Plan /
 // Preview / Execute / Cancel / Clear, and the planner's live state. Every action is the backend's endpoint, so the
 // agent and other open pages see the same target and plan (the `manipulation` event).
 import { persistentStore, Store } from "./store.ts"
+
+export interface PlannerBinding { run_id: string; module: string; session: string }
+export interface OperatorView { module: string; title: string; scheme: string; port: number; path: string }
 
 export type PlanningMode = "joint" | "cartesian"
 
@@ -44,15 +47,8 @@ export interface PlanningGroup {
     has_gripper: boolean
 }
 
-/** dim-controller's hook in the blueprint's process (server/python/dim_controller_hook), when it is loaded */
-export interface HookInfo {
-    hook: number
-    pid: number
-    python: string
-    visualization: string | null
-    visualization_url: string | null
-    operator: boolean
-    /** per joint, as viser's sliders read it: limited | circle (-pi..pi) | line (unbounded: a number box) */
+/** Capabilities of the selected planner's operator adapter. */
+export interface OperatorInfo {
     joint_topology: Record<string, string>
 }
 
@@ -74,7 +70,7 @@ export interface PlannerState {
     }>
 }
 
-/** viser's FeasibilityStatus; "unchecked" when there is no hook to ask */
+/** viser's FeasibilityStatus; "unchecked" when there is no operator to ask */
 export type Feasibility = "unknown" | "checking" | "feasible" | "collision" | "ik_failed" | "invalid" | "unchecked"
 
 export interface ManipulationOptions {
@@ -101,12 +97,14 @@ export interface SavedPose {
 }
 
 export interface ManipulationState {
+    binding: PlannerBinding | null
+    views: OperatorView[]
     /** whether a ManipulationModule answers (null: not asked yet) */
     available: boolean | null
     error: string | null
     planner: PlannerState | null
     groups: PlanningGroup[]
-    hook: HookInfo | null
+    operator: OperatorInfo | null
     /** viser's planning-group toggles */
     selected: string[]
     target: ManipulationTarget | null
@@ -121,7 +119,7 @@ export interface ManipulationState {
     /** what the last action said: plan / execute / cancel / clear (viser's "Last result") */
     last: { action: string; ok: boolean; message: string } | null
     busy: string | null
-    /** without the hook: the gizmo pose's reach by the page's own IK */
+    /** without the operator: the gizmo pose's reach by the page's own IK */
     reach: { reachable: boolean; positionError: number; angleError: number } | null
 }
 
@@ -140,11 +138,13 @@ const CHECKING_STATUSES: Record<string, Feasibility> = {
 
 export class Manipulation {
     readonly state = new Store<ManipulationState>({
+        binding: null,
         available: null,
         error: null,
         planner: null,
         groups: [],
-        hook: null,
+        operator: null,
+        views: [],
         selected: [],
         target: null,
         targetSequence: 0,
@@ -179,16 +179,37 @@ export class Manipulation {
     }
 
     async #call(method: string, path: string, body?: unknown): Promise<Record<string, unknown>> {
+        const binding = this.state.get().binding
+        const bound = method === "POST" && path.startsWith("api/manipulation/") && !path.endsWith("poses")
+        if (bound && !binding) throw new Error("Inspect the active planner before acting")
+        const payload = bound ? { ...(body as Record<string, unknown> ?? {}), binding, plan_id: this.state.get().plan?.id } : body
         const response = await fetch(this.#url(path), {
             method,
-            headers: body === undefined ? {} : { "content-type": "application/json" },
-            body: body === undefined ? undefined : JSON.stringify(body),
+            headers: payload === undefined ? {} : { "content-type": "application/json" },
+            body: payload === undefined ? undefined : JSON.stringify(payload),
         })
         const answer = await response.json().catch(() => ({ error: `${response.status} ${response.statusText}` }))
         if (!response.ok) {
             throw new Error(String(answer.error ?? response.statusText))
         }
+        if (bound && canonical(binding) !== canonical(this.state.get().binding)) throw new Error("Planner changed while the request was in flight")
         return answer
+    }
+
+    query(): string {
+        return new URLSearchParams({ binding: JSON.stringify(this.state.get().binding) }).toString()
+    }
+
+    #forgetBinding(binding: PlannerBinding | null) {
+        this.#planEpoch++
+        this.#uncommitted = false
+        this.#localSequence = -1
+        this.#history = []
+        this.#committedTarget = null
+        this.gizmo.set({ dragging: false })
+        this.state.update({ binding, views: [], target: null, plan: null, preview: null, planner: null, selected: [], groups: [],
+            targetSequence: this.state.get().targetSequence + 1, planSequence: null, operator: null, reach: null, busy: null,
+            feasibility: { status: "unknown", message: "", sequence: this.state.get().targetSequence + 1 } })
     }
 
     /** Whether a planner answers at all, every few seconds while nothing shows it (the full poll is setActive's). */
@@ -217,8 +238,11 @@ export class Manipulation {
         try {
             const answer = await this.#call("GET", "api/manipulation")
             if (answer.available) {
+                const binding = answer.binding as PlannerBinding
+                const bindingChanged = canonical(binding) !== canonical(this.state.get().binding)
+                if (bindingChanged) this.#forgetBinding(binding)
                 const groups = (answer.groups as PlanningGroup[]) ?? []
-                const hadHook = this.state.get().hook !== null
+                const hadOperator = this.state.get().operator !== null
                 const known = new Set(groups.map((group) => group.id))
                 const served = (answer.target as ManipulationTarget | null) ?? null
                 // a target left from another blueprint's planner (its groups aren't this one's) is no target
@@ -229,21 +253,24 @@ export class Manipulation {
                     error: null,
                     planner: answer.state as PlannerState,
                     groups,
-                    hook: (answer.hook as HookInfo | null) ?? null,
+                    views: (answer.views as OperatorView[]) ?? [],
+                    operator: (answer.operator as OperatorInfo | null) ?? null,
                     target,
-                    ...(planEpoch === this.#planEpoch ? { plan: this.#samePlan(wholePlan(answer.plan as ManipulationPlan | null)) } : {}),
+                    ...(planEpoch === this.#planEpoch || bindingChanged ? { plan: this.#samePlan(wholePlan(answer.plan as ManipulationPlan | null)) } : {}),
                     ...(this.state.get().selected.length && this.state.get().selected.every((group) => known.has(group)) ? {} : { selected: defaultSelection(groups) }),
                 })
                 if (target && target.groups.length && !this.#uncommitted) {
                     this.state.update({ selected: target.groups })
                 }
-                if (changed || (!hadHook && this.state.get().hook)) {
+                if (changed || (!hadOperator && this.state.get().operator)) {
                     this.#edited(false)
                 }
             } else {
-                this.state.update({ available: false, error: String(answer.error ?? "no ManipulationModule answered") })
+                this.#forgetBinding(null)
+                this.state.update({ available: false, error: String(answer.error ?? "No operator planner available") })
             }
         } catch (error) {
+            this.#forgetBinding(null)
             this.state.update({ available: false, error: String(error) })
         } finally {
             this.#inFlight = false
@@ -327,15 +354,15 @@ export class Manipulation {
         this.state.update({ reach })
     }
 
-    /** A new target (or a new hook): a new sequence, the plan goes stale, and the planner checks it (viser's worker). */
+    /** A new target (or a new operator): a new sequence, the plan goes stale, and the planner checks it (viser's worker). */
     #edited(bump: boolean) {
-        const { targetSequence, hook, target } = this.state.get()
+        const { targetSequence, operator, target } = this.state.get()
         const sequence = bump ? targetSequence + 1 : targetSequence
         this.state.update({
             targetSequence: sequence,
-            feasibility: { status: !target ? "unknown" : hook ? "checking" : "unchecked", message: "", sequence },
+            feasibility: { status: !target ? "unknown" : operator ? "checking" : "unchecked", message: "", sequence },
         })
-        if (target && hook) {
+        if (target && operator) {
             this.#check()
         }
     }
@@ -406,6 +433,7 @@ export class Manipulation {
     }
 
     async #act(action: string, path: string, body?: unknown) {
+        const binding = canonical(this.state.get().binding)
         this.state.update({ busy: action })
         try {
             const answer = await this.#call("POST", path, body)
@@ -414,18 +442,18 @@ export class Manipulation {
             this.state.update({ last: { action, ok, message } })
             return answer
         } catch (error) {
-            this.state.update({ last: { action, ok: false, message: String(error) } })
+            if (binding === canonical(this.state.get().binding)) this.state.update({ last: { action, ok: false, message: String(error) } })
             return null
         } finally {
-            this.state.update({ busy: null })
+            if (binding === canonical(this.state.get().binding)) this.state.update({ busy: null })
             this.refresh()
         }
     }
 
-    /** viser's can_plan: a target the planner found feasible (when there's a hook to ask), and the planner idle. */
+    /** viser's can_plan: a target the planner found feasible (when there's a operator to ask), and the planner idle. */
     canPlan(): boolean {
-        const { target, feasibility, hook, busy } = this.state.get()
-        return !!target && busy === null && this.#plannerIdle() && (hook ? feasibility.status === "feasible" : true)
+        const { target, feasibility, operator, busy } = this.state.get()
+        return !!target && busy === null && this.#plannerIdle() && (operator ? feasibility.status === "feasible" : true)
     }
 
     /** viser's plan freshness: made for this exact target, groups and planning mode. */
@@ -435,8 +463,8 @@ export class Manipulation {
     }
 
     canExecute(): boolean {
-        const { busy, feasibility, hook } = this.state.get()
-        return this.planIsFresh() && busy === null && this.#plannerIdle() && (hook ? feasibility.status === "feasible" : true)
+        const { busy, feasibility, operator } = this.state.get()
+        return this.planIsFresh() && busy === null && this.#plannerIdle() && (operator ? feasibility.status === "feasible" : true)
     }
 
     canCancel(): boolean {
@@ -578,6 +606,7 @@ export class Manipulation {
 
     /** The backend's `manipulation` event: another page's or the agent's target, plan, preview or execute. */
     applyEvent(event: Record<string, unknown>) {
+        if (!("savedPoses" in event) && canonical(event.binding) !== canonical(this.state.get().binding)) return
         // the target a plan was made for comes back with it: this page's own plan (it's planning), or the same target,
         // is no edit (bumping the sequence would make the plan just made stale, and Preview would do nothing)
         const ownPlan = "plan" in event && this.state.get().busy === "plan"

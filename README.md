@@ -109,6 +109,28 @@ saved pose, and the planner checks it (orange: reachable, red: not); Preview pla
 
 ![Arm: target ghost, planned path and the Plan and move panel](docs/arm.jpg)
 
+The operator integration branch discovers the active run through Desktop and binds each planner request to
+`{run_id, module, session}`. It requires an engine exposing `describe_operator` and `operator_request`.
+Older engines show an explicit unavailable reason; installing a process hook is no longer supported.
+`GET api/manipulation` supplies the binding. Include it in mutation bodies (or the JSON `binding` query for
+model/scene reads), and include the inspected `plan_id` for Preview and Execute. A changed session clears
+cached targets and plans. Opening Controller does not start another coordinator or device connection.
+
+For OpenYAM, the existing blueprint's spatial view opens in the main panel. It carries the three camera
+views, Home, Hold, Resume and episode Record / Stop & save / Discard into Controller, and opens separately
+for WebXR. The Arms panel uses the ordinary planner for targets, saved poses, preview, execution and cancel.
+The bottom **Record** control still creates a general stream log; **Record** inside Spatial workstation
+creates a training episode. The two recordings have different semantics.
+
+This is the first M1 increment, not full acceptance: the sim's planner model contains frames and joint
+limits, so the thin-link preview is kinematic and does not validate collisions. Detailed measured arm
+geometry stays in the spatial view. A unified renderer, run-bound browser gripper/jogging controls,
+physical acceptance and headset regression checks remain. Dual-arm ACT training is a later milestone.
+
+The Desktop gateway also needs the remote-proxy fix that uses deployed RPC names even when its importable
+local module class comes from an older checkout. Otherwise discovery succeeds but new method calls fail.
+
+
 ## Recording
 
 **Record** writes an mcap of every stream (dimos's logs included), readable in Foxglove. **…** picks the folder,

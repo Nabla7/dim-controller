@@ -10,6 +10,7 @@ import { ArmsPanel, armsPanelShown } from "./ArmsPanel.tsx"
 import { ARMS_PANEL } from "./workspace.ts"
 import { panelTitle } from "./commands.ts"
 import { PolicyPanel } from "./PolicyPanel.tsx"
+import { OperatorViews } from "./OperatorViews.tsx"
 
 export function InfoPanels({ app }: { app: ViewerApp }) {
     const { issues } = useStore(app.tfIssues)
@@ -19,6 +20,7 @@ export function InfoPanels({ app }: { app: ViewerApp }) {
     const policy = useStore(app.policy.state)
     return (
         <>
+            <OperatorViews app={app} />
             {policy.required && <Panel id="sonic" title="SONIC" icon="humanoid" bodyClassName="panel-body">
                 <PolicyPanel app={app} />
             </Panel>}

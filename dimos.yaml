@@ -40,7 +40,7 @@ provides:
     openapi: 3.1.0
     info:
         title: Controller
-        version: 2.0.0
+        version: 3.0.0
         description: >-
             Controller: drive the running robot (keyboard / sticks, velocity commands, stop) while watching its live
             3D view (point clouds, costmap, pose, planned path, TF) and cameras; recording to mcap, location labels,
@@ -571,11 +571,9 @@ provides:
         /api/manipulation:
             get:
                 description: >-
-                    The arm's planner (dimos's ManipulationModule): available (false with error when none answers),
-                    state (operation_status, execution_status, has_pending_plan, groups: {<group>: {joints {name,
-                    position}, end_effector_pose (world), gripper_position, joint_presets {home, init}}}), planning
-                    groups (id, joint_names, base_frame, tip_frame, has_gripper), the target shown as the ghost arm,
-                    and the plan last made (id, duration, jointNames, times, positions).
+                    Discover the selected Desktop run and its planner instance. Returns binding {run_id, module,
+                    session}, state, planning groups, target, plan and advertised spatial views. Include this exact
+                    binding in every planning action; a changed session invalidates targets and plans.
                 x-when: 'you need the arm planner''s state, target, groups or last plan'
         /api/manipulation/target:
             post:
@@ -591,6 +589,9 @@ provides:
                         application/json:
                             schema:
                                 properties:
+                                    binding:
+                                        description: Exact binding from GET api/manipulation
+                                        type: object
                                     clear:
                                         description: remove the target
                                         type: boolean
@@ -612,21 +613,25 @@ provides:
                                     source:
                                         description: joints | cartesian
                                         type: string
+                                required:
+                                    - binding
                                 type: object
         /api/manipulation/plan:
             post:
                 description: >-
-                    Plan from where the arm is to the target (the body's, else the current one), collision-checked
-                    by the ManipulationModule: mode joint (default lv.manip.mode) plans to the groups' joints, mode
-                    cartesian a straight TCP path to the poses (with the hook; without it plan_to_poses). On success
-                    the plan is kept for Preview and Execute and every page draws its path. speed: the plan's speed
-                    scale 0.05-1 (default lv.manip.speed).
+                    Plan in the inspected planner. Joint mode follows the supplied joints or pose targets; Cartesian
+                    mode requests a straight TCP path. Geometry and collision coverage are those supplied by the
+                    robot model. A successful plan is kept for Preview and Execute; both require its plan_id. speed:
+                    0.05-1.
                 x-when: you want a collision-checked plan to the arm target
                 requestBody:
                     content:
                         application/json:
                             schema:
                                 properties:
+                                    binding:
+                                        description: Exact binding from GET api/manipulation
+                                        type: object
                                     groups:
                                         type: array
                                     joints:
@@ -639,40 +644,106 @@ provides:
                                     speed:
                                         description: 0.05-1
                                         type: number
+                                required:
+                                    - binding
                                 type: object
         /api/manipulation/preview:
             post:
                 summary: Play the kept plan on the ghost arm in every open page (the real arm doesn't move).
                 x-when: you want to show the planned arm motion without moving the arm
+                requestBody:
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    binding:
+                                        description: Exact binding from GET api/manipulation
+                                        type: object
+                                    plan_id:
+                                        description: ID of the plan inspected by this caller
+                                        type: string
+                                required:
+                                    - binding
+                                    - plan_id
+                                type: object
         /api/manipulation/execute:
             post:
                 summary: Run the kept plan on the arm.
                 x-when: you want the arm to run the kept plan
+                requestBody:
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    binding:
+                                        description: Exact binding from GET api/manipulation
+                                        type: object
+                                    plan_id:
+                                        description: ID of the plan inspected by this caller
+                                        type: string
+                                required:
+                                    - binding
+                                    - plan_id
+                                type: object
         /api/manipulation/cancel:
             post:
                 summary: Stop planning or the running trajectory.
                 x-when: you need the arm's planning or motion stopped
+                requestBody:
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    binding:
+                                        description: Exact binding from GET api/manipulation
+                                        type: object
+                                required:
+                                    - binding
+                                type: object
         /api/manipulation/clear:
             post:
                 summary: Discard the kept plan.
                 x-when: you want the kept arm plan discarded
+                requestBody:
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    binding:
+                                        description: Exact binding from GET api/manipulation
+                                        type: object
+                                required:
+                                    - binding
+                                type: object
         /api/manipulation/obstacles:
             get:
-                summary: 'The planning scene''s obstacles: name -> pose.'
+                description: >-
+                    Obstacle name to pose mapping from the selected planner. Requires binding as JSON in the query
+                    string.
                 x-when: you need the arm planner's obstacles
+                parameters:
+                    -
+                        name: binding
+                        in: query
+                        required: true
+                        schema:
+                            type: string
+                        description: JSON binding from GET api/manipulation
         /api/manipulation/evaluate:
             post:
                 description: >-
-                    Check a target the way viser's panel does, in the planner's process (needs the hook):
-                    collision-aware IK for poses, collision and limits for joints. Body: a target (groups, joints or
-                    poses, source). Answers success, collision_free, status (FEASIBLE, COLLISION, NO_SOLUTION,
-                    INVALID...), message, joints (the IK's for poses), poses (each group's tip for joints).
+                    Check the target through the selected planner operator: limits and configured collision
+                    geometry, and IK for pose targets. Returns success, collision_free, status, message, joints and
+                    poses. A model without collision geometry cannot establish collision safety.
                 x-when: you want to check an arm target before planning
                 requestBody:
                     content:
                         application/json:
                             schema:
                                 properties:
+                                    binding:
+                                        description: Exact binding from GET api/manipulation
+                                        type: object
                                     groups:
                                         type: array
                                     joints:
@@ -682,26 +753,34 @@ provides:
                                     source:
                                         description: joints | cartesian
                                         type: string
+                                required:
+                                    - binding
                                 type: object
         /api/manipulation/scene:
             get:
                 description: >-
-                    What viser draws besides the arm (needs the hook): obstacles with their shapes (box, sphere,
-                    cylinder, mesh vertices/faces, octree points), grasp proposals (pose, score; best first), the
-                    last preview; each with a version, left out when ?obstacles=&grasps=&preview= already has it.
-                    Without the hook: obstacle poses only (type marker).
+                    Obstacle poses from the selected planner, represented as markers. Requires binding as JSON in
+                    the query string. This adapter does not provide grasp proposals or obstacle mesh geometry.
                 x-when: you need the arm planning scene's shapes and grasp proposals
+                parameters:
+                    -
+                        name: binding
+                        in: query
+                        required: true
+                        schema:
+                            type: string
+                        description: JSON binding from GET api/manipulation
         /api/manipulation/hook:
             get:
                 description: >-
-                    dim-controller's hook in the blueprint's process: loaded (its info: pid, python, groups, joint
-                    topology) and installed (per running dimos run's venv).
+                    Legacy compatibility status. This Controller uses the engine operator RPCs instead of installing
+                    a process hook.
                 x-when: you need to know whether the controller's planner hook is loaded or installed
         /api/manipulation/hook/install:
             post:
                 description: >-
-                    Install (uninstall=true: remove) the hook into the venv of every running dimos run, or venv; it
-                    loads when the blueprint restarts.
+                    Retired endpoint. Returns 410: use an engine with operator RPCs; no environment or running
+                    process is modified.
                 x-when: you want the controller's planner hook installed into the running blueprint
                 requestBody:
                     content:
@@ -848,6 +927,18 @@ provides:
                         schema:
                             type: string
                         description: the button's id (in the path)
+        /api/manipulation/model:
+            get:
+                summary: Loaded robot description from the inspected planner. Pass binding as JSON in the query string.
+                x-when: you need the selected planner's robot model
+                parameters:
+                    -
+                        name: binding
+                        in: query
+                        required: true
+                        schema:
+                            type: string
+                        description: JSON binding from GET api/manipulation
 nix:
     cache:
         aarch64-linux:

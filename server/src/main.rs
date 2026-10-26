@@ -15,10 +15,10 @@ mod frontend;
 mod image;
 mod labels;
 mod logs;
-mod hook_install;
 mod host;
 mod manipulation;
 mod msgs;
+#[cfg(test)]
 mod pickle;
 mod poses;
 mod record;
@@ -163,7 +163,7 @@ async fn main() -> Result<()> {
         annotations: annotations.clone(),
         settings,
         drive: Arc::default(),
-        manipulation: Arc::new(manipulation::Manipulation::new(state.clone())),
+        manipulation: Arc::new(manipulation::Manipulation::new(dimos_app::field(|app| app.desktop_url.as_ref()).unwrap_or_default())),
         desktop_url: Arc::new(dimos_app::field(|app| app.desktop_url.as_ref()).unwrap_or_default()),
     };
     let app = api::routes()
