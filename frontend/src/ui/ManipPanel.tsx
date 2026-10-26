@@ -2,7 +2,7 @@
 // toggles and the scene (grid, robot display, gizmo size, obstacles, grasps). Then
 // viser's Manipulation Panel in its order: status, target (preset, feasibility, the gizmo: arrows move, arcs rotate), planning (next plan speed, planning mode), and joint control. Every action is an
 // api/manipulation endpoint (core/manipulation.ts); the planner is dimos's ManipulationModule, and what the RPCs
-// don't give (the model, feasibility, obstacle shapes, grasps) comes from dim-controller's operator in its process.
+// don't give (the model, feasibility, obstacle shapes, grasps) comes from dim-controller's hook in its process.
 import { useEffect, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { isTypingTarget } from "./keymap.ts"
@@ -43,7 +43,7 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
     const state = useStore(manipulation.state)
     const options = useStore(manipulation.options)
     const view = useStore(app.manipView.status)
-    const { target, selected, operator, planner } = state
+    const { target, selected, hook, planner } = state
     const current = manipulation.currentJoints()
     const busy = state.busy !== null
 
@@ -63,7 +63,7 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
         return (
             <div className="manip-panel" data-testid="manip-panel">
                 <p className="hint" data-testid="manip-unavailable">
-                    Planner unavailable: {state.error}.
+                    No planner: nothing answers dimos's <code>ManipulationModule</code> RPCs ({state.error}). Run a manipulation blueprint (e.g. <code>xarm-perception-sim</code>); the jog controls below work without it.
                 </p>
             </div>
         )
@@ -86,7 +86,6 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
 
     return (
         <div className="manip-panel" data-testid="manip-panel">
-            {state.binding && <p className="hint" data-testid="planner-binding">{state.binding.run_id} · {state.binding.module}</p>}
             <ManipActions app={app} />
             {state.plan && <p className="hint" data-testid="manip-plan-info">Plan {state.plan.id.slice(0, 8)} ({state.plan.mode}): {state.plan.duration.toFixed(2)} s, {state.plan.positions.length} points{state.preview ? " · previewing" : ""}</p>}
 
@@ -109,7 +108,7 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
                     onChange={(display: string) => manipulation.options.update({ display: display as "visual" | "collision" | "both" })}
                 />
             </Field>
-            {view.collisionMissing && <p className="warn-text" data-testid="manip-collision-warning"><b>Collision meshes unavailable.</b> Plans use joint limits and kinematics; robot and workspace collisions are not covered.</p>}
+            {options.display !== "visual" && view.collisionMissing && <p className="warn-text" data-testid="manip-collision-warning"><b>Collision meshes unavailable.</b> Showing visual geometry with collision styling.</p>}
             <Field inline label="Arm in 3D"><Toggle value={options.interact} onChange={(interact: boolean) => manipulation.options.update({ interact })} /></Field>
             <Field inline label="Gizmo scales with view" title="on: the gizmo keeps one size on screen as you zoom; off: a fixed size beside the arm"><Toggle value={options.gizmoScalesWithView} onChange={(gizmoScalesWithView: boolean) => manipulation.options.update({ gizmoScalesWithView })} /></Field>
             <Field inline label="Obstacles"><Toggle value={options.obstacles} onChange={(obstacles: boolean) => manipulation.options.update({ obstacles })} /></Field>
@@ -126,8 +125,10 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
             {selected.length > 0 && <p className="hint">State stale: <code>{String(stale)}</code> · execution <b>{planner?.execution_status.name ?? "—"}</b></p>}
             {Object.keys(current).length > 0 && <p className="hint" data-testid="manip-current">Current joints: <code>[{Object.values(current).map((value) => value.toFixed(3)).join(", ")}]</code></p>}
             {state.last && <p className={state.last.ok ? "hint" : "warn-text"} data-testid="manip-last">Last result: {state.last.action}{state.last.ok ? "" : " failed"}{state.last.message ? `: ${state.last.message}` : ""}</p>}
-            <p className="hint" data-testid="manip-operator">
-                {operator ? "Using the selected blueprint’s planner." : "This engine does not expose the planner operator API."}
+            <p className="hint" data-testid="manip-hook">
+                {hook
+                    ? <>Planner's process (pid {hook.pid}): model, feasibility, obstacles and grasps from dim-controller's hook{hook.visualization ? `, beside ${hook.visualization}` : ""}.</>
+                    : <>No dim-controller hook in the planner's process: {view.model ? "no live collision check, obstacle shapes or grasps" : "no 3D arm, live collision check, obstacle shapes or grasps"}. <HookInstall app={app} /></>}
             </p>
             {view.model ? <p className="hint" data-testid="manip-model">3D arm: {view.model}</p> : view.problem && <p className="hint">3D arm: {view.problem}</p>}
 
@@ -171,9 +172,9 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
                 />
             </Field>
             <p className="hint" data-testid="manip-feasibility">
-                Feasibility: <code>{operator ? state.feasibility.status : "unchecked (no operator)"}</code>
+                Feasibility: <code>{hook ? state.feasibility.status : "unchecked (no hook)"}</code>
                 {state.feasibility.message && state.feasibility.status !== "feasible" ? ` · ${state.feasibility.message}` : ""}
-                {!operator && state.reach && <> · <Badge tone={state.reach.reachable ? "ok" : "warn"} data-testid="manip-reach">{state.reach.reachable ? "reachable" : `unreachable (${(state.reach.positionError * 100).toFixed(1)} cm off)`}</Badge></>}
+                {!hook && state.reach && <> · <Badge tone={state.reach.reachable ? "ok" : "warn"} data-testid="manip-reach">{state.reach.reachable ? "reachable" : `unreachable (${(state.reach.positionError * 100).toFixed(1)} cm off)`}</Badge></>}
             </p>
             <div className="button-row" data-testid="manip-gizmo">
                 <span className="hint">Gizmo: drag an arrow to move, a ring to rotate</span>
@@ -197,7 +198,7 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
                 <div className="manip-joints" data-testid="manip-joints">
                     {selected.flatMap((groupId) => manipulation.groupById(groupId)?.joint_names.map((name) => {
                         const joint = urdfJoint(name)
-                        const control = jointControl(operator?.joint_topology[name], joint?.limit, joint?.type)
+                        const control = jointControl(hook?.joint_topology[name], joint?.limit, joint?.type)
                         const value = control.wrap ? wrapAngle(shown(name)) : shown(name)
                         return (
                             <div className="joint-row" key={`${groupId}/${name}`} data-joint={name}>
@@ -224,6 +225,16 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
 
         </div>
     )
+}
+
+/** Puts the hook into the venv of every running `dimos run`; it loads when the blueprint restarts. */
+function HookInstall({ app }: { app: ViewerApp }) {
+    const install = async () => {
+        const response = await fetch(new URL("api/manipulation/hook/install", location.href).href, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
+        const answer = await response.json().catch(() => ({}))
+        app.manipulation.state.update({ last: { action: "install hook", ok: response.ok, message: String(answer.output ?? answer.error ?? "") } })
+    }
+    return <Button size="sm" onClick={install} data-testid="manip-hook-install" title="Install it into the running blueprint's venv; restart the blueprint to load it">Install hook</Button>
 }
 
 /** Preview / Execute (each planning first when needed) / Cancel / Clear plan: the panel's top row, and the focused 3D

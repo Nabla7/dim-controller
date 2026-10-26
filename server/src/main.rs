@@ -15,17 +15,16 @@ mod frontend;
 mod image;
 mod labels;
 mod logs;
+mod hook_install;
 mod host;
 mod manipulation;
 mod msgs;
-#[cfg(test)]
 mod pickle;
 mod poses;
 mod record;
 mod recorder;
 mod routes;
 mod settings;
-mod view_proxy;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -164,9 +163,8 @@ async fn main() -> Result<()> {
         annotations: annotations.clone(),
         settings,
         drive: Arc::default(),
-        manipulation: Arc::new(manipulation::Manipulation::new(dimos_app::field(|app| app.desktop_url.as_ref()).unwrap_or_default())),
+        manipulation: Arc::new(manipulation::Manipulation::new(state.clone())),
         desktop_url: Arc::new(dimos_app::field(|app| app.desktop_url.as_ref()).unwrap_or_default()),
-        view_client: view_proxy::client()?,
     };
     let app = api::routes()
         .router

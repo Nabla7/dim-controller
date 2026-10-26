@@ -13,7 +13,6 @@ import { decodeMeshFile, meshGeometry, meshUris, parseUrdf } from "dimos-react/t
 import { cachedFile, meshLog, splitHash, storeFile } from "./meshCache.ts"
 import { loadSplats, type SplatAsset, splatFileType, StaleBuildError } from "./splats.ts"
 import type { RobotDescription } from "./robotDescription.ts"
-import { canonical, type Manipulation } from "./manipulation.ts"
 
 export const ROBOT_DESCRIPTION = dimosKey("/robot_description", "std_msgs.String")
 export const FILE_REQUEST = dimosKey("/file_request", "std_msgs.String")
@@ -52,7 +51,6 @@ export class UrdfSource {
     /** loaded splat files by URI, likewise */
     readonly splats = new Map<string, SplatAsset>()
     #xml = ""
-    #plannerBinding: string | null = null
     #users = 0
     #stops: (() => void)[] = []
     #requests: Publisher | null = null
@@ -76,31 +74,6 @@ export class UrdfSource {
     #urdfAsk: { timer: ReturnType<typeof setInterval>; until: number } | null = null
 
     constructor(readonly connection: Connection) {}
-
-    /** A bound planner supplies its own description; unrelated bus publishers cannot replace it. */
-    bindPlanner(planner: Manipulation) {
-        const update = async () => {
-            const binding = planner.state.get().binding
-            const key = binding ? canonical(binding) : null
-            if (key === this.#plannerBinding) return
-            this.#plannerBinding = key
-            this.#xml = ""
-            this.state.update({ description: null, problem: null })
-            if (!key) { this.#askForUrdf(); return }
-            this.#stopAskingForUrdf()
-            try {
-                const response = await fetch(`api/manipulation/model?${planner.query()}`)
-                const answer = await response.json()
-                if (key !== this.#plannerBinding) return
-                if (!response.ok) throw new Error(answer.error ?? "Cannot load planner model")
-                this.#readXml(answer.model.xml, answer.model)
-            } catch (error) {
-                if (key === this.#plannerBinding) this.state.update({ problem: String(error) })
-            }
-        }
-        planner.state.subscribe(update)
-        update()
-    }
 
     /** Starts listening (first user); the returned function lets go (the last one stops it, keeping what's loaded). */
     acquire(): () => void {
@@ -139,7 +112,6 @@ export class UrdfSource {
     /** Asks for /robot_description now (an empty /file_request), again every URDF_ASK_MS until it comes. */
     #askForUrdf() {
         this.#stopAskingForUrdf()
-        if (this.#plannerBinding) return
         const ask = () => {
             if (Date.now() > this.#urdfAsk!.until) {
                 this.#stopAskingForUrdf()
@@ -169,7 +141,6 @@ export class UrdfSource {
     }
 
     #onUrdf(bytes: Uint8Array) {
-        if (this.#plannerBinding) return
         this.#stopAskingForUrdf()
         let xml: string
         try {
@@ -178,23 +149,12 @@ export class UrdfSource {
             this.state.update({ problem: `/robot_description isn't a std_msgs.String: ${error}` })
             return
         }
-        this.#readXml(xml)
-    }
-
-    #readXml(xml: string, model?: { base_link: string; joint_names: string[]; base_pose: { frame_id: string; position: { x: number; y: number; z: number }; orientation: { x: number; y: number; z: number; w: number } } }) {
         // nothing yet (or an empty one) isn't a URDF
         if (xml === this.#xml || !xml) {
             return
         }
         try {
             const description = parseUrdf(xml)
-            if (model) {
-                const p = model.base_pose.position, q = model.base_pose.orientation
-                description.base_link = model.base_link
-                description.base_frame = model.base_pose.frame_id || "world"
-                description.base_pose = { xyz: [p.x, p.y, p.z], quat: [q.x, q.y, q.z, q.w] }
-                description.joint_names = model.joint_names
-            }
             this.#xml = xml
             this.#asked.clear()
             this.#have.clear()

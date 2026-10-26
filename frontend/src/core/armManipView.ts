@@ -95,14 +95,13 @@ export class ArmManipView {
     #sceneVersions: Record<string, number> = {}
     #fetching = false
     #active = false
-    /** without the operator: the ghost's joints from the page's own IK of the dragged pose */
+    /** without the hook: the ghost's joints from the page's own IK of the dragged pose */
     #solved: JointPositions | null = null
     /** the target #solved was solved for: any other (an undo, a preset, a slider) shows its own joints */
     #solvedFor: ManipulationTarget | null = null
     #pathFor = ""
     #releaseUrdf: (() => void) | null = null
     #fixedFrame = ""
-    #frameModel = false
 
     constructor(readonly viewer: Viewer, readonly tf: TfTree, readonly armControl: ArmControl, readonly manipulation: Manipulation, readonly urdf: UrdfSource, readonly isArm: () => boolean) {
         this.root.matrixAutoUpdate = false
@@ -128,7 +127,6 @@ export class ArmManipView {
         const { description } = this.urdf.state.get()
         const model = this.#model
         if (!description) {
-            this.#teardown()
             this.status.update({ problem: "waiting for /robot_description (dimos's UrdfManager)" })
         } else if (model?.description !== description) {
             this.#teardown()
@@ -177,8 +175,7 @@ export class ArmManipView {
         }
         const { description } = model
         const { meshesLoaded, meshesWanted } = this.urdf.state.get()
-        const frameOnly = !description.links.some((link) => link.visuals.length)
-        const from = frameOnly ? " (kinematic preview; no collision geometry)" : ` (URDF${meshesWanted && meshesLoaded < meshesWanted ? `, meshes ${meshesLoaded}/${meshesWanted}` : ""})`
+        const from = ` (URDF${meshesWanted && meshesLoaded < meshesWanted ? `, meshes ${meshesLoaded}/${meshesWanted}` : ""})`
         this.status.update({ model: `${description.name}: ${description.links.length} links, ${description.joint_names.length} joints${from}` })
         // its saved poses (poses.yaml under its name)
         if (description.name) {
@@ -187,7 +184,6 @@ export class ArmManipView {
     }
 
     #teardown() {
-        this.#frameModel = true
         const model = this.#model
         if (!model) {
             return
@@ -209,11 +205,10 @@ export class ArmManipView {
         return framePose && parentPose ? parentPose.clone().invert().multiply(framePose) : null
     }
 
-    /** A URDF model sits at its root link's TF frame, or in the planner's world when the planner (the operator) is there to take poses. */
+    /** A URDF model sits at its root link's TF frame, or in the planner's world when the planner (the hook) is there to take poses. */
     #placeUrdf(model: Model) {
-        if (this.manipulation.state.get().binding) return
         const root = model.kinematics.root
-        const inWorld = this.manipulation.state.get().operator ? this.#relative(root, "world") : null
+        const inWorld = this.manipulation.state.get().hook ? this.#relative(root, "world") : null
         model.baseFrame = inWorld ? "world" : root
         const rootInBase = inWorld ?? new THREE.Matrix4()
         if (!model.rootInBase.equals(rootInBase)) {
@@ -269,9 +264,6 @@ export class ArmManipView {
 
     #measured(): JointPositions {
         const model = this.#model!
-        const planner = this.manipulation.state.get()
-        if (planner.binding) return Object.fromEntries(Object.values(planner.planner?.groups ?? {}).flatMap((group) =>
-            group.joints?.name.map((name, i) => [name, group.joints!.position[i]]) ?? []))
         const fromJointState = urdfPositions(model.kinematics, this.armControl.state.get().joints, isGripperJoint)
         // a URDF's joints are all on TF (UrdfManager): what no joint state names (a torso, a head) comes from there
         return { ...model.kinematics.positionsFrom((child, parent) => this.#relative(child, parent)), ...fromJointState }
@@ -281,13 +273,13 @@ export class ArmManipView {
         return { ...base, ...urdfPositions(this.#model!.kinematics, Object.entries(joints).map(([name, position]) => ({ name, position })), isGripperJoint) }
     }
 
-    /** The target ghost's joints: the target's (a pose target's from the planner's IK, or without the operator the page's). */
+    /** The target ghost's joints: the target's (a pose target's from the planner's IK, or without the hook the page's). */
     #targetPositions(): JointPositions | null {
-        const { target, operator } = this.manipulation.state.get()
+        const { target, hook } = this.manipulation.state.get()
         if (!target) {
             return null
         }
-        if (target.source === "cartesian" && !operator && this.#solved && this.#solvedFor === target) {
+        if (target.source === "cartesian" && !hook && this.#solved && this.#solvedFor === target) {
             return this.#solved
         }
         return this.#withJoints(this.#measured(), target.joints)
@@ -363,7 +355,7 @@ export class ArmManipView {
         const position = new THREE.Vector3()
         const orientation = new THREE.Quaternion()
         handle.matrix.decompose(position, orientation, new THREE.Vector3())
-        const { target, selected, operator } = this.manipulation.state.get()
+        const { target, selected, hook } = this.manipulation.state.get()
         const pose: Pose = { position: position.toArray() as [number, number, number], orientation: [orientation.x, orientation.y, orientation.z, orientation.w], frame: model.baseFrame }
         const next: ManipulationTarget = {
             groups: selected,
@@ -371,7 +363,7 @@ export class ArmManipView {
             poses: { ...(target?.poses ?? {}), [group]: pose },
             source: "cartesian",
         }
-        if (!operator) {
+        if (!hook) {
             // no planner to ask: the page's own IK (no collision check) places the ghost and says whether it reaches
             const tip = this.#tip(group)!
             const inRoot = model.rootInBase.clone().invert().multiply(handle.matrix)
@@ -452,10 +444,9 @@ export class ArmManipView {
         this.#fetching = true
         try {
             const query = new URLSearchParams(Object.entries(this.#sceneVersions).map(([key, value]) => [key, String(value)]))
-            const binding = this.manipulation.query()
-            const response = await fetch(new URL(`api/manipulation/scene?${query}&${binding}`, location.href).href)
-            const answer = (await response.json()) as { operator: boolean; scene: { versions: Record<string, number>; obstacles?: Obstacle[]; grasps?: GraspProposal[] } }
-            if (!response.ok || binding !== this.manipulation.query()) {
+            const response = await fetch(new URL(`api/manipulation/scene?${query}`, location.href).href)
+            const answer = (await response.json()) as { hook: boolean; scene: { versions: Record<string, number>; obstacles?: Obstacle[]; grasps?: GraspProposal[] } }
+            if (!response.ok) {
                 return
             }
             const { scene } = answer
@@ -465,8 +456,8 @@ export class ArmManipView {
             if (scene.grasps) {
                 this.#drawGrasps(scene.grasps)
             }
-            // without the operator there are no versions: poses are fetched every time
-            this.#sceneVersions = answer.operator ? scene.versions : {}
+            // without the hook there are no versions: poses are fetched every time
+            this.#sceneVersions = answer.hook ? scene.versions : {}
             this.viewer.requestRender()
         } catch {
             // the planner went away: the next tick tries again
@@ -541,8 +532,7 @@ export class ArmManipView {
         if (model) {
             this.#placeUrdf(model)
         }
-        const placed = model ? this.tf.lookup(model.baseFrame, frame.fixedFrame) ??
-            (this.manipulation.state.get().binding && model.baseFrame === "world" ? new THREE.Matrix4() : null) : null
+        const placed = model ? this.tf.lookup(model.baseFrame, frame.fixedFrame) : null
         const show = active && !!model && !!placed
         this.root.visible = show
         if (this.urdf.state.get().armDraws !== show) {
@@ -566,25 +556,15 @@ export class ArmManipView {
         }
         const measured = this.#measured()
         model.real.pose(measured)
-        if (this.#frameModel && this.manipulation.state.get().binding) {
-            this.#frameModel = false
-            const points = [...model.kinematics.linkPoses(measured).values()].map((pose) => new THREE.Vector3().setFromMatrixPosition(pose).applyMatrix4(this.root.matrix))
-            const box = new THREE.Box3().setFromPoints(points)
-            const center = box.getCenter(new THREE.Vector3())
-            const span = Math.max(box.getSize(new THREE.Vector3()).length(), 0.5)
-            this.viewer.controls.target.copy(center)
-            this.viewer.camera.position.copy(center).add(new THREE.Vector3(1, -1, 0.8).multiplyScalar(span))
-            this.viewer.controls.update()
-        }
         model.collisionFallback?.pose(measured)
 
-        const { target, feasibility, operator } = this.manipulation.state.get()
+        const { target, feasibility, hook } = this.manipulation.state.get()
         const targetPositions = this.#targetPositions()
         model.target.root.visible = !!targetPositions
         if (targetPositions) {
             model.target.pose(targetPositions)
             model.target.showOnlyMoved(model.real)
-            const infeasible = operator ? feasibility.status !== "feasible" && feasibility.status !== "checking" : this.manipulation.state.get().reach?.reachable === false
+            const infeasible = hook ? feasibility.status !== "feasible" && feasibility.status !== "checking" : this.manipulation.state.get().reach?.reachable === false
             const look = infeasible ? TARGET_INFEASIBLE : TARGET_FEASIBLE
             model.target.tint(look.color, look.opacity)
         }

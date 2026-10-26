@@ -53,7 +53,6 @@ export class RobotModel {
     readonly root = new THREE.Group()
     readonly links = new Map<string, THREE.Group>()
     readonly materials: THREE.MeshStandardMaterial[] = []
-    readonly #frameLinks: { mesh: THREE.Mesh; parent: string; child: string }[] = []
 
     /** `splats`: splat files by URI (core/urdfSource.ts), drawn where a visual names one; none for ghosts */
     constructor(readonly kinematics: Kinematics, geometries: Map<string, THREE.BufferGeometry>, look: { color?: string; opacity?: number; collisionColor?: string } = {}, readonly splats?: Map<string, SplatAsset>) {
@@ -95,17 +94,6 @@ export class RobotModel {
             this.root.add(group)
         }
         this.fill(geometries)
-        // A frame-only model still has an honest kinematic preview. These thin links are
-        // display geometry only; never expose them as collision volumes or robot meshes.
-        if (!kinematics.description.links.some((link) => link.visuals.length)) {
-            const mat = material(look.color ?? "#d9dde3", look.opacity ?? 1)
-            for (const joint of kinematics.description.joints) {
-                const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 1, 8), mat)
-                mesh.userData.kinematic = true
-                this.root.add(mesh)
-                this.#frameLinks.push({ mesh, parent: joint.parent, child: joint.child })
-            }
-        }
     }
 
     readonly #pending: { group: THREE.Group; kind: "visual" | "collision"; item: DescriptionGeometry }[] = []
@@ -197,22 +185,12 @@ export class RobotModel {
 
     /** Places every link for these joint positions. */
     pose(positions: JointPositions) {
-        const poses = this.kinematics.linkPoses(positions)
-        for (const [name, pose] of poses) {
+        for (const [name, pose] of this.kinematics.linkPoses(positions)) {
             const group = this.links.get(name)
             if (group) {
                 group.matrix.copy(pose)
                 group.matrixWorldNeedsUpdate = true
             }
-        }
-        for (const { mesh, parent, child } of this.#frameLinks) {
-            const from = new THREE.Vector3().setFromMatrixPosition(poses.get(parent)!)
-            const to = new THREE.Vector3().setFromMatrixPosition(poses.get(child)!)
-            const direction = to.clone().sub(from)
-            mesh.position.copy(from).add(to).multiplyScalar(0.5)
-            mesh.scale.y = direction.length()
-            mesh.visible = mesh.scale.y > 1e-6
-            if (mesh.visible) mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize())
         }
     }
 

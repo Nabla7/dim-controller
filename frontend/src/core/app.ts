@@ -129,10 +129,8 @@ export class ViewerApp {
         leasePublish()
         this.drive.state.subscribe(leasePublish)
         this.arm = new ArmControl(this.connection, this.drive, profileFor("arm").arm!)
-        urdfSource(this.connection).bindPlanner(this.manipulation)
         this.manipView = new ArmManipView(this.viewer, this.tf, this.arm, this.manipulation, urdfSource(this.connection), () => this.robot.get().type === "arm" || plannerRunning(this.runs.state.get()) || this.manipulation.state.get().available === true)
         this.manipulation.watch()
-        this.manipulation.state.subscribe(() => this.#updateRobot())
         feedTf(this.connection, this.tf, this.viewer, this.tfHistory)
         feedBattery(this.connection, () => this.profile.name)
         this.connection.status.subscribe(() => this.#updateDriveCandidates())
@@ -206,9 +204,6 @@ export class ViewerApp {
         const chosen = chosenType(this.settings.get().profile)
         if (chosen) {
             return { type: chosen, reason: "picked in Settings" }
-        }
-        if (this.manipulation.state.get().available && !Object.keys(this.runs.state.get().blueprints).length) {
-            return { type: "arm", reason: "selected planner exposes arm control" }
         }
         return resolveType({
             robots: this.#robots,
