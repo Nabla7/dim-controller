@@ -130,6 +130,19 @@ physical acceptance and headset regression checks remain. Dual-arm ACT training 
 The Desktop gateway also needs the remote-proxy fix that uses deployed RPC names even when its importable
 local module class comes from an older checkout. Otherwise discovery succeeds but new method calls fail.
 
+Integration check on 2026-10-26: Controller `095b7e0`, engine `3336924e0f`, and gateway compatibility
+patch `333008be0f` ran through the installed Desktop. A headless browser used the shared target API and
+UI Preview/Execute, verified left-arm motion with the right holding, saved/discarded raw episodes,
+and exercised Hold/Home/Resume. Both arms reached their configured Home within 0.002 rad; no page
+errors occurred. The saved capture contains 419 action updates, 417 states and 51/47 wrist frames.
+The check first supplied simulated controller input to engage both arms and grippers: it does not
+establish a cold-start browser-only workflow or headset/hardware acceptance. The saved episode has
+zero exported training frames; dual-arm ACT was not run.
+
+Checks passed: 82 Rust tests, 305 frontend tests, TypeScript checking, the 47-operation OpenAPI/manifest
+check and a Nix application build. Evidence and reproduction scripts remain outside the repository in
+`/Users/pimvandenbosch/Desktop/openyam-learning-artifacts/operator-controller-20261026/`.
+
 
 ## Recording
 
