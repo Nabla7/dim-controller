@@ -1,6 +1,6 @@
 [package]
 name = "dimos-app-server"
-version = "0.4.8"
+version = "0.4.9"
 edition = "2021"
 description = "Controller's backend for dimOS Desktop: serves the page, drives the robot and records topics to mcap"
 
