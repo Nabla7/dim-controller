@@ -12,6 +12,8 @@ import { Field, Select, Slider, Toggle } from "dimos-react"
 import { type DisplayMode, groupNames, Kinematics, modelPartsOf, RobotModel, staticLinks } from "../core/robotDescription.ts"
 import { type UrdfSource, urdfSource } from "../core/urdfSource.ts"
 import { ensureSparkRenderer, splatFiles } from "../core/splats.ts"
+import { rendering } from "../core/render/rendering.ts"
+import { applyMeshStyle } from "../core/render/meshStyle.ts"
 
 export interface RobotModelSettings {
     opacity: number
@@ -37,6 +39,7 @@ class RobotModelLayer {
     #source: UrdfSource
     #release: () => void
     #stopState: () => void
+    #stopRendering: () => void
     #model: RobotModel | null = null
     #kinematics: Kinematics | null = null
     #drawing = false
@@ -49,6 +52,7 @@ class RobotModelLayer {
         this.#release = this.#source.acquire()
         this.#stopState = this.#source.state.subscribe(() => this.#sync())
         settings.subscribe(() => this.#rebuild())
+        this.#stopRendering = rendering.subscribe(() => this.#applyMeshStyle())
         this.#sync()
     }
 
@@ -58,6 +62,7 @@ class RobotModelLayer {
             this.#kinematics = new Kinematics(description)
             this.#rebuild()
         } else if (this.#model && meshVersion && this.#model.fill(this.#source.geometries)) {
+            this.#applyMeshStyle()
             this.#tfVersion = -1
             this.context.viewer.requestRender()
         }
@@ -83,8 +88,18 @@ class RobotModelLayer {
         this.#model.setTextures(textures ?? true)
         this.#model.setSplatCutAbove(splatCutAbove ?? 2.5)
         this.root.add(this.#model.root)
+        this.#applyMeshStyle()
         this.#tfVersion = -1
         this.context.viewer.requestRender()
+    }
+
+    /** Settings → Meshes: solid or wireframe (core/render/meshStyle.ts) */
+    #applyMeshStyle() {
+        if (this.#model) {
+            const { meshStyle, wireframeColor } = rendering.get()
+            applyMeshStyle(this.#model.root, meshStyle, wireframeColor)
+            this.context.viewer.requestRender()
+        }
     }
 
     #problem: string | null = null
@@ -160,6 +175,7 @@ class RobotModelLayer {
     dispose() {
         this.#setDrawing(false)
         this.#stopState()
+        this.#stopRendering()
         this.#release()
         this.#model?.dispose()
     }

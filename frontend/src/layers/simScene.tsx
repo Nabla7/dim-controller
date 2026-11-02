@@ -12,6 +12,8 @@ import { buildScene, type SceneData } from "../core/sceneData.ts"
 import { SimLighting } from "../core/simLighting.ts"
 import { bladeCount, isSoftwareRenderer, probeRendererName, windTime } from "../core/grass.ts"
 import { readLocal, writeLocal } from "../core/videoQuality.ts"
+import { rendering } from "../core/render/rendering.ts"
+import { applyMeshStyle } from "../core/render/meshStyle.ts"
 
 export const SCENE_DATA = dimosKey("/scene_data", "std_msgs.String")
 export const SCENE_DATA_REQUEST = dimosKey("/scene_data_request", "std_msgs.String")
@@ -75,6 +77,7 @@ class SimSceneLayer {
     #asking: ReturnType<typeof setInterval>
     #requests: Publisher | null = null
     #unsubscribeGrass: () => void
+    #unsubscribeRendering: () => void
     #lighting: SimLighting
 
     constructor(readonly context: LayerContext, readonly topic: Topic, readonly settings: Store<SimSceneSettings>) {
@@ -83,6 +86,7 @@ class SimSceneLayer {
         this.root.matrixAutoUpdate = false
         settings.subscribe(() => this.#applySettings())
         this.#unsubscribeGrass = grassSettings().subscribe(() => this.#applySettings())
+        this.#unsubscribeRendering = rendering.subscribe(() => this.#applySettings())
         this.#stop = context.connection.subscribe(SCENE_DATA, { delivery: "reliable" }, (message) => {
             let data: SceneData
             try {
@@ -153,6 +157,8 @@ class SimSceneLayer {
             material.depthWrite = alpha >= 1
             mesh.visible = lowestZ(mesh) <= cutAbove
         })
+        const { meshStyle, wireframeColor } = rendering.get()
+        applyMeshStyle(scene.root, meshStyle, wireframeColor)
         for (const light of scene.lights) {
             light.visible = lights
         }
@@ -219,6 +225,7 @@ class SimSceneLayer {
     dispose() {
         clearInterval(this.#asking)
         this.#unsubscribeGrass()
+        this.#unsubscribeRendering()
         this.#stop()
         this.#requests?.close()
         if (this.#scene) {

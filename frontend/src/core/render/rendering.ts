@@ -1,9 +1,11 @@
-// Rendering choices that apply to every point layer: the default point style (a layer can override it), cube shading, and the
+// Rendering choices that apply to every point layer: the default point style (a layer can override it), cube shading, how
+// meshes draw (meshStyle.ts: solid or wireframe, for the simulated world and the robot model), and the
 // automatic fallback that swaps splats for cubes when they can't keep up. The materials themselves are dimos-react's.
 import type * as THREE from "three"
 
 import type { Viewer } from "dimos-react/three"
 import { persistentStore, Store } from "../store.ts"
+import type { MeshStyle } from "./meshStyle.ts"
 
 export type PointStyle = "voxel" | "splat" | "disc" | "square"
 export type CubeShade = "soft" | "sky" | "outline" | "bevel" | "memworld"
@@ -26,7 +28,7 @@ export interface PointLook {
 }
 
 // v2: the default moved from glow to cubes, and a stored "glow" from before that shouldn't hide the new default
-export const rendering = persistentStore<{ pointStyle: PointStyle; cubeShade: CubeShade }>("lv.rendering.v2", { pointStyle: "voxel", cubeShade: "soft" })
+export const rendering = persistentStore<{ pointStyle: PointStyle; cubeShade: CubeShade; meshStyle: MeshStyle; wireframeColor: string }>("lv.rendering.v2", { pointStyle: "voxel", cubeShade: "soft", meshStyle: "solid", wireframeColor: "#ffb84d" })
 
 /** Set while splats are being drawn as cubes because frames took longer than FRAME_BUDGET_MS for a while. */
 export const splatFallback = new Store<{ active: boolean; frameMs: number }>({ active: false, frameMs: 0 })

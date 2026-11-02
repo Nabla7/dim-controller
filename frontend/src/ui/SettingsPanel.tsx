@@ -6,7 +6,7 @@ import { useStore } from "../core/store.ts"
 import { profiles } from "../profile/index.ts"
 import { RobotIcon } from "./RobotIcon.tsx"
 import { armShading } from "./armShading.ts"
-import { Button, Disclosure, Field, Heading, NumberInput, Select, TextInput, Toggle } from "dimos-react"
+import { Button, ColorSwatch, Disclosure, Field, Heading, NumberInput, Select, TextInput, Toggle } from "dimos-react"
 import { useState } from "react"
 import { GamepadModal } from "./GamepadModal.tsx"
 import { gamepadSettings } from "../core/gamepad.ts"
@@ -22,6 +22,7 @@ import { useTfFrames } from "./useTfFrames.ts"
 import { CamerasIn3dToggle } from "./ScenePanel.tsx"
 import { CUBE_SHADES } from "dimos-react/three"
 import type { CubeShade, PointStyle } from "../core/render/rendering.ts"
+import { MESH_STYLES, type MeshStyle } from "../core/render/meshStyle.ts"
 import { Stepper } from "./Stepper.tsx"
 
 export function SettingsPanel({ app }: { app: ViewerApp }) {
@@ -56,7 +57,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
     )
 }
 
-/** The 3D view's cog: following, cameras in 3D, then how it draws (point style, cubes, the robot model, the view cube, stats). */
+/** The 3D view's cog: following, cameras in 3D, then how it draws (point style, cubes, meshes, the robot model, the view cube, stats). */
 export function SceneSettings({ app }: { app: ViewerApp }) {
     const view = useStore(app.settings)
     const render = useStore(rendering)
@@ -81,6 +82,18 @@ export function SceneSettings({ app }: { app: ViewerApp }) {
                     onChange={(cubeShade: string) => rendering.update({ cubeShade: cubeShade as CubeShade })}
                 />
             </Field>
+            <Field inline label="Meshes" title="how the simulated world and the robot model draw: solid, or wireframe (each mesh's edges, its faces hidden)">
+                <Select
+                    data-testid="mesh-style"
+                    aria-label="Meshes"
+                    value={render.meshStyle}
+                    options={MESH_STYLES}
+                    onChange={(meshStyle: string) => rendering.update({ meshStyle: meshStyle as MeshStyle })}
+                />
+            </Field>
+            {render.meshStyle === "wireframe" && (
+                <Field inline label="Wireframe color"><ColorSwatch value={render.wireframeColor} onChange={(wireframeColor: string) => rendering.update({ wireframeColor })} /></Field>
+            )}
             <Field inline label="Robot model" title="the robot's URDF when it publishes one, else a box at its pose (an arm is drawn by its TF frames)"><Toggle value={view.robotModel !== false} onChange={(robotModel: any) => app.settings.update({ robotModel })} /></Field>
             <Field inline label="View cube" title="a cube in the 3D view's top-right corner: click a face, edge or corner to look from there, drag it to orbit"><Toggle value={view.viewCube === true} onChange={(viewCube: any) => app.settings.update({ viewCube })} /></Field>
             <Field inline label="Stats"><Toggle value={view.showStats} onChange={(showStats: any) => app.settings.update({ showStats })} /></Field>
