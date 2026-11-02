@@ -25,7 +25,7 @@ export default defineConfig({
             "/gateways": { target: desktop, ws: true, changeOrigin: true, headers: { referer: `${desktop}/apps/${app}/` } },
             "/api": { target: `${desktop}/apps/${app}`, changeOrigin: true },
             // served under /apps/<name>/ (vite --base /apps/<name>/, as Desktop serves it, so the page hears its events)
-            [`/apps/${app}/api`]: { target: desktop, changeOrigin: true },
+            [`/apps/${app}/api`]: { target: desktop, changeOrigin: true }, // dimos-yaml-check: ignore (the dev proxy, not a call)
         },
     },
     build: { target: "es2022", chunkSizeWarningLimit: 1500 },
