@@ -24,7 +24,7 @@ restart() {
         fi
         sleep 0.5
     done
-    echo "the controller backend didn't come back (its log: dimos-desktop logs dim-controller)" >&2
+    echo "the controller backend didn't come back (its output: the App Store, on dim-controller's page)" >&2
     return 1
 }
 
