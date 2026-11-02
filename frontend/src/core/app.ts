@@ -115,7 +115,8 @@ export class ViewerApp {
         this.#profile = profileFor(first.type)
         this.robot = new Store({ type: first.type, auto: true, reason: first.reason })
         this.connection = new Connection(this.profile.drive.deadmanMs)
-        this.viewer = new Viewer(host, { clock: () => this.connection.bridgeNow() })
+        // (MSAA: without it voxel and mesh edges stair-step, even at a retina 2x)
+        this.viewer = new Viewer(host, { clock: () => this.connection.bridgeNow(), antialias: true })
         // a drag pans (Shift+drag orbits: OrbitControls turns a modified pan into an orbit); a right-drag orbits
         this.viewer.controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
         watchSplatBudget(this.viewer)
