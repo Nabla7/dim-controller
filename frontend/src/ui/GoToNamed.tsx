@@ -1,5 +1,5 @@
 // "Go to": once dimos's NamedLocations module has sent its locations (core/namedLocations.ts), a button in the bar (a
-// phone: its corners) listing them; a click on a name sends the robot there (/go_to_named_location).
+// phone: its corners) listing them; a click on a name sends the robot there (/go_to_location_label).
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { Button, Card } from "dimos-react"
