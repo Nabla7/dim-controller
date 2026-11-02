@@ -15,7 +15,7 @@ import { allLayerTypes } from "../core/layers/registry.ts"
 import { type Store, useStore } from "../core/store.ts"
 import { CLOUD_PRESETS, cloudQualities, cloudQualityOf, type CloudQuality, type CloudRate, cloudRates, formatBytes, formatCount, setCloudQuality } from "../core/cloudQuality.ts"
 import { GRADIENTS, ViewCube } from "dimos-react/three"
-import type { PointLook } from "../core/render/rendering.ts"
+import { COLOR_MODES, type PointLook } from "../core/render/rendering.ts"
 import type { CloudSettings } from "../layers/pointcloud.tsx"
 import { Icon } from "./icons.tsx"
 import { Button, Card, NumberInput, SearchInput, Segmented, Select, Slider, Tabs, Toggle } from "dimos-react"
@@ -39,7 +39,6 @@ import { SceneSettings } from "./SettingsPanel.tsx"
 import { SnapshotTools } from "./SnapshotGallery.tsx"
 import { saveSnapshot, snapshot3d } from "../core/snapshots.ts"
 
-const COLOR_MODES: [PointLook["colorMode"], string][] = [["height", "by height"], ["intensity", "by intensity"], ["range", "by distance"], ["solid", "solid"]]
 
 const isCloud = (entry: LayerEntry) => entry.topic.type === "sensor_msgs.PointCloud2"
 /** the menu's first group: the point clouds, each with its bandwidth preset and look */
@@ -309,7 +308,7 @@ function CloudRow({ app, entry, rate }: { app: ViewerApp; entry: LayerEntry; rat
                         ))}
                     </div>
                     <Select size="sm" className="cloud-color" value={look.colorMode} aria-label={`${entry.topic.name} color by`} options={COLOR_MODES} onChange={(colorMode) => setLook({ colorMode })} />
-                    {look.colorMode === "solid"
+                    {look.colorMode === "clear" ? null : look.colorMode === "solid"
                         ? (
                             <>
                                 <input type="color" className="cloud-solid" value={look.solid} aria-label={`${entry.topic.name} solid color`} onChange={(event) => setLook({ solid: event.target.value })} />

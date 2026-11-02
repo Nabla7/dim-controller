@@ -9,7 +9,9 @@ import type { MeshStyle } from "./meshStyle.ts"
 
 export type PointStyle = "voxel" | "splat" | "disc" | "square"
 export type CubeShade = "soft" | "sky" | "outline" | "bevel" | "memworld"
-export type ColorMode = "height" | "intensity" | "range" | "solid"
+export type ColorMode = "height" | "intensity" | "range" | "solid" | "clear"
+/** the color choices a point layer offers ("clear": see-through grey boxes, core/render/clearVoxels.ts) */
+export const COLOR_MODES: [ColorMode, string][] = [["height", "by height"], ["intensity", "by intensity"], ["range", "by distance"], ["solid", "solid"], ["clear", "clear"]]
 
 /** A point layer's look (its settings); "default" style follows Settings → Rendering. */
 export interface PointLook {
@@ -39,9 +41,10 @@ export function resolveStyle(style: PointStyle | "default"): PointStyle {
     return chosen === "splat" && splatFallback.get().active ? "voxel" : chosen
 }
 
-/** The look dimos-react's applyLook takes: the style resolved, the global cube shading added. */
+/** The look dimos-react's applyLook takes: the style resolved, the global cube shading added ("clear" hides the points'
+ * own shader, so it keeps the height coloring there). */
 export function materialLook(look: PointLook) {
-    return { ...look, style: resolveStyle(look.style), cubeShade: rendering.get().cubeShade }
+    return { ...look, style: resolveStyle(look.style), colorMode: look.colorMode === "clear" ? "height" as const : look.colorMode, cubeShade: rendering.get().cubeShade }
 }
 
 export const FRAME_BUDGET_MS = 16

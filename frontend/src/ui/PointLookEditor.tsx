@@ -1,6 +1,6 @@
 // Edits how points look: style, size, color mode, gradient and range. Used by every layer that draws points.
 import { GRADIENTS, gradientCss, POINT_STYLES } from "dimos-react/three"
-import { type PointLook, rendering } from "../core/render/rendering.ts"
+import { COLOR_MODES, type PointLook, rendering } from "../core/render/rendering.ts"
 import { useStore } from "../core/store.ts"
 import { StylePicker } from "./StylePicker.tsx"
 import { ColorSwatch, Field, NumberInput, Select, Slider } from "dimos-react"
@@ -18,9 +18,9 @@ export function PointLookEditor({ look, onChange }: { look: PointLook; onChange:
                 <Slider min={0.01} max={0.5} step={0.01} value={look.size} format={(size) => `${Math.round(size * 100)} cm`} onChange={(size) => set({ size })} />
             </Field>
             <Field inline label="Color">
-                <Select value={look.colorMode} options={[["height", "by height"], ["intensity", "by intensity"], ["range", "by distance"], ["solid", "solid"]]} onChange={(colorMode) => set({ colorMode: colorMode as PointLook["colorMode"] })} />
+                <Select data-testid="cloud-color-mode" value={look.colorMode} options={COLOR_MODES} onChange={(colorMode) => set({ colorMode: colorMode as PointLook["colorMode"] })} />
             </Field>
-            {look.colorMode === "solid"
+            {look.colorMode === "clear" ? null : look.colorMode === "solid"
                 ? (
                     <Field inline label="Solid">
                         <ColorSwatch value={look.solid} onChange={(solid) => set({ solid })} />
@@ -46,9 +46,11 @@ export function PointLookEditor({ look, onChange }: { look: PointLook; onChange:
                         </Field>
                     </>
                 )}
-            <Field inline label="Opacity">
-                <Slider min={0.05} max={1} step={0.05} value={look.opacity} format={(opacity) => `${Math.round(opacity * 100)}%`} onChange={(opacity) => set({ opacity })} />
-            </Field>
+            {look.colorMode !== "clear" && (
+                <Field inline label="Opacity">
+                    <Slider min={0.05} max={1} step={0.05} value={look.opacity} format={(opacity) => `${Math.round(opacity * 100)}%`} onChange={(opacity) => set({ opacity })} />
+                </Field>
+            )}
         </>
     )
 }
