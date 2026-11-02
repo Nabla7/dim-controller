@@ -1,8 +1,7 @@
 // dimos's NamedLocations module (dimos/navigation/named_locations): named poses it keeps in the prior map's `map` frame.
-// It sends every location as one InteractiveMarkerUpdate on /location_labels (at start, after each change, and on each
-// /location_labels_request, which the page sends on every connect). /set_location_label adds or moves poses by name,
-// /delete_location_label removes a name (a rename is a set of the new name, then a delete of the old), and
-// /go_to_location_label sends the robot to one.
+// It sends every location as one InteractiveMarkerUpdate on /named_locations (at start, after each edit, and on each
+// /named_locations_request, which the page sends on every connect); edits go back on /named_location_edits (erases
+// first, then poses set by name: a rename is both in one message) and /go_to_named_location sends the robot to one.
 // `state.locations` is null until a snapshot comes: then the module is there, and the 3D view's labels are these (core/labels.ts).
 import { decode, encode } from "./lcm/lcm.ts"
 import { Store } from "./store.ts"
@@ -11,11 +10,10 @@ import type { LocationLabel } from "./labels.ts"
 
 export const UPDATE_TYPE = "visualization_msgs.InteractiveMarkerUpdate"
 export const STRING_TYPE = "std_msgs.String"
-export const SNAPSHOT_KEY = dimosKey("/location_labels", UPDATE_TYPE)
-export const SET_KEY = dimosKey("/set_location_label", UPDATE_TYPE)
-export const DELETE_KEY = dimosKey("/delete_location_label", STRING_TYPE)
-export const REQUEST_KEY = dimosKey("/location_labels_request", STRING_TYPE)
-export const GO_TO_KEY = dimosKey("/go_to_location_label", STRING_TYPE)
+export const SNAPSHOT_KEY = dimosKey("/named_locations", UPDATE_TYPE)
+export const EDITS_KEY = dimosKey("/named_location_edits", UPDATE_TYPE)
+export const REQUEST_KEY = dimosKey("/named_locations_request", STRING_TYPE)
+export const GO_TO_KEY = dimosKey("/go_to_named_location", STRING_TYPE)
 
 /** A location to set: its name and pose (any frame TF relates to map). */
 export type NamedPose = Pick<LocationLabel, "label" | "frame_id" | "position" | "orientation">
@@ -36,11 +34,12 @@ export function snapshotLabels(bytes: Uint8Array): LocationLabel[] {
     }))
 }
 
-/** A set: `poses` added or moved by name, stamped `nowMs`. */
-export function setBytes(poses: NamedPose[], nowMs = Date.now()): Uint8Array {
+/** One edit: `erases` (names) are removed first, then `poses` are added or moved by name, stamped `nowMs`. */
+export function editBytes(erases: string[], poses: NamedPose[], nowMs = Date.now()): Uint8Array {
     const stamp = stampOf(nowMs)
     return encode(UPDATE_TYPE, {
         server_id: "dim-controller",
+        erases,
         poses: poses.map(({ label, frame_id, position: [x, y, z], orientation: [qx, qy, qz, qw] }) => ({
             header: { stamp, frame_id },
             pose: { position: { x, y, z }, orientation: { x: qx, y: qy, z: qz, w: qw } },
@@ -75,21 +74,9 @@ export class NamedLocations {
         await client.put(key, bytes)
     }
 
-    /** Adds or moves `poses` by name; the module answers with a fresh snapshot. */
-    set(poses: NamedPose[]): Promise<void> {
-        return this.#put(SET_KEY, setBytes(poses))
-    }
-
-    remove(name: string): Promise<void> {
-        return this.#put(DELETE_KEY, stringBytes(name))
-    }
-
-    /** The new name at the same pose first, then the old one deleted, so it's never gone. */
-    async rename(location: NamedPose, name: string) {
-        await this.set([{ ...location, label: name }])
-        if (name !== location.label) {
-            await this.remove(location.label)
-        }
+    /** Erases `erases`, then sets `poses`; the module answers with a fresh snapshot. */
+    edit(erases: string[], poses: NamedPose[]): Promise<void> {
+        return this.#put(EDITS_KEY, editBytes(erases, poses))
     }
 
     /** Sends the robot to a location (a command: the drive lease covers it). */

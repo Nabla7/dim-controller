@@ -114,7 +114,7 @@ export class LocationLabels {
     async create(text: string, point: THREE.Vector3, frame = this.app.viewer.fixedFrame): Promise<{ recorded: boolean }> {
         if (this.toModule) {
             this.#taken(text)
-            await this.named.set([{ label: text, frame_id: frame, position: point.toArray(), orientation: [0, 0, 0, 1] }])
+            await this.named.edit([], [{ label: text, frame_id: frame, position: point.toArray(), orientation: [0, 0, 0, 1] }])
             return { recorded: false }
         }
         const response = await fetch(url("api/labels"), {
@@ -135,7 +135,7 @@ export class LocationLabels {
             if (text !== label.id) {
                 this.#taken(text)
             }
-            return await this.named.rename({ ...label, label: label.id }, text)
+            return await this.named.edit([label.id], [{ ...label, label: text }])
         }
         const response = await fetch(url(`api/labels/${encodeURIComponent(label.id)}`), {
             method: "PATCH",
@@ -149,7 +149,7 @@ export class LocationLabels {
 
     async remove(id: string) {
         if (this.toModule) {
-            return await this.named.remove(id)
+            return await this.named.edit([id], [])
         }
         const response = await fetch(url(`api/labels/${encodeURIComponent(id)}`), { method: "DELETE" })
         if (!response.ok && response.status !== 404) {
