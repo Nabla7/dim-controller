@@ -362,6 +362,31 @@ provides:
                         schema:
                             type: string
                         description: 'the label''s id, from GET api/labels'
+            patch:
+                description: >-
+                    Give a location label new text (it stays where it is); if a recording is running the rename is
+                    written into it on /labels. Returns {label, recorded}; 404 if there is no such label, 400 for
+                    empty text.
+                x-when: you want to rename a named place on the map
+                parameters:
+                    -
+                        name: id
+                        in: path
+                        required: true
+                        schema:
+                            type: string
+                        description: 'the label''s id (in the path), from GET api/labels'
+                requestBody:
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    label:
+                                        description: the new text shown at the point
+                                        type: string
+                                required:
+                                    - label
+                                type: object
         /api/annotations:
             delete:
                 summary: 'Remove every annotation. Returns {removed} (how many were removed).'

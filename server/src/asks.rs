@@ -100,6 +100,7 @@ pub fn decode_file(payload: &[u8]) -> Option<(String, &[u8])> {
     Some((uri, &payload[12 + length..]))
 }
 
+#[cfg(test)]
 pub fn file_uri(payload: &[u8]) -> Option<String> {
     decode_file(payload).map(|(uri, _)| uri)
 }

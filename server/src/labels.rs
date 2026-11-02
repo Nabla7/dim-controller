@@ -1,6 +1,6 @@
 //! Location labels: text pinned to a pose in the viewer's fixed (root) frame, made by right-clicking the 3D view. They
 //! live for the session here, every open page shows them (the `labels` event on the page event stream), and while a
-//! recording runs each add and delete is written into it, as are the labels that exist when it starts:
+//! recording runs each add, rename and delete is written into it, as are the labels that exist when it starts:
 //! - `/labels`: `dimos.LocationLabel` (JSON): `{timestamp, frame_id, id, label, action, pose: {position, orientation}}`,
 //!   the record an analysis tool reads;
 //! - `/labels/scene`: `foxglove.SceneUpdate` (JSON), a sphere plus the text, so Foxglove's 3D panel shows them.
@@ -24,14 +24,14 @@ pub const SCENE_TOPIC: &str = "/labels/scene";
 const SCENE_SCHEMA: &[u8] = include_bytes!("schemas/foxglove.SceneUpdate.json");
 const LABEL_SCHEMA: &[u8] = br#"{
   "title": "dimos.LocationLabel",
-  "description": "A text label at a pose, made in the Controller (dim-controller) by right-clicking the 3D view. action is add or delete (the id says which).",
+  "description": "A text label at a pose, made in the Controller (dim-controller) by right-clicking the 3D view. action is add, rename (the id's new text) or delete (the id says which).",
   "type": "object",
   "properties": {
     "timestamp": { "type": "object", "properties": { "sec": { "type": "integer" }, "nsec": { "type": "integer" } }, "description": "when it was made" },
     "frame_id": { "type": "string", "description": "the viewer's fixed (root) frame the pose is in" },
     "id": { "type": "string" },
     "label": { "type": "string" },
-    "action": { "type": "string", "enum": ["add", "delete"] },
+    "action": { "type": "string", "enum": ["add", "rename", "delete"] },
     "pose": { "type": "object", "properties": {
       "position": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "z": { "type": "number" } } },
       "orientation": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "z": { "type": "number" }, "w": { "type": "number" } } }
@@ -101,6 +101,17 @@ impl Labels {
         }
         items.insert(label.id.clone(), label.clone());
         Ok(label)
+    }
+
+    /// Gives a label new text; None if there is no such label.
+    pub fn rename(&self, id: &str, text: &str) -> Result<Option<Label>, String> {
+        if text.trim().is_empty() {
+            return Err("a label needs text".into());
+        }
+        Ok(self.items.lock().unwrap().get_mut(id).map(|label| {
+            label.label = text.to_string();
+            label.clone()
+        }))
     }
 
     pub fn remove(&self, id: &str) -> Option<Label> {
@@ -202,6 +213,27 @@ pub async fn add(Extract(api): Extract<Api>, Body(body): Body) -> Response {
     }
 }
 
+#[derive(Deserialize)]
+pub struct Rename {
+    label: String,
+}
+
+pub async fn rename(Extract(api): Extract<Api>, Path(id): Path<String>, Body(body): Body) -> Response {
+    let Rename { label: text } = match serde_json::from_value(body) {
+        Ok(rename) => rename,
+        Err(problem) => return error(StatusCode::BAD_REQUEST, format!("rename: {problem}")),
+    };
+    match api.recorder.labels.rename(&id, &text) {
+        Ok(Some(label)) => {
+            let recorded = api.recorder.record_label(&label, "rename").await;
+            changed(&api);
+            Json(json!({ "label": label, "recorded": recorded })).into_response()
+        }
+        Ok(None) => error(StatusCode::NOT_FOUND, format!("no label {id}")),
+        Err(problem) => error(StatusCode::BAD_REQUEST, problem),
+    }
+}
+
 pub async fn remove(Extract(api): Extract<Api>, Path(id): Path<String>) -> Response {
     match api.recorder.labels.remove(&id) {
         Some(label) => {
@@ -247,7 +279,11 @@ mod tests {
             .is_err());
         assert!(labels.create(made.clone()).is_err(), "taken id");
         assert_eq!(labels.list().len(), 1);
-        assert_eq!(labels.remove("label-1"), Some(made));
+        assert!(labels.rename("label-1", " ").is_err());
+        assert_eq!(labels.rename("nope", "x"), Ok(None));
+        let renamed = labels.rename("label-1", "front door").unwrap().unwrap();
+        assert_eq!((renamed.label.as_str(), renamed.position), ("front door", made.position));
+        assert_eq!(labels.remove("label-1"), Some(renamed));
         assert!(labels.list().is_empty());
     }
 

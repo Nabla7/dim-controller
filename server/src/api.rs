@@ -146,6 +146,7 @@ pub fn routes() -> Routes<Api> {
         // location labels and annotations
         .endpoint("GET", "api/labels", "you want the named places pinned on the map", "Location labels pinned in the map (right-click in the 3D view): id, label, frame_id, position, orientation, created (ns). Returns {labels [...]}.", json!({}), labels::list)
         .endpoint("POST", "api/labels", "you want to name a place on the map", "Pin a text label at a point (the viewer's fixed frame, usually world); if a recording is running it is written into it on /labels. Returns {label (with its new id), recorded (whether it went into a running recording)}; 400 if a field is missing.", json!({ "label": required(s("the text shown at the point")), "frame_id": required(s("the frame of position, e.g. world")), "position": required(vec3("[x, y, z] meters in frame_id")) }), labels::add)
+        .endpoint("PATCH", "api/labels/{id}", "you want to rename a named place on the map", "Give a location label new text (it stays where it is); if a recording is running the rename is written into it on /labels. Returns {label, recorded}; 404 if there is no such label, 400 for empty text.", json!({ "id": required(s("the label's id (in the path), from GET api/labels")), "label": required(s("the new text shown at the point")) }), labels::rename)
         .endpoint("DELETE", "api/labels/{id}", "you want to remove a named place from the map", "Remove a location label. Returns {ok, removed}; 404 if there is no such label.", json!({ "id": required(s("the label's id, from GET api/labels")) }), labels::remove)
         .endpoint("GET", "api/annotations", "you want the labeled 3D boxes shown in the view", "The live annotations (id, label, center, size, yaw, frame, note). Returns {annotations [...]}.", json!({}), annotations::list_annotations)
         .endpoint("POST", "api/annotations", "you want to mark something in the 3D view with a labeled box", "Add a live 3D box annotation with a label; every open page shows it immediately. Returns the annotation as stored (with its id); 400 for a bad field.", box_params, annotations::add_annotation)
@@ -965,6 +966,28 @@ mod tests {
             StatusCode::BAD_REQUEST
         );
         let id = made["label"]["id"].as_str().unwrap();
+        let (status, renamed) = call(
+            &router,
+            "PATCH",
+            &format!("/api/labels/{id}"),
+            Some(json!({ "label": "front door" })),
+        )
+        .await;
+        assert_eq!(
+            (status, renamed["label"]["label"].as_str()),
+            (StatusCode::OK, Some("front door"))
+        );
+        assert_eq!(
+            call(
+                &router,
+                "PATCH",
+                "/api/labels/nope",
+                Some(json!({ "label": "x" }))
+            )
+            .await
+            .0,
+            StatusCode::NOT_FOUND
+        );
         assert_eq!(
             call(&router, "DELETE", &format!("/api/labels/{id}"), None)
                 .await
