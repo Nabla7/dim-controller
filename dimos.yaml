@@ -1020,6 +1020,44 @@ provides:
                                 required:
                                     - panel
                                 type: object
+        /api/view/label:
+            post:
+                description: >-
+                    Has the open page make a label edit as its right-click menu does: with dimos's NamedLocations
+                    module running it goes to the module (a named location, kept in its map frame, that Go to can
+                    send the robot to), else into this session's labels (as POST api/labels). action add (label,
+                    position, frame_id), rename (id, label), remove (id) or list; a label's id is its name with the
+                    module. Returns {ok, via: named_locations | session, labels (what the view shows, before this
+                    edit lands)}; 400 for a missing field, 422 if no page is open or the page refused it (e.g. the
+                    name is taken).
+                x-when: >-
+                    you want to add, rename or remove a named place the way the user does in the 3D view (it goes to
+                    dimos's NamedLocations module when that runs)
+                requestBody:
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    action:
+                                        description: add (the default) | rename | remove | list
+                                        type: string
+                                    frame_id:
+                                        description: 'add: the frame of position (default the 3D view''s fixed frame)'
+                                        type: string
+                                    id:
+                                        description: 'rename, remove: the label''s id, from GET api/labels or the 3D view'
+                                        type: string
+                                    label:
+                                        description: 'add, rename: the text (with NamedLocations: the location''s name, unique)'
+                                        type: string
+                                    position:
+                                        description: 'add: [x, y] or [x, y, z] meters in frame_id (z defaults to 0)'
+                                        items:
+                                            type: number
+                                        maxItems: 3
+                                        minItems: 2
+                                        type: array
+                                type: object
 nix:
     cache:
         aarch64-linux:

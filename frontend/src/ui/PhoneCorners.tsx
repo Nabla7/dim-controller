@@ -1,5 +1,5 @@
-// A phone has no bar across the top or a dock (the thumb sticks and STOP take the bottom): the panel list, Record, the
-// palette and Settings sit over the main view's top corners, and the problem and gamepad chips between them. A phone
+// A phone has no bar across the top or a dock (the thumb sticks and STOP take the bottom): the panel list, Record, Go
+// to (dimos's named locations, when it has them), the palette and Settings sit over the main view's top corners, and the problem and gamepad chips between them. A phone
 // shows one panel at a time (no layout): the list switches between one of each kind.
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
@@ -11,6 +11,7 @@ import { Icon } from "./icons.tsx"
 import { openOverlay } from "./overlay.ts"
 import { popoverPosition } from "./panelDrag.ts"
 import { RecordControl } from "./RecordControl.tsx"
+import { GoToNamed } from "./GoToNamed.tsx"
 import type { WorkspaceApi } from "./Workspace.tsx"
 import { phonePanel } from "./workspace.ts"
 import { kindOf, PANEL_KINDS, type PanelKind } from "./panelCatalog.ts"
@@ -25,6 +26,7 @@ export function PhoneCorners({ app, api }: { app: ViewerApp; api: WorkspaceApi }
             <PanelList app={app} api={api} />
             <div className="corner-chips"><BarChips app={app} api={api} /></div>
             <RecordControl app={app} />
+            <GoToNamed app={app} className="corner-button" />
             <Button className="dr-btn--icon corner-button" aria-label="Command palette" title="Command palette (/)" onClick={() => openOverlay("palette")} data-testid="open-palette">
                 <Icon name="search" size={17} />
             </Button>

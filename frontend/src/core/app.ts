@@ -22,6 +22,7 @@ import { urdfSource } from "./urdfSource.ts"
 import { Manipulation } from "./manipulation.ts"
 import { AgentLink } from "./agent.ts"
 import { LocationLabels } from "./labels.ts"
+import { NamedLocations } from "./namedLocations.ts"
 import { robotPose } from "./robot.ts"
 import { behind, ChaseHeading, headingOf, ridesOn, turnAbout } from "./followHeading.ts"
 import { disposeTree } from "dimos-react/three"
@@ -83,6 +84,8 @@ export class ViewerApp {
     readonly agent: AgentLink
     /** right-click location labels (server/src/labels.rs) */
     readonly labels: LocationLabels
+    /** dimos's NamedLocations module: its locations (null until it answers), edits and go to (core/namedLocations.ts) */
+    readonly namedLocations: NamedLocations
     /** what's running (Desktop's /gateways/dimos/active, live on its zenoh events): the first-run messages and the drive topic */
     readonly runs = new RunWatch()
     /** the fixed frame in use and where the robot is (for the UI) */
@@ -137,7 +140,8 @@ export class ViewerApp {
         this.connection.status.subscribe(() => this.#updateDriveCandidates())
         this.viewer.onFrame((frame) => this.#eachFrame(frame.now))
         this.connection.start()
-        this.labels = new LocationLabels(this)
+        this.namedLocations = new NamedLocations(this.connection)
+        this.labels = new LocationLabels(this, this.namedLocations)
         this.agent = new AgentLink(this)
         this.runs.state.subscribe(() => {
             this.#updateDriveCandidates()

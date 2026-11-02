@@ -13,11 +13,12 @@ export type { Message, Publisher, SubscribeOptions, SubscriptionUpdate }
 
 /**
  * Calling it unsubscribes; `update` changes the running subscription's options in place (same channel and video track);
- * `watchVideoLatency` times the frames a <video> of it shows (kept across resubscribes; returns a function that stops),
+ * `ready` resolves once the gateway accepts the open subscription (after a reconnect: the new one), `watchVideoLatency` times the frames a <video> of it shows (kept across resubscribes; returns a function that stops),
  * `videoLatency` reads them (null before any, or from a gateway before 0.5.21).
  */
 export type LiveHandle = (() => void) & {
     update(changes: SubscriptionUpdate): Promise<void>
+    ready(): Promise<void>
     watchVideoLatency(element: HTMLVideoElement): () => void
     videoLatency(windowMs?: number): VideoLatency | null
 }
@@ -303,7 +304,7 @@ export class Connection {
         }
         // the app's own option changes show in Bandwidth Consumers as its defaults
         const update = (changes: SubscriptionUpdate) => subscription.update(changes).finally(() => this.#refreshConsumers())
-        return Object.assign(unsubscribe, { update, watchVideoLatency: (element: HTMLVideoElement) => subscription.watchVideoLatency(element), videoLatency: (windowMs?: number) => subscription.videoLatency(windowMs) })
+        return Object.assign(unsubscribe, { update, ready: () => subscription.ready(), watchVideoLatency: (element: HTMLVideoElement) => subscription.watchVideoLatency(element), videoLatency: (windowMs?: number) => subscription.videoLatency(windowMs) })
     }
 
     /** The page's drops per second since the last stats poll (`secs` ago), and each stream's link drops (#sampleDrops). */
@@ -375,6 +376,8 @@ export class Connection {
  */
 export class LiveSubscription {
     #handle: Subscription | null = null
+    /** ready() calls waiting for the subscription to open */
+    #opened: (() => void)[] = []
     /** the options the open gateway subscription runs with */
     #running: SubscribeOptions = {}
     #override: StreamOverride | undefined
@@ -407,6 +410,13 @@ export class LiveSubscription {
     get isOpen(): boolean {
         return this.#handle !== null
     }
+    /** Resolves once the gateway accepts the open subscription (waiting for it to open first). */
+    async ready(): Promise<void> {
+        while (!this.#handle) {
+            await new Promise<void>((resolve) => this.#opened.push(resolve))
+        }
+        await this.#handle.ready()
+    }
     open(client: ZenohGateway) {
         if (this.paused || this.#handle) {
             return
@@ -414,6 +424,7 @@ export class LiveSubscription {
         this.#running = this.options
         const handle = client.subscribe(this.key, this.#running, this.onMessage)
         this.#handle = handle
+        this.#opened.splice(0).forEach((resolve) => resolve())
         for (const element of this.#watched.keys()) {
             this.#watch(element)
         }

@@ -1,10 +1,12 @@
 // Location labels (server/src/labels.rs): text pinned to a point in the fixed frame, made from the 3D view's right-click
 // menu. The backend keeps them for the session, tells every page (the `labels` event, via AgentLink) and writes them
-// into a running recording. Drawn here as a marker plus its text, placed through TF like the annotations.
+// into a running recording. Drawn here as a marker plus its text, placed through TF like the annotations. With dimos's
+// NamedLocations module running (core/namedLocations.ts) the labels are its locations instead, and edits go to it.
 import * as THREE from "three"
 import { LabelPool } from "dimos-react/three"
 import { Store } from "./store.ts"
 import type { ViewerApp } from "./app.ts"
+import type { NamedLocations } from "./namedLocations.ts"
 
 export interface LocationLabel {
     id: string
@@ -21,14 +23,17 @@ const COLOR = "#ffd166"
 const url = (path: string) => new URL(path, location.href).href
 
 export class LocationLabels {
+    /** what's drawn: the module's locations once it's there, else the backend's labels */
     readonly list = new Store<LocationLabel[]>([])
+    #rest: LocationLabel[] = []
     readonly group = new THREE.Group()
     #text = new LabelPool("dr-scene-label dr-note")
     #markers = new Map<string, THREE.Mesh>()
     #geometry = new THREE.SphereGeometry(0.07, 16, 12)
     #material = new THREE.MeshBasicMaterial({ color: COLOR, depthTest: false, transparent: true })
 
-    constructor(readonly app: ViewerApp) {
+    constructor(readonly app: ViewerApp, readonly named: NamedLocations) {
+        named.state.subscribe(() => this.#show())
         this.group.userData.noPick = true
         this.group.add(this.#text.group)
         app.viewer.scene.add(this.group)
@@ -39,8 +44,19 @@ export class LocationLabels {
             .catch(() => {})
     }
 
+    /** whether edits go to the NamedLocations module (it has sent its locations) */
+    get toModule(): boolean {
+        return this.named.state.get().locations !== null
+    }
+
     /** The backend's list (on load and on every change). */
     apply(labels: LocationLabel[]) {
+        this.#rest = labels
+        this.#show()
+    }
+
+    #show() {
+        const labels = this.named.state.get().locations ?? this.#rest
         this.list.set(labels)
         const wanted = new Set(labels.map((label) => label.id))
         for (const [id, marker] of this.#markers) {
@@ -88,12 +104,23 @@ export class LocationLabels {
         this.#text.end()
     }
 
-    /** Adds a label at `point` (fixed frame); resolves to whether a recording took it. */
-    async create(text: string, point: THREE.Vector3): Promise<{ label: LocationLabel; recorded: boolean }> {
+    #taken(name: string) {
+        if (this.list.get().some((label) => label.id === name)) {
+            throw new Error(`there's already a location named “${name}”`)
+        }
+    }
+
+    /** Adds a label at `point` (in `frame`); resolves to whether a recording took it (the module's go out on its topic). */
+    async create(text: string, point: THREE.Vector3, frame = this.app.viewer.fixedFrame): Promise<{ recorded: boolean }> {
+        if (this.toModule) {
+            this.#taken(text)
+            await this.named.edit([], [{ label: text, frame_id: frame, position: point.toArray(), orientation: [0, 0, 0, 1] }])
+            return { recorded: false }
+        }
         const response = await fetch(url("api/labels"), {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ label: text, frame_id: this.app.viewer.fixedFrame, position: point.toArray(), orientation: [0, 0, 0, 1] }),
+            body: JSON.stringify({ label: text, frame_id: frame, position: point.toArray(), orientation: [0, 0, 0, 1] }),
         })
         const body = await response.json().catch(() => ({}))
         if (!response.ok) {
@@ -102,11 +129,49 @@ export class LocationLabels {
         return body
     }
 
+    /** Gives a label new text, where it is. */
+    async rename(label: LocationLabel, text: string) {
+        if (this.toModule) {
+            if (text !== label.id) {
+                this.#taken(text)
+            }
+            return await this.named.edit([label.id], [{ ...label, label: text }])
+        }
+        const response = await fetch(url(`api/labels/${encodeURIComponent(label.id)}`), {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ label: text }),
+        })
+        if (!response.ok) {
+            throw new Error((await response.json().catch(() => ({}))).error ?? `${response.status}`)
+        }
+    }
+
     async remove(id: string) {
+        if (this.toModule) {
+            return await this.named.edit([id], [])
+        }
         const response = await fetch(url(`api/labels/${encodeURIComponent(id)}`), { method: "DELETE" })
         if (!response.ok && response.status !== 404) {
             throw new Error(`${response.status}`)
         }
+    }
+
+    /** POST api/view/label (server/src/labels.rs through_page): an edit as the menu makes it, asked of this page. */
+    async fromAgent({ action = "add", id, label, position, frame_id }: { action?: string; id?: string; label?: string; position?: number[]; frame_id?: string }) {
+        const found = this.list.get().find((one) => one.id === id)
+        if ((action === "rename" || action === "remove") && !found) {
+            throw new Error(`no label ${id}`)
+        }
+        if (action === "add") {
+            const [x, y, z = 0] = position!
+            await this.create(label!.trim(), new THREE.Vector3(x, y, z), frame_id || undefined)
+        } else if (action === "rename") {
+            await this.rename(found!, label!.trim())
+        } else if (action === "remove") {
+            await this.remove(found!.id)
+        }
+        return { ok: true, via: this.toModule ? "named_locations" : "session", labels: this.list.get() }
     }
 
     /** The label drawn nearest to a screen point (CSS px in the canvas), within `radius` px. */

@@ -1,5 +1,6 @@
 // The 3D view's right-click menu: label the clicked spot (a text label at that point in the fixed frame, written into
-// the recording if one runs) or remove the label under the cursor. A right-drag still pans: only a right click that
+// the recording if one runs; with dimos's NamedLocations module running, a named location sent to it) or rename or
+// remove the label under the cursor. A right-drag still pans: only a right click that
 // barely moved opens it (a long press on touch). "Go here" publishes clicked_point: it sends the spot to the nav stack (one message).
 import { useEffect, useRef, useState } from "react"
 import type * as THREE from "three"
@@ -16,8 +17,8 @@ interface Menu {
     point: THREE.Vector3 | null
     on: string
     near: LocationLabel | null
-    /** typing the label's text */
-    editing: boolean
+    /** typing a new label's text, or the one under the cursor's new text */
+    editing: false | "new" | "rename"
 }
 
 const fmt = (value: number) => value.toFixed(2)
@@ -102,17 +103,25 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
     }, [note])
 
     const save = async () => {
-        if (!menu?.point || !text.trim()) {
+        if (!menu || !text.trim()) {
             return
         }
-        const { point } = menu
+        const { point, near, editing } = menu
         setMenu(null)
         try {
+            if (editing === "rename" && near) {
+                await app.labels.rename(near, text.trim())
+                setNote(app.labels.toModule ? "Rename sent to NamedLocations" : "Label renamed")
+                return
+            }
+            if (!point) {
+                return
+            }
             const { recorded } = await app.labels.create(text.trim(), point)
-            setNote(recorded ? "Label saved to the recording" : "Label added (no recording running)")
+            setNote(app.labels.toModule ? "Location sent to NamedLocations" : recorded ? "Label saved to the recording" : "Label added (no recording running)")
             recorder.refresh()
         } catch (error) {
-            setNote(`Couldn't add the label: ${error instanceof Error ? error.message : error}`)
+            setNote(`Couldn't ${editing === "rename" ? "rename" : "add"} the label: ${error instanceof Error ? error.message : error}`)
         }
     }
 
@@ -149,7 +158,7 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
     return (
         <>
             {menu && (
-                <Card ref={box} padded={false} className="scene-menu" style={{ left, top }} role="menu" onContextMenu={(event) => event.preventDefault()}>
+                <Card ref={box} padded={false} className="scene-menu" data-testid="scene-menu" style={{ left, top }} role="menu" onContextMenu={(event) => event.preventDefault()}>
                     {menu.point && (
                         <div className="scene-menu-where dr-mono">
                             {fmt(menu.point.x)}, {fmt(menu.point.y)}, {fmt(menu.point.z)} · {app.viewer.fixedFrame}
@@ -164,27 +173,35 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
                                 save()
                             }}
                         >
-                            <TextInput autoFocus placeholder="What happened here?" value={text} onChange={setText} />
-                            <Button type="submit" variant="primary" disabled={!text.trim()}>Add</Button>
+                            <TextInput autoFocus data-testid="scene-menu-text" placeholder={app.labels.toModule ? "Name this location" : "What happened here?"} value={text} onChange={setText} />
+                            <Button type="submit" variant="primary" disabled={!text.trim()} data-testid="scene-menu-save">{menu.editing === "rename" ? "Rename" : "Add"}</Button>
                         </form>
                     ) : (
                         <>
-                            <button type="button" role="menuitem" className="scene-menu-item" disabled={!menu.point} onClick={() => publishClickedPoint(menu.point!)}>
+                            <button type="button" role="menuitem" className="scene-menu-item" disabled={!menu.point} onClick={() => publishClickedPoint(menu.point!)} data-testid="scene-menu-go-here">
                                 Go here
                             </button>
-                            <button type="button" role="menuitem" className="scene-menu-item" disabled={!menu.point} onClick={() => setMenu({ ...menu, editing: true })}>
+                            <button type="button" role="menuitem" className="scene-menu-item" disabled={!menu.point} onClick={() => setMenu({ ...menu, editing: "new" })} data-testid="scene-menu-label">
                                 Label this location…
                             </button>
                             {menu.near && (
-                                <button type="button" role="menuitem" className="scene-menu-item" onClick={() => remove(menu.near!)}>
-                                    Remove label “{menu.near.label}”
-                                </button>
+                                <>
+                                    <button type="button" role="menuitem" className="scene-menu-item" data-testid="scene-menu-rename" onClick={() => {
+                                        setText(menu.near!.label)
+                                        setMenu({ ...menu, editing: "rename" })
+                                    }}>
+                                        Rename label “{menu.near.label}”…
+                                    </button>
+                                    <button type="button" role="menuitem" className="scene-menu-item" data-testid="scene-menu-remove" onClick={() => remove(menu.near!)}>
+                                        Remove label “{menu.near.label}”
+                                    </button>
+                                </>
                             )}
                         </>
                     )}
                 </Card>
             )}
-            {note && <Card padded={false} className="scene-note">{note}</Card>}
+            {note && <Card padded={false} className="scene-note" data-testid="scene-note">{note}</Card>}
         </>
     )
 }

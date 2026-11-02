@@ -234,6 +234,33 @@ pub async fn rename(Extract(api): Extract<Api>, Path(id): Path<String>, Body(bod
     }
 }
 
+/// A label edit made by the page the user looks at, the way its 3D view's menu makes one: so it goes to dimos's
+/// NamedLocations module when that runs, else into this session's labels, and every page shows it.
+pub async fn through_page(Extract(api): Extract<Api>, Body(body): Body) -> Response {
+    let text = body["label"].as_str().is_some_and(|text| !text.trim().is_empty());
+    let id = body["id"].as_str().is_some();
+    let position = body["position"]
+        .as_array()
+        .is_some_and(|p| (2..=3).contains(&p.len()) && p.iter().all(Value::is_number));
+    let valid = match body["action"].as_str().unwrap_or("add") {
+        "add" => text && position,
+        "rename" => text && id,
+        "remove" => id,
+        "list" => true,
+        _ => false,
+    };
+    if !valid {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "add needs label and position [x, y] or [x, y, z]; rename needs id and label; remove needs id",
+        );
+    }
+    match api.annotations.ask_page("label", body).await {
+        Ok(answer) => Json(answer).into_response(),
+        Err(problem) => error(StatusCode::UNPROCESSABLE_ENTITY, problem),
+    }
+}
+
 pub async fn remove(Extract(api): Extract<Api>, Path(id): Path<String>) -> Response {
     match api.recorder.labels.remove(&id) {
         Some(label) => {

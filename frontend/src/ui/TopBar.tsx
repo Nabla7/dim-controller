@@ -1,4 +1,4 @@
-// The page's one bar, along the bottom (desktop): STOP on the left, the gamepad beside it (a click remaps it) and,
+// The page's one bar, along the bottom (desktop): STOP on the left, Go to (dimos's named locations, when it has them) and the gamepad beside it (a click remaps it) and,
 // disengaged, why and Reconnect; the link's chip in the middle (it opens the Network modal); on the right the chips
 // that only show when they matter (the lease, TF trouble, a busy CPU), Record, the battery and the Settings button, whose number counts the streams a
 // never-used kind of panel could show (ui/panelCatalog.ts). A panel's own buttons are in the panel, never here. A phone
@@ -10,6 +10,7 @@ import { Button, Kbd } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { BatteryChip, GamepadChip, LinkChip, StatusChips } from "./BarChips.tsx"
 import { RecordControl } from "./RecordControl.tsx"
+import { GoToNamed } from "./GoToNamed.tsx"
 import { DisengagedNotice } from "./DriveHud.tsx"
 import type { WorkspaceApi } from "./Workspace.tsx"
 import { openSettingsDrawer, settingsDrawer, useShown } from "./SettingsDrawer.tsx"
@@ -27,6 +28,7 @@ export function TopBar({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
                     <span>STOP</span>
                     <Kbd className="lv-kbd">Space</Kbd>
                 </Button>
+                <GoToNamed app={app} />
                 <GamepadChip />
                 {halt && !arm && <DisengagedNotice app={app} halt={halt} />}
             </div>

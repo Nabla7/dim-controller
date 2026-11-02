@@ -217,7 +217,7 @@ export class AgentLink {
     async #answer(request: string, kind: string, args: unknown) {
         let body: unknown
         try {
-            body = kind === "view" ? await this.view() : kind === "locate" ? await this.locate(args as { bbox: Bbox }) : { error: `unknown capture ${kind}` }
+            body = kind === "view" ? await this.view() : kind === "locate" ? await this.locate(args as { bbox: Bbox }) : kind === "label" ? await this.app.labels.fromAgent(args as object) : { error: `unknown capture ${kind}` }
         } catch (error) {
             body = { error: String(error instanceof Error ? error.message : error) }
         }
