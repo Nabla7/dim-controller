@@ -77,7 +77,7 @@ function cloudScene() {
     const manager = new LayerManager(viewer as never, tree, new TfHistory(tree), connection, {} as never, {} as never)
     status.set({ topics: [lidar] })
     const entry = manager.entries.get().list.find((item) => item.topic.key === lidar.key)!
-    const stream = subscriptions.find((item) => item.options.encoding)!
+    const stream = subscriptions.find((item) => item.options.maxHz === 20)!
     const points = added[0].children[0] as THREE.Points
     const material = points.material as THREE.ShaderMaterial
     return {

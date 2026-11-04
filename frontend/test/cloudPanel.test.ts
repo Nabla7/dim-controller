@@ -51,7 +51,7 @@ function fakeViewer() {
 
 const lidar: Topic = { key: "dimos/lidar/sensor_msgs.PointCloud2", name: "/lidar", type: "sensor_msgs.PointCloud2" }
 const globalMap: Topic = { key: "dimos/global_map/sensor_msgs.PointCloud2", name: "/global_map", type: "sensor_msgs.PointCloud2" }
-const cloudKeys = (subscriptions: FakeSubscription[]) => subscriptions.filter((entry) => entry.options.encoding === "dimos_lcm_pointcloud2").map((entry) => entry.key).sort()
+const cloudKeys = (subscriptions: FakeSubscription[]) => subscriptions.filter((entry) => entry.options.maxHz !== undefined && entry.options.maxHz > 1).map((entry) => entry.key).sort()
 
 Deno.test("each cloud keeps its own preset, per viewer, and Balanced is the default", () => {
     localStorage.clear()
@@ -65,19 +65,19 @@ Deno.test("each cloud keeps its own preset, per viewer, and Balanced is the defa
     // fewer points and scans as the preset goes down
     const [low, balanced, full] = CLOUD_PRESETS
     assertEquals(low.quality < balanced.quality && low.maxHz < balanced.maxHz && balanced.maxHz <= full.maxHz, true)
-    assertEquals(cloudOptions(full).minQuality, 1, "Full is never thinned")
+    assertEquals(cloudOptions(full).encoding, undefined, "canonical samples bypass the old header codec")
     assertEquals(cloudOptions(balanced).minQuality, undefined)
 })
 
 Deno.test("a preset change updates the running subscription in place when the gateway can", async () => {
     const { connection, subscriptions } = fakeConnection({ inPlace: true })
     const stream = new CloudStream(connection, lidar.key, "balanced", () => {})
-    assertEquals(subscriptions[0].options, { delivery: "latest", encoding: "dimos_lcm_pointcloud2", maxHz: 20, encodeOptions: { quality: 1 } })
+    assertEquals(subscriptions[0].options, { delivery: "latest", maxHz: 20 })
     await stream.setQuality("low")
     assertEquals(subscriptions.length, 1, "no resubscribe")
-    assertEquals(subscriptions[0].updates, [{ maxHz: 5, minQuality: null, encodeOptions: { quality: 0.25 } }])
+    assertEquals(subscriptions[0].updates, [{ maxHz: 5 }])
     await stream.setQuality("full")
-    assertEquals(subscriptions[0].updates[1], { maxHz: 30, minQuality: 1, encodeOptions: { quality: 1 } })
+    assertEquals(subscriptions[0].updates[1], { maxHz: 30 })
     stream.close()
     assertEquals(subscriptions[0].open, false)
 })
@@ -90,7 +90,7 @@ Deno.test("without in-place updates a preset change opens the new subscription b
     assertEquals(subscriptions[1].openBefore, 1)
     assertEquals(subscriptions[0].open, false)
     assertEquals(subscriptions[1].options.maxHz, 5)
-    assertEquals(subscriptions[1].options.encodeOptions, { quality: 0.25 })
+    assertEquals(subscriptions[1].options.encodeOptions, undefined)
 })
 
 Deno.test("a stream counts scans, points and bytes a second", () => {
@@ -114,7 +114,7 @@ Deno.test("off unsubscribes every cloud; on resubscribes only the clouds that we
     const manager = new LayerManager(viewer as never, { lookup: () => null } as never, {} as never, connection, {} as never, {} as never)
     status.set({ topics: [lidar, globalMap] })
     assertEquals(cloudKeys(open()), [globalMap.key, lidar.key], "both clouds drawn, each subscribed")
-    assertEquals(open().find((entry) => entry.key === globalMap.key && entry.options.encoding)!.options.maxHz, 5, "the map at its own preset")
+    assertEquals(open().find((entry) => entry.key === globalMap.key && entry.options.maxHz === 5)!.options.maxHz, 5, "the map at its own preset")
     manager.setEnabled(lidar.key, false)
     assertEquals(cloudKeys(open()), [globalMap.key], "a cloud switched off is unsubscribed")
 

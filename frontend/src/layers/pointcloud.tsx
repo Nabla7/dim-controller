@@ -1,3 +1,4 @@
+import { acquisitionKey, acquisitionMs, AcquisitionOrder, type AcquisitionHeader } from "../core/acquisition.ts"
 // sensor_msgs.PointCloud2: lidar scans and maps. The gateway's dimos_lcm_pointcloud2 encoding sends quantized xyz (+ u8
 // intensity); the points go straight into preallocated GPU buffers (a ring when accumulating) and are colored in
 // the shader, so a new scan costs one buffer upload and nothing is allocated per frame.
@@ -110,6 +111,8 @@ class CloudLayer {
     #cameraPose = new THREE.Matrix4()
     /** when each kept scan was written (s, the shader's aTime clock), oldest first, for the frame count */
     #scanTimes: number[] = []
+    #acquisition: string | undefined
+    #acquisitionOrder = new AcquisitionOrder()
 
     constructor(readonly context: LayerContext, readonly topic: Topic, settings: Store<CloudSettings>) {
         this.#settings = settings
@@ -131,7 +134,7 @@ class CloudLayer {
         this.#unsubscribe.push(() => removeEventListener("dimos-react-theme", retheme))
         this.#resize(1024)
         this.#stream = new CloudStream(context.connection, topic.key, cloudQualityOf(topic.key), (message) => {
-            const decoded = message.decoded as { positions?: Float32Array; intensity?: Uint8Array; frameId?: string } | undefined
+            const decoded = message.decoded as { positions?: Float32Array; intensity?: Uint8Array; frameId?: string; acquisition?: AcquisitionHeader } | undefined
             // each cloud's own frame_id, off its message header or else the encoding's output: one topic can mix frames
             // (a lidar and a camera's depth on the R1's /lidar), so each cloud is placed by its own
             const frameId = message.header?.frameId ?? decoded?.frameId
@@ -143,8 +146,13 @@ class CloudLayer {
                 this.#readFrame()
                 this.#frameTimer = setInterval(() => this.#readFrame(), FRAME_RECHECK_MS)
             }
+            if (decoded?.acquisition) {
+                if (!this.#acquisitionOrder.accept(decoded.acquisition)) return
+                const identity = acquisitionKey(decoded.acquisition)
+                if (identity !== this.#acquisition) { this.#clear(); this.#acquisition = identity }
+            }
             if (decoded?.positions) {
-                this.#onCloud(decoded.positions, decoded.intensity, message.timestamp)
+                this.#onCloud(decoded.positions, decoded.intensity, decoded.acquisition ? acquisitionMs(decoded.acquisition) : message.timestamp)
             }
         })
         this.#unsubscribe.push(settings.subscribe(() => this.#onSettings()))
