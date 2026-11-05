@@ -1,44 +1,57 @@
-import { assertEquals, assertAlmostEquals } from "jsr:@std/assert@1"
-import { cloudFields, imageFields, depthPixels, rgbPixels, AcquisitionOrder, acquisitionMs } from "../src/core/acquisition.ts"
+import { assertEquals } from "jsr:@std/assert@1"
+import { AcquisitionOrder, acquisitionMs } from "../src/core/acquisition.ts"
 import { VideoSources } from "../src/core/video.ts"
+import { CloudStream } from "../src/core/cloudQuality.ts"
 import type { Connection, Message, SubscribeOptions } from "../src/core/transport.ts"
-import fixtures from "./fixtures/acquisition.json" with { type: "json" }
-const bytes = (name: keyof typeof fixtures) => Uint8Array.from(atob(fixtures[name]), c=>c.charCodeAt(0))
-Deno.test("Python sensor samples preserve reset identity and zero acquisition time",()=>{
- const image=imageFields(bytes("rgb"))
- assertEquals(image.header.clock_id,"sim-proof")
- assertEquals(image.header.epoch,3)
- assertEquals(acquisitionMs(image.header),0)
- assertEquals([...rgbPixels(image)],[255,0,0,255,0,255,0,255])
- const depth=depthPixels(imageFields(bytes("depth")))
- assertAlmostEquals(depth.data[0],1.5)
- assertAlmostEquals(depth.data[1],2.5)
- const cloud=cloudFields(bytes("cloud"))
- assertEquals([...cloud.positions],[1,2,3,-1,-2,-3])
- assertEquals(cloud.frameId,"world")
- assertEquals(cloud.acquisition.epoch,3)
+
+Deno.test("a delayed old epoch or retired clock cannot restore pre-reset data", () => {
+    const order = new AcquisitionOrder()
+    const h = { clock_id: "first", epoch: 0n, time_ns: 100n }
+    assertEquals(order.accept(h), true)
+    assertEquals(order.accept({ ...h, epoch: 1n, time_ns: 0n }), true)
+    assertEquals(order.accept(h), false)
+    assertEquals(order.accept({ ...h, clock_id: "second", time_ns: 0n }), true)
+    assertEquals(order.accept({ ...h, epoch: 2n }), false)
+    assertEquals(acquisitionMs({ ...h, time_ns: 0n }), 0)
 })
-Deno.test("a delayed old epoch or retired clock cannot restore pre-reset data",()=>{
- const order=new AcquisitionOrder()
- const h={clock_id:"first",epoch:0,time_ns:100,frame_id:"world"}
- assertEquals(order.accept(h),true)
- assertEquals(order.accept({...h,epoch:1,time_ns:0}),true)
- assertEquals(order.accept(h),false)
- assertEquals(order.accept({...h,clock_id:"second",time_ns:0}),true)
- assertEquals(order.accept({...h,epoch:2}),false)
+
+Deno.test("acquisition images use the existing video and lossless depth codecs", () => {
+    for (const isDepth of [true, false]) {
+        let options: SubscribeOptions | undefined, receive: ((m: Message) => void) | undefined, stopped = false
+        const connection = { subscribe: (_key: string, o: SubscribeOptions, callback: (m: Message) => void) => {
+            options = o; receive = callback; return () => { stopped = true }
+        } } as unknown as Connection
+        const sources = new VideoSources(connection)
+        const name = isDepth ? "depth_image" : "color_image"
+        const topic = { key: `dimos/${name}/sensor_msgs.Image`, name: `/${name}`, type: "sensor_msgs.Image" }
+        const source = sources.acquire(topic)
+        assertEquals(options?.encoding, isDepth ? "dimos_lcm_depth" : "dimos_lcm_image")
+        const header = { stamp: 0, sec: 0, nanosec: 0, frameId: "g1/camera", acquisition: {
+            clock_id: "sim-proof", epoch: 3n, time_ns: 0n, source_id: "camera", sequence: 7n,
+        } }
+        receive!({ key: topic.key, kind: "put", bytes: new Uint8Array(), seq: 0, timestamp: 99999, header,
+            decoded: isDepth ? { width: 2, height: 1, encoding: "32FC1", data: new Float32Array([1.5, 2.5]) } : undefined,
+        })
+        assertEquals(source.frame.get().frameId, "g1/camera")
+        if (isDepth) assertEquals([...source.depth.get().image!.data], [1.5, 2.5])
+        sources.release(topic)
+        assertEquals(stopped, true)
+    }
 })
-Deno.test("canonical depth bypasses the old header codec and retains its sensor frame",()=>{
- let options: SubscribeOptions|undefined, receive: ((m:Message)=>void)|undefined, stopped=false
- const connection={ subscribe: (_key:string,o:SubscribeOptions,callback:(m:Message)=>void)=>{
-  options=o;receive=callback;return ()=>{stopped=true}
- }} as unknown as Connection
- const sources=new VideoSources(connection)
- const topic={key:"dimos/depth_image/sensor_msgs.Image",name:"/depth_image",type:"sensor_msgs.Image"}
- const source=sources.acquire(topic)
- assertEquals(options?.encoding,undefined)
- receive!({key:topic.key,kind:"put",bytes:bytes("depth"),seq:0,timestamp:99999})
- assertEquals(source.frame.get().frameId,"g1/camera")
- assertEquals([...source.depth.get().image!.data],[1.5,2.5])
- sources.release(topic)
- assertEquals(stopped,true)
+
+Deno.test("cloud codec output keeps its acquisition header for TF placement and reset handling", () => {
+    let options: SubscribeOptions | undefined, receive: ((m: Message) => void) | undefined, seen: Message | undefined
+    const connection = { subscribe: (_key: string, o: SubscribeOptions, callback: (m: Message) => void) => {
+        options = o; receive = callback; return () => {}
+    } } as unknown as Connection
+    const cloud = new CloudStream(connection, "dimos/global_map/sensor_msgs.PointCloud2", "balanced", m => { seen = m })
+    assertEquals(options?.encoding, "dimos_lcm_pointcloud2")
+    const message: Message = { key: "dimos/global_map/sensor_msgs.PointCloud2", kind: "put", bytes: new Uint8Array(), seq: 0, timestamp: 99999,
+        header: { stamp: 0, sec: 0, nanosec: 0, frameId: "world", acquisition: { clock_id: "sim-proof", epoch: 3n, time_ns: 0n, source_id: "mid360", sequence: 7n } },
+        decoded: { positions: new Float32Array([1, 2, 3]) },
+    }
+    receive!(message)
+    assertEquals(seen, message)
+    assertEquals(seen!.header!.acquisition!.epoch, 3n)
+    cloud.close()
 })

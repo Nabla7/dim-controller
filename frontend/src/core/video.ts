@@ -1,7 +1,6 @@
 // Camera streams, shared: a panel and the 3D projection of the same topic use one bridge subscription (full while a
 // panel shows it, a small slow preview while only the 3D view does).
 // Color images arrive as the bridge's H.264 track, sized and paced by the viewer's latency/quality preset (core/videoQuality.ts); depth arrives lossless as fields (16UC1 mm / 32FC1 m).
-import { imageFields, depthPixels, rgbPixels } from "./acquisition.ts"
 import { Store } from "./store.ts"
 import { PRIORITY_TIERS } from "./bandwidth.ts"
 import { type Connection, type LiveHandle, type Message, parseKey, type SubscribeOptions, type SubscriptionUpdate, type Topic } from "./transport.ts"
@@ -173,10 +172,6 @@ export class VideoSources {
     /** Subscribes with the source's options: the color track, or the lossless depth encoding. */
     #open(topic: Topic, source: Source) {
         const { video, depth, frame } = source
-        if (topic.type === "sensor_msgs.Image") {
-            this.#openAcquisitionImage(topic, source)
-            return
-        }
         const noteFrame = (message: Message) => {
             const frameId = message.header?.frameId ?? null
             if (frameId !== frame.get().frameId) {
@@ -213,41 +208,6 @@ export class VideoSources {
         for (const element of source.watched.keys()) {
             source.watched.set(element, source.stop.watchVideoLatency?.(element) ?? (() => {}))
         }
-    }
-
-    // Canonical LCM path: preserves the new header and works before the gateway's
-    // H.264/depth codecs adopt it. This transports full samples (LAN demo path).
-    #openAcquisitionImage(topic: Topic, source: Source) {
-        let canvas: HTMLCanvasElement | null = null, stream: MediaStream | null = null
-        let closed = false, frames = 0, since = performance.now(), busy = false
-        const handle = this.connection.subscribe(topic.key, { delivery: "latest", maxHz: source.options.maxHz, bandwidthPriority: source.options.bandwidthPriority }, (message) => {
-            const m = imageFields(message.bytes)
-            source.frame.set({ frameId: m.header.frame_id })
-            if (isDepthTopic(topic)) { source.depth.set({ image: depthPixels(m) }); return }
-            if (busy) return
-            canvas ??= document.createElement("canvas")
-            if (canvas.width !== m.width || canvas.height !== m.height) { canvas.width = m.width; canvas.height = m.height }
-            stream ??= canvas.captureStream(0)
-            const context = canvas.getContext("2d")!
-            const shown = () => {
-                if (closed) return
-                ;(stream!.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack).requestFrame()
-                frames++
-                const now = performance.now(), fps = now-since >= 1000 ? frames*1000/(now-since) : source.video.get().fps
-                if (now-since >= 1000) { frames = 0; since = now }
-                source.video.set({ stream, width: m.width, height: m.height, fps })
-            }
-            if (m.encoding === "jpeg") {
-                busy = true
-                createImageBitmap(new Blob([new Uint8Array(m.data)], { type: "image/jpeg" })).then(bitmap => {
-                    if (!closed) { context.drawImage(bitmap, 0, 0); shown() }
-                    bitmap.close()
-                }).catch(error => console.warn("camera decode", error)).finally(() => { busy = false })
-            } else { context.putImageData(new ImageData(rgbPixels(m), m.width, m.height), 0, 0); shown() }
-        })
-        source.stop = Object.assign(() => { closed = true; handle(); stream?.getTracks().forEach(track => track.stop()) }, {
-            update: (changes: SubscriptionUpdate) => handle.update({ maxHz: changes.maxHz, bandwidthPriority: changes.bandwidthPriority }),
-        })
     }
 
     /** Drops `topic`'s subscription and opens it again (a fresh transceiver): a stalled stream's way back. */

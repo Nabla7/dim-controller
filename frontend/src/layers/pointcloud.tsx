@@ -1,4 +1,4 @@
-import { acquisitionKey, acquisitionMs, AcquisitionOrder, type AcquisitionHeader } from "../core/acquisition.ts"
+import { acquisitionKey, acquisitionMs, AcquisitionOrder } from "../core/acquisition.ts"
 // sensor_msgs.PointCloud2: lidar scans and maps. The gateway's dimos_lcm_pointcloud2 encoding sends quantized xyz (+ u8
 // intensity); the points go straight into preallocated GPU buffers (a ring when accumulating) and are colored in
 // the shader, so a new scan costs one buffer upload and nothing is allocated per frame.
@@ -98,7 +98,7 @@ class CloudLayer {
     /** the raw re-reads of the frame_id, running only while clouds come without one */
     #frameTimer: ReturnType<typeof setInterval> | null = null
     #fixedFrame: string
-    /** the newest scan's timestamp (gateway ms): its TF is looked up as of then */
+    /** the newest scan's acquisition time in ms (gateway time for legacy messages): used for TF */
     #stamp: number | null = null
     #lastCount = 0
     #settings: Store<CloudSettings>
@@ -134,7 +134,7 @@ class CloudLayer {
         this.#unsubscribe.push(() => removeEventListener("dimos-react-theme", retheme))
         this.#resize(1024)
         this.#stream = new CloudStream(context.connection, topic.key, cloudQualityOf(topic.key), (message) => {
-            const decoded = message.decoded as { positions?: Float32Array; intensity?: Uint8Array; frameId?: string; acquisition?: AcquisitionHeader } | undefined
+            const decoded = message.decoded as { positions?: Float32Array; intensity?: Uint8Array; frameId?: string } | undefined
             // each cloud's own frame_id, off its message header or else the encoding's output: one topic can mix frames
             // (a lidar and a camera's depth on the R1's /lidar), so each cloud is placed by its own
             const frameId = message.header?.frameId ?? decoded?.frameId
@@ -146,13 +146,14 @@ class CloudLayer {
                 this.#readFrame()
                 this.#frameTimer = setInterval(() => this.#readFrame(), FRAME_RECHECK_MS)
             }
-            if (decoded?.acquisition) {
-                if (!this.#acquisitionOrder.accept(decoded.acquisition)) return
-                const identity = acquisitionKey(decoded.acquisition)
+            const acquisition = message.header?.acquisition
+            if (acquisition) {
+                if (!this.#acquisitionOrder.accept(acquisition)) return
+                const identity = acquisitionKey(acquisition)
                 if (identity !== this.#acquisition) { this.#clear(); this.#acquisition = identity }
             }
             if (decoded?.positions) {
-                this.#onCloud(decoded.positions, decoded.intensity, decoded.acquisition ? acquisitionMs(decoded.acquisition) : message.timestamp)
+                this.#onCloud(decoded.positions, decoded.intensity, acquisition ? acquisitionMs(acquisition) : message.timestamp, message.timestamp)
             }
         })
         this.#unsubscribe.push(settings.subscribe(() => this.#onSettings()))
@@ -327,7 +328,7 @@ class CloudLayer {
         this.context.viewer.requestRender()
     }
 
-    #onCloud(positions: Float32Array, intensity: Uint8Array | undefined, timestamp: number) {
+    #onCloud(positions: Float32Array, intensity: Uint8Array | undefined, timestamp: number, publishedAt: number) {
         if (this.#frame === null) {
             return // placed without its frame it would ride the wrong pose; the raw read arrives within a second
         }
@@ -403,7 +404,7 @@ class CloudLayer {
         this.#syncBoxes()
         this.#updateRange(positions, intensity, placement)
         this.#cameraDirty = true
-        this.context.viewer.noteData(timestamp)
+        this.context.viewer.noteData(publishedAt)
     }
 
     #place(matrix: THREE.Matrix4) {

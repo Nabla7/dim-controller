@@ -4,7 +4,6 @@
 // the camera presets (a phone on cellular wants less than a desktop on the LAN): localStorage, not the backend.
 import type { Connection, Message, SubscribeOptions } from "./transport.ts"
 import { readLocal, writeLocal } from "./videoQuality.ts"
-import { cloudFields } from "./acquisition.ts"
 import { Store } from "./store.ts"
 
 export type CloudQuality = "low" | "balanced" | "full"
@@ -21,9 +20,9 @@ export interface CloudPreset {
 }
 
 export const CLOUD_PRESETS: CloudPreset[] = [
-    { id: "low", label: "Low bandwidth", about: "up to 5 Hz, full point samples", maxHz: 5, quality: 0.25 },
-    { id: "balanced", label: "Balanced", about: "up to 20 Hz, full point samples", maxHz: 20, quality: 1 },
-    { id: "full", label: "Full", about: "up to 30 Hz, full point samples", maxHz: 30, quality: 1, minQuality: 1 },
+    { id: "low", label: "Low bandwidth", about: "up to 5 Hz, at most 1 point in 4 (fewer when the link is short)", maxHz: 5, quality: 0.25 },
+    { id: "balanced", label: "Balanced", about: "up to 20 Hz, every point unless the link is short", maxHz: 20, quality: 1 },
+    { id: "full", label: "Full", about: "up to 30 Hz, every point, never thinned (drops scans instead)", maxHz: 30, quality: 1, minQuality: 1 },
 ]
 
 export const cloudPreset = (id: string | undefined): CloudPreset => CLOUD_PRESETS.find((preset) => preset.id === id) ?? CLOUD_PRESETS[1]
@@ -32,15 +31,16 @@ export const cloudPreset = (id: string | undefined): CloudPreset => CLOUD_PRESET
 export function cloudOptions(preset: CloudPreset): SubscribeOptions {
     return {
         delivery: "latest",
-        // Raw canonical LCM until the gateway codec supports SampleHeader.
-        // Keep rate control; do not ask the legacy codec to parse the new header.
+        encoding: "dimos_lcm_pointcloud2",
         maxHz: preset.maxHz,
+        encodeOptions: { quality: preset.quality },
+        ...(preset.minQuality !== undefined ? { minQuality: preset.minQuality } : {}),
     }
 }
 
 /** What changes going to `to` (zenoh-gateway >= 0.5.1's Subscription.update: null removes an option). */
 export function cloudChanges(to: CloudPreset): Record<string, unknown> {
-    return { maxHz: to.maxHz }
+    return { maxHz: to.maxHz, minQuality: to.minQuality ?? null, encodeOptions: { quality: to.quality } }
 }
 
 const QUALITY_KEY = "lv.clouds.quality"
@@ -98,7 +98,6 @@ export class CloudStream {
 
     #open() {
         return this.connection.subscribe(this.key, cloudOptions(this.#preset), (message) => {
-            if (!message.decoded) message = { ...message, decoded: cloudFields(message.bytes) }
             const positions = (message.decoded as { positions?: Float32Array } | undefined)?.positions
             this.#counted.scans++
             this.#counted.points += positions ? positions.length / 3 : 0
