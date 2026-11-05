@@ -1,4 +1,3 @@
-import { acquisitionKey, acquisitionMs, AcquisitionOrder } from "../core/acquisition.ts"
 // sensor_msgs.PointCloud2: lidar scans and maps. The gateway's dimos_lcm_pointcloud2 encoding sends quantized xyz (+ u8
 // intensity); the points go straight into preallocated GPU buffers (a ring when accumulating) and are colored in
 // the shader, so a new scan costs one buffer upload and nothing is allocated per frame.
@@ -98,7 +97,7 @@ class CloudLayer {
     /** the raw re-reads of the frame_id, running only while clouds come without one */
     #frameTimer: ReturnType<typeof setInterval> | null = null
     #fixedFrame: string
-    /** the newest scan's acquisition time in ms (gateway time for legacy messages): used for TF */
+    /** the newest scan's timestamp (gateway ms): its TF is looked up as of then */
     #stamp: number | null = null
     #lastCount = 0
     #settings: Store<CloudSettings>
@@ -111,8 +110,6 @@ class CloudLayer {
     #cameraPose = new THREE.Matrix4()
     /** when each kept scan was written (s, the shader's aTime clock), oldest first, for the frame count */
     #scanTimes: number[] = []
-    #acquisition: string | undefined
-    #acquisitionOrder = new AcquisitionOrder()
 
     constructor(readonly context: LayerContext, readonly topic: Topic, settings: Store<CloudSettings>) {
         this.#settings = settings
@@ -146,14 +143,8 @@ class CloudLayer {
                 this.#readFrame()
                 this.#frameTimer = setInterval(() => this.#readFrame(), FRAME_RECHECK_MS)
             }
-            const acquisition = message.header?.acquisition
-            if (acquisition) {
-                if (!this.#acquisitionOrder.accept(acquisition)) return
-                const identity = acquisitionKey(acquisition)
-                if (identity !== this.#acquisition) { this.#clear(); this.#acquisition = identity }
-            }
             if (decoded?.positions) {
-                this.#onCloud(decoded.positions, decoded.intensity, acquisition ? acquisitionMs(acquisition) : message.timestamp, message.timestamp)
+                this.#onCloud(decoded.positions, decoded.intensity, message.timestamp)
             }
         })
         this.#unsubscribe.push(settings.subscribe(() => this.#onSettings()))
@@ -328,7 +319,7 @@ class CloudLayer {
         this.context.viewer.requestRender()
     }
 
-    #onCloud(positions: Float32Array, intensity: Uint8Array | undefined, timestamp: number, publishedAt: number) {
+    #onCloud(positions: Float32Array, intensity: Uint8Array | undefined, timestamp: number) {
         if (this.#frame === null) {
             return // placed without its frame it would ride the wrong pose; the raw read arrives within a second
         }
@@ -404,7 +395,7 @@ class CloudLayer {
         this.#syncBoxes()
         this.#updateRange(positions, intensity, placement)
         this.#cameraDirty = true
-        this.context.viewer.noteData(publishedAt)
+        this.context.viewer.noteData(timestamp)
     }
 
     #place(matrix: THREE.Matrix4) {

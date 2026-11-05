@@ -114,7 +114,7 @@ Deno.test("off unsubscribes every cloud; on resubscribes only the clouds that we
     const manager = new LayerManager(viewer as never, { lookup: () => null } as never, {} as never, connection, {} as never, {} as never)
     status.set({ topics: [lidar, globalMap] })
     assertEquals(cloudKeys(open()), [globalMap.key, lidar.key], "both clouds drawn, each subscribed")
-    assertEquals(open().find((entry) => entry.key === globalMap.key && entry.options.maxHz === 5)!.options.maxHz, 5, "the map at its own preset")
+    assertEquals(open().find((entry) => entry.key === globalMap.key && entry.options.encoding)!.options.maxHz, 5, "the map at its own preset")
     manager.setEnabled(lidar.key, false)
     assertEquals(cloudKeys(open()), [globalMap.key], "a cloud switched off is unsubscribed")
 

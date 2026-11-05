@@ -1,7 +1,7 @@
 // A few seconds of every TF edge, so data can be placed with the transform from when it was seen (TfTree keeps only
 // the latest). A point cloud looks its frame up here once, at its own timestamp, and keeps that placement: odom moving
-// at 50 Hz must not drag a 10 Hz scan along between scans. Canonical sensor and TF samples use acquisition time (ms), independent of
-// gateway arrival. The feed clears this history on clock/epoch changes.
+// at 50 Hz must not drag a 10 Hz scan along between scans. Timestamps are the gateway's (message.timestamp, ms), the
+// one clock both tf and the clouds carry (the compact cloud encoding drops the header stamp).
 import { Matrix4, Quaternion, Vector3 } from "three"
 import type { TfTree } from "dimos-react/three"
 
@@ -27,8 +27,6 @@ export class TfHistory {
     #edges = new Map<string, Edge>()
 
     constructor(readonly tree: TfTree, readonly windowMs = TF_HISTORY_MS) {}
-
-    clear() { this.#edges.clear() }
 
     /** Records T_parent_child at `stamp` (ms); rotation is x, y, z, w. */
     record(parent: string, child: string, translation: [number, number, number], rotation: [number, number, number, number], stamp: number, isStatic = false) {

@@ -70,7 +70,7 @@ const stampNow = () => {
 /** The JointState a set of position targets is sent as (only the joints given: the trajectory task takes a subset). */
 export function jointCommand(targets: Record<string, number>): LcmValue {
     const names = Object.keys(targets)
-    return { header: { clock_id: "unix", time_ns: Date.now() * 1e6, frame_id: "" }, name: names, position: names.map((name) => targets[name]), velocity: [], effort: [] }
+    return { header: { stamp: stampNow(), frame_id: "" }, name: names, position: names.map((name) => targets[name]), velocity: [], effort: [] }
 }
 
 /** The end effector's TwistStamped for held axes at the given speeds (keyboard teleop's: no frame_id, base frame). */

@@ -61,8 +61,8 @@ export function TfPanel({ app }: { app: ViewerApp }) {
             <Field inline label="Fixed frame" title="everything is drawn relative to this frame">
                 <Select value={view.fixedFrame} options={[["", `auto (${frameInfo.fixedFrame})`], ...(view.fixedFrame && !snapshot.frames.includes(view.fixedFrame) ? [[view.fixedFrame, `${view.fixedFrame} (not in TF: drawing in ${frameInfo.fixedFrame})`] as [string, string]] : []), ...snapshot.frames.map((frame) => [frame, frame] as [string, string])]} onChange={(fixedFrame) => app.settings.update({ fixedFrame })} />
             </Field>
-            <p className="hint">A frame on the robot (a camera, {app.robotFrame}) is followed instead (Settings → Follow frame), so the world stays level</p>
-            <p className="hint">Robot frame: {app.profile.baseFrame} {frameInfo.robotFound ? "(in TF)" : "(not in TF yet)"}</p>
+            <p className="hint">Settings → Follow frame selects what the view follows while the fixed frame keeps the world level</p>
+            <p className="hint">Follow frame: {app.followFrame} {frameInfo.followFound ? "(in TF)" : "(not in TF yet)"}</p>
             {issues.map((issue) => <p key={issue.kind + issue.summary} className="problem" title={issue.frames.join(", ")}>{issue.summary}: {issue.detail}</p>)}
             {!snapshot.frames.length && <p className="empty">no tf yet</p>}
             <div className="tf-tree" ref={tree} onPointerLeave={() => app.highlight.set(null)}>

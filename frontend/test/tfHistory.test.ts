@@ -114,7 +114,7 @@ function cloudScene(tf: TfTree, history: TfHistory, mode: "latest" | "accumulate
     status.set({ topics: [lidar] })
     const entry = manager.entries.get().list.find((item) => item.topic.key === lidar.key)!
     entry.settings.update({ mode })
-    const stream = subscriptions.find((item) => item.options.maxHz === 20)!
+    const stream = subscriptions.find((item) => item.options.encoding)!
     const points = added[0].children[0] as THREE.Points
     const frame = (now: number) => onFrames.forEach((callback) => callback({ now, fixedFrame: "world" }))
     return {
@@ -122,7 +122,7 @@ function cloudScene(tf: TfTree, history: TfHistory, mode: "latest" | "accumulate
         scan: (xyz: number[], stamp: number, header = true) =>
             stream.deliver({ decoded: { positions: new Float32Array(xyz) }, bytes: new Uint8Array(1), timestamp: stamp, ...(header ? { header: { stamp: stamp / 1000, sec: 0, nanosec: 0, frameId: "lidar" } } : {}) }),
         /** the raw subscriptions the layer opened to read the frame_id */
-        rawReads: () => subscriptions.filter((item) => item.options.maxHz === 1),
+        rawReads: () => subscriptions.filter((item) => !item.options.encoding),
         drawn: (index = 0) => {
             const position = points.geometry.getAttribute("position")
             return new Vector3(position.getX(index), position.getY(index), position.getZ(index)).applyMatrix4(points.matrix)
